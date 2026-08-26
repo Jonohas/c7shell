@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Copy the c7shell configs from /usr/share into the user's ~/.config.
+# Neither hyprland nor quickshell reads config from /usr/share or
+# XDG_CONFIG_DIRS, so this copy is what makes an installed package usable.
+set -euo pipefail
+
+share=${C7SHELL_SHARE:-/usr/share/c7shell}
+conf=${XDG_CONFIG_HOME:-$HOME/.config}
+parts=(hypr quickshell/c7shell)
+force=0
+dry=0
+
+usage() {
+  cat <<USAGE
+usage: c7shell-setup [--force] [--dry-run]
+
+  --force     replace existing ~/.config/hypr and ~/.config/quickshell/c7shell,
+              keeping a timestamped .bak-<stamp> copy of each
+  --dry-run   print what would happen and change nothing
+
+env: C7SHELL_SHARE (default /usr/share/c7shell)
+     XDG_CONFIG_HOME  (default \$HOME/.config)
+
+exit: 0 all parts installed, 3 nothing done because a target already exists
+USAGE
+}
+
+while (($#)); do
+  case $1 in
+    --force) force=1 ;;
+    --dry-run|-n) dry=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'c7shell-setup: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+if ((EUID == 0)) && [[ -z ${C7SHELL_ALLOW_ROOT:-} ]]; then
+  echo "c7shell-setup: run this as your own user, not root" >&2
+  exit 2
+fi
+
+for part in "${parts[@]}"; do
+  [[ -d $share/$part ]] || { printf 'c7shell-setup: missing %s -- is the package installed?\n' "$share/$part" >&2; exit 1; }
+done
+
+run() { if ((dry)); then printf '  would: %s\n' "$*"; else "$@"; fi; }
+
+stamp=$(date +%Y%m%d%H%M%S)
+skipped=0
+installed=0
+
+for part in "${parts[@]}"; do
+  dst=$conf/$part
+  if [[ -e $dst ]]; then
+    if ((force)); then
+      printf 'backing up %s -> %s.bak-%s\n' "$dst" "$dst" "$stamp"
+      run mv -- "$dst" "$dst.bak-$stamp"
+    else
+      printf '%s already exists, left alone (rerun with --force to replace it)\n' "$dst" >&2
+      skipped=1
+      continue
+    fi
+  fi
+  printf 'installing %s -> %s\n' "$share/$part" "$dst"
+  run mkdir -p -- "$(dirname -- "$dst")"
+  run cp -a -- "$share/$part" "$dst"
+  installed=1
+done
+
+# xdph has no variable expansion, so the shipped picker path is a $HOME
+# placeholder that only becomes usable once it names a real directory.
+xdph=$conf/hypr/xdph.conf
+if [[ -f $xdph ]] && grep -q '\$HOME/\.config/quickshell' "$xdph"; then
+  run sed -i "s#\$HOME/.config/quickshell#$conf/quickshell#" "$xdph"
+fi
+
+if ((installed == 0 && skipped)); then
+  exit 3
+fi
+
+cat <<'MSG'
+
+Done. Log out and pick the "c7shell" session in your display manager, or
+start it from a TTY with: Hyprland
+
+Notes:
+  - The shell is the named quickshell config "c7shell": it runs as
+    `qs -c c7shell` and leaves any other ~/.config/quickshell config alone.
+  - ~/.config/hypr/appearance.json is written by the settings app on first
+    change; until then the defaults in conf/appearance.lua apply.
+  - Logitech thumb-button gestures expect ~/.config/solaar/rules.yaml, which
+    is yours to write; the autostart entry is harmless without it.
+MSG

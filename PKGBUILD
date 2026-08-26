@@ -1,10 +1,10 @@
 # Maintainer: Jonohas <https://github.com/Jonohas>
-pkgname=gambleland
+pkgname=c7shell
 pkgver=0.1.0
 pkgrel=1
-pkgdesc='GambleLand desktop environment: Hyprland (lua config) with the gambleland Quickshell shell'
+pkgdesc='c7shell desktop environment: Hyprland (lua config) with the c7shell Quickshell shell'
 arch=('any')
-url='https://github.com/Jonohas/GambleLand'
+url='https://github.com/Jonohas/c7shell'
 license=('custom')
 # Hyprland 0.56+ is required: the config is hyprland.lua, not hyprland.conf.
 depends=(
@@ -54,18 +54,21 @@ package() {
   cd "$srcdir/$pkgname"
 
   # The configs are shipped read-only under /usr/share and copied into the
-  # user's ~/.config by gambleland-setup: hyprland and quickshell both read
+  # user's ~/.config by c7shell-setup: hyprland and quickshell both read
   # their config only from $XDG_CONFIG_HOME, and the user is expected to edit
-  # what lands there.
+  # what lands there. The shell ships as the named quickshell config
+  # `quickshell/c7shell`, so it lands in ~/.config/quickshell/c7shell and
+  # leaves any other config in ~/.config/quickshell alone (`qs -c c7shell`).
   install -dm755 "$pkgdir/usr/share/$pkgname"
   cp -a hypr quickshell "$pkgdir/usr/share/$pkgname/"
   # Dev-facing only, and setup copies whatever is here into the user's config.
-  rm -rf "$pkgdir/usr/share/$pkgname/quickshell/docs"
+  rm -rf "$pkgdir/usr/share/$pkgname/quickshell/c7shell/docs"
   chmod -R u=rwX,go=rX "$pkgdir/usr/share/$pkgname"
-  chmod 755 "$pkgdir/usr/share/$pkgname/quickshell/scripts/gambleland-appmenud.py"
+  chmod 755 "$pkgdir/usr/share/$pkgname/quickshell/c7shell/scripts/c7shell-appmenud.py" \
+            "$pkgdir/usr/share/$pkgname/quickshell/c7shell/bin/screenshare-picker.sh"
 
-  install -Dm755 bin/gambleland-setup "$pkgdir/usr/bin/gambleland-setup"
-  install -Dm644 share/gambleland.desktop \
-    "$pkgdir/usr/share/wayland-sessions/gambleland.desktop"
+  install -Dm755 bin/c7shell-setup "$pkgdir/usr/bin/c7shell-setup"
+  install -Dm644 share/c7shell.desktop \
+    "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

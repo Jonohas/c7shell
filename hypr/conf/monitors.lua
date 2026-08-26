@@ -4,10 +4,16 @@
 
 -- See https://wiki.hypr.land/Configuring/Basics/Monitors/
 --
+-- A layout the user arranged in the settings app is remembered in
+-- ~/.config/hypr/displays.json and overrides the positions and modes chosen
+-- here; conf/displays.lua reads it. Nothing writes to THIS file.
+--
 -- Layout is chosen by which monitors are actually connected. Edit CATALOG to
 -- describe a monitor's intrinsic properties (mode/scale/rotation -- things that
 -- travel with the panel), and PROFILES to describe where those panels sit on
 -- the desk in a given setup.
+
+local displays = require("conf/displays")
 
 -- Fallback for anything not in CATALOG (projector, meeting-room TV, headless).
 -- Rules applied later override this.
@@ -38,6 +44,9 @@ local CATALOG = {
     },
     laptop = {
         name  = "eDP-1",
+        -- Belt and braces: eDP-1 is stable for a built-in panel, but detect()
+        -- accepts either, so a renamed connector still finds the panel.
+        desc  = "BOE NE135A1M-NY1",
         mode  = "2880x1920@120",
         scale = 2,
         size  = { 1440, 960 },
@@ -105,19 +114,6 @@ local PROFILES = {
     },
 }
 
--- Map connected monitors onto CATALOG keys.
-local function detect()
-    local found = {}
-    for _, m in ipairs(hl.get_monitors()) do
-        for key, def in pairs(CATALOG) do
-            local hit = (def.name and m.name == def.name)
-                or (def.desc and m.description:sub(1, #def.desc) == def.desc)
-            if hit then found[key] = true end
-        end
-    end
-    return found
-end
-
 -- Pure: given a set of present keys, return the winning profile (or nil).
 local function pick(found)
     for _, p in ipairs(PROFILES) do
@@ -133,8 +129,25 @@ local function pick(found)
     return nil
 end
 
+-- Map connected monitors onto CATALOG keys, keeping the live HL.Monitor rather
+-- than just a flag: a saved layout is keyed on the monitor's own full
+-- description (serial and all), and mode validation needs available_modes.
+local function detect()
+    local out = {}
+    for _, m in ipairs(hl.get_monitors()) do
+        for key, def in pairs(CATALOG) do
+            local hit = (def.name and m.name == def.name)
+                or (def.desc and m.description:sub(1, #def.desc) == def.desc)
+            if hit then out[key] = m end
+        end
+    end
+    return out
+end
+
 local function apply_inner()
-    local present = detect()
+    local by_key = detect()
+    local present = {}
+    for key in pairs(by_key) do present[key] = true end
 
     -- A shut lid means the panel is there but unusable, so hide it from the
     -- profile match. Every profile below that needs `laptop` then falls
@@ -150,13 +163,32 @@ local function apply_inner()
     -- screen as it is than to disable the only output there is.
     if not profile then return end
 
+    -- displays.json is keyed on the set of monitors this layout leaves ENABLED,
+    -- which is exactly the list the settings app sees in Hyprland's monitor
+    -- list, so both sides compute the same key. Connected-but-dropped panels
+    -- (the shut lid) are excluded on both sides for the same reason.
+    local dropped = {}
+    for key in pairs(present) do
+        if not profile.at[key] then dropped[by_key[key].description] = true end
+    end
+    local enabled = {}
+    for _, m in ipairs(hl.get_monitors()) do
+        if not dropped[m.description] then enabled[#enabled + 1] = m.description end
+    end
+    local saved = displays.layout(enabled)
+
     for key, position in pairs(profile.at) do
         local def = CATALOG[key]
+        local mon = by_key[key]
+        -- Saved values OVERRIDE the profile's position and the catalog's
+        -- mode/scale, one field at a time; anything the user never changed,
+        -- or that fails validation, falls through to the hand-written value.
+        local s = (mon and saved[mon.description]) or {}
         hl.monitor({
             output    = def.name or ("desc:" .. def.desc),
-            mode      = def.mode,
-            position  = position,
-            scale     = def.scale,
+            mode      = displays.mode(s.mode, mon and mon.available_modes) or def.mode,
+            position  = displays.position(s.position) or position,
+            scale     = displays.scale(s.scale) or def.scale,
             transform = def.transform,
             bitdepth      = def.bitdepth,
             cm            = def.cm,

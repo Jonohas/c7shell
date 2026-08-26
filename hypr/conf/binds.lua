@@ -13,7 +13,7 @@ local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close())
 hl.bind(mainMod .. " + M", hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"))
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(programs.fileManager))
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
-hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("qs ipc call launcher toggle")) -- gambleland launcher replaced programs.menu
+hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("qs -c c7shell ipc call launcher toggle")) -- c7shell launcher replaced programs.menu
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))    -- dwindle only
 
@@ -57,8 +57,8 @@ hl.bind("XF86AudioMicMute",     hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_S
 -- put this panel at 0 -- and the bar already has to write to keep its own chip
 -- in sync, so it owns the bus and everything else asks it. It also serialises
 -- and coalesces, which key repeat at ~0.7s per round trip badly needs.
-hl.bind("XF86MonBrightnessUp",  hl.dsp.exec_cmd("qs ipc call brightness up"),   { locked = true, repeating = true })
-hl.bind("XF86MonBrightnessDown",hl.dsp.exec_cmd("qs ipc call brightness down"), { locked = true, repeating = true })
+hl.bind("XF86MonBrightnessUp",  hl.dsp.exec_cmd("qs -c c7shell ipc call brightness up"),   { locked = true, repeating = true })
+hl.bind("XF86MonBrightnessDown",hl.dsp.exec_cmd("qs -c c7shell ipc call brightness down"), { locked = true, repeating = true })
 
 -- Requires playerctl
 hl.bind("XF86AudioNext",  hl.dsp.exec_cmd("playerctl next"),       { locked = true })
@@ -66,9 +66,9 @@ hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause"), { locked = tr
 hl.bind("XF86AudioPlay",  hl.dsp.exec_cmd("playerctl play-pause"), { locked = true })
 hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd("playerctl previous"),   { locked = true })
 
--- gambleland: lock, launcher, capture (targets land as the shell modules merge;
+-- c7shell: lock, launcher, capture (targets land as the shell modules merge;
 -- until then the ipc calls are harmless no-ops with an error on stderr)
 hl.bind(mainMod .. " + L",     hl.dsp.exec_cmd("hyprlock"))
-hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind("Print",               hl.dsp.exec_cmd("qs ipc call capture toggle"))
-hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd("qs ipc call recording toggle"))
+hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("qs -c c7shell ipc call launcher toggle"))
+hl.bind("Print",               hl.dsp.exec_cmd("qs -c c7shell ipc call capture toggle"))
+hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd("qs -c c7shell ipc call recording toggle"))

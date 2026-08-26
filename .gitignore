@@ -3,7 +3,7 @@ src/
 pkg/
 *.pkg.tar.*
 *.src.tar.*
-gambleland/
+/c7shell/
 
 # written at runtime by the settings app, regenerated from conf/appearance.lua
 hypr/appearance.json

@@ -1,0 +1,22 @@
+post_install() {
+  cat <<'MSG'
+
+c7shell installed. To put the configs in your home directory, run as your
+own user (not root):
+
+    c7shell-setup
+
+Then log out and pick the "c7shell" session in your display manager.
+MSG
+}
+
+post_upgrade() {
+  cat <<'MSG'
+
+c7shell updated. The files under /usr/share/c7shell changed; your copies
+in ~/.config did not. To take the new version:
+
+    c7shell-setup --force     # backs up your current ~/.config/{hypr,quickshell}
+
+MSG
+}

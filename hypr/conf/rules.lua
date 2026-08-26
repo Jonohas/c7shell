@@ -78,24 +78,24 @@ hl.window_rule({
     move  = "monitor_w-438 32",
 })
 
--- gambleland settings window: float and centre it at the mock's 790x560.
+-- c7shell settings window: float and centre it at the mock's 790x560.
 -- Quickshell cannot set a per-window class (Quickshell.appId is read-only and
 -- constant, and FloatingWindow exposes no class/appId property), so the title
 -- is the only identity it controls -- SettingsWindow.qml sets exactly this one.
 hl.window_rule({
-    name  = "float-gambleland-settings",
-    match = { title = "^gambleland settings$" },
+    name  = "float-c7shell-settings",
+    match = { title = "^c7shell settings$" },
 
     float  = true,
     size   = "790 560",
     center = true,
 })
 
--- Blur the gambleland layer surfaces (bar island, later popovers). The namespace
--- match is a FULL match, so it needs the trailing .* -- plain "^gambleland" never
--- matches "gambleland-bar" and the rule silently does nothing.
+-- Blur the c7shell layer surfaces (bar island, later popovers). The namespace
+-- match is a FULL match, so it needs the trailing .* -- plain "^c7shell" never
+-- matches "c7shell-bar" and the rule silently does nothing.
 --
--- ignore_alpha skips blur for pixels below the threshold, so it splits gambleland's
+-- ignore_alpha skips blur for pixels below the threshold, so it splits c7shell's
 -- surfaces in two, and 0.7 is the one number that keeps both halves right:
 --
 --   blurred   -- every glass surface, alpha >= 0.7: bar 0.78 (Theme.glassAlphaBar),
@@ -111,8 +111,8 @@ hl.window_rule({
 -- Keep it in (0.65, 0.78) when adding surfaces; new glass must stay >= 0.7 and new
 -- shadows <= 0.65 or one of the two halves breaks.
 hl.layer_rule({
-    name  = "gambleland-blur",
-    match = { namespace = "^gambleland.*" },
+    name  = "c7shell-blur",
+    match = { namespace = "^c7shell.*" },
     blur         = true,
     blur_popups  = true,   -- reaches the global menu dropdown (xdg-popup of the bar layer)
     ignore_alpha = 0.7,

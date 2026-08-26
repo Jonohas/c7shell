@@ -13,13 +13,27 @@ hl.on("hyprland.start", function ()
   -- QT_WAYLAND_DISABLE_WINDOWDECORATION: the settings window is chromeless by
   -- design; hyprland draws no server-side titlebar, this stops Qt drawing CSD.
   --
-  -- gambleland-appmenud goes first and deliberately: it owns
+  -- c7shell-appmenud goes first and deliberately: it owns
   -- com.canonical.AppMenu.Registrar, and Qt only exports an app's menu bar if
   -- that name is already on the bus -- a decision each app makes once, at its
   -- first menu bar, and caches. Anything started before the daemon shows no
   -- menus until it is relaunched. Order against qs does not matter; the shell
   -- retries the daemon's socket with backoff.
-  hl.exec_cmd("python3 $HOME/.config/quickshell/scripts/gambleland-appmenud.py & QT_WAYLAND_DISABLE_WINDOWDECORATION=1 qs -d -n & hyprpaper & hypridle")
+  hl.exec_cmd("python3 $HOME/.config/quickshell/c7shell/scripts/c7shell-appmenud.py & QT_WAYLAND_DISABLE_WINDOWDECORATION=1 qs -c c7shell -d -n & hyprpaper & hypridle")
+end)
+
+-- pam_kwallet_init drains the socket pam_kwallet5 opened at login
+-- (/run/user/$UID/kwallet5.socket) and starts kwalletd6 with the login
+-- password, so the wallet is already open before anything asks for a secret.
+-- Plasma runs this from plasma-kwallet-pam.service; that unit is
+-- WantedBy=graphical-session.target, and nothing activates that target here,
+-- so without this line kwalletd6 only ever starts via dbus activation with no
+-- key -- which is what makes it prompt.
+--
+-- hyprpolkitagent's unit has the same WantedBy, hence the same treatment
+-- rather than `systemctl --user enable`.
+hl.on("hyprland.start", function ()
+  hl.exec_cmd("/usr/lib/pam_kwallet_init & /usr/lib/hyprpolkitagent/hyprpolkitagent")
 end)
 
 -- Logitech MX Master 3S: thumb-button workspace gestures (rules in ~/.config/solaar/rules.yaml)
