@@ -14,3 +14,7 @@ hypr/appearance.json
 graphify-out/
 docs/plans/
 docs/specs/
+
+# python bytecode
+__pycache__/
+*.pyc
