@@ -59,6 +59,8 @@ package() {
   # what lands there.
   install -dm755 "$pkgdir/usr/share/$pkgname"
   cp -a hypr quickshell "$pkgdir/usr/share/$pkgname/"
+  # Dev-facing only, and setup copies whatever is here into the user's config.
+  rm -rf "$pkgdir/usr/share/$pkgname/quickshell/docs"
   chmod -R u=rwX,go=rX "$pkgdir/usr/share/$pkgname"
   chmod 755 "$pkgdir/usr/share/$pkgname/quickshell/scripts/c7shell-appmenud.py"
 
