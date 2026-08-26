@@ -28,7 +28,10 @@ Item {
       title: e.name,
       sub: `app · ${(e.genericName || e.comment || "application").toLowerCase()}`,
       meta: "open",
-      mono: Search.initials(e.name)
+      mono: Search.initials(e.name),
+      // Icon *name*, not a resolved path: ResultRow does the theme lookup, and
+      // an entry with no Icon= line falls back to the monogram there.
+      icon: e.icon ?? ""
     }))
   }
 

@@ -1,9 +1,10 @@
 import QtQuick
+import Quickshell
 import qs.Theme
 import qs.Common
 
 // One command-window result. `entry` is a plain JS row from a provider:
-// { title, sub, meta, mono }.
+// { title, sub, meta, mono, icon? }.
 Rectangle {
   id: row
 
@@ -26,6 +27,14 @@ Rectangle {
     onClicked: row.activated()
   }
 
+  // App and window rows carry an icon *name*; action, calc and file rows have
+  // none and keep their monogram. Resolved here rather than in the providers so
+  // there is one lookup site, and `check: true` turns a name the icon theme
+  // does not have into "", which falls back to the tile instead of drawing
+  // Qt's broken-image box.
+  readonly property string iconSource: row.entry?.icon
+    ? Quickshell.iconPath(row.entry.icon, true) : ""
+
   MonogramTile {
     id: tile
     anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
@@ -33,6 +42,20 @@ Rectangle {
     radius: Theme.radiusTile
     glyph: row.entry?.mono ?? ""
     accented: row.selected
+    visible: row.iconSource === ""
+  }
+
+  // App icons are already coloured, so unlike the Icon glyphs they are not
+  // tinted -- same call as TrayPill's tray icons. 28 inside the 32 tile slot:
+  // full-bleed icons keep roughly the monogram's visual weight in a mixed list.
+  Image {
+    anchors.centerIn: tile
+    width: 28
+    height: 28
+    visible: row.iconSource !== ""
+    source: row.iconSource
+    sourceSize: Qt.size(56, 56)  // 2x, downscaled so it stays crisp
+    asynchronous: true
   }
 
   Column {

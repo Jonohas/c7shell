@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Hyprland
 import "Search.js" as Search
 
@@ -18,18 +19,26 @@ Item {
 
   function search(query) {
     // Snapshot to plain JS first: the model must not hold toplevel pointers.
-    const windows = Hyprland.toplevels.values.map(t => ({
-      address: t.address,
-      title: t.title || t.lastIpcObject?.class || "window",
-      workspace: t.workspace ? t.workspace.id : 0
-    }))
+    const windows = Hyprland.toplevels.values.map(t => {
+      const cls = t.lastIpcObject?.class ?? ""
+      return {
+        address: t.address,
+        title: t.title || cls || "window",
+        workspace: t.workspace ? t.workspace.id : 0,
+        // A window class is not a desktop id (discord -> com.discordapp.Discord),
+        // so it goes through heuristicLookup rather than byId. No match leaves
+        // the row on its monogram.
+        icon: DesktopEntries.heuristicLookup(cls)?.icon ?? ""
+      }
+    })
 
     root.results = Search.rank(query, windows, w => w.title, 30).map(w => ({
       address: w.address,
       title: w.title,
       sub: `window · workspace ${root.dice(w.workspace)} ${w.workspace}`,
       meta: "jump",
-      mono: Search.initials(w.title)
+      mono: Search.initials(w.title),
+      icon: w.icon
     }))
   }
 
