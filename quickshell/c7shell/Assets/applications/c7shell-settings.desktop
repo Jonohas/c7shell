@@ -1,0 +1,27 @@
+[Desktop Entry]
+# Makes the settings window a launchable app: it shows up in the launcher's
+# "apps" tab (AppsProvider reads DesktopEntries) and in any other XDG launcher.
+# Exec talks to the running shell over IPC rather than starting a process --
+# the window lives inside the one qs instance, so there is nothing to spawn.
+# Nothing happens if the shell is not running, which is the same as every
+# other c7shell bind. `-c c7shell` names the config the shell runs under
+# (hypr/conf/autostart.lua starts `qs -c c7shell -d -n`); without it qs looks
+# for a `default` config that no longer exists and the entry does nothing.
+#
+# Icon=c7shell-settings resolves through the icon theme, from the sibling
+# c7shell-settings.svg symlinked into ~/.local/share/icons/hicolor/scalable/apps.
+# A themed name rather than an absolute path so no launcher has to be told
+# where this repo lives.
+#
+# No StartupWMClass: Quickshell.appId is read-only, so every c7shell window
+# reports class "quickshell" and the hint would mis-group them. The float rule
+# in hypr/conf/rules.lua matches on the window title instead.
+Type=Application
+Name=c7shell settings
+GenericName=system settings
+Comment=Wi-Fi, bluetooth, audio, displays and appearance
+Exec=qs -c c7shell ipc call settings open appearance
+Icon=c7shell-settings
+Terminal=false
+Categories=Settings;DesktopSettings;Qt;
+Keywords=settings;preferences;control;panel;wifi;bluetooth;audio;display;appearance;theme;wallpaper;

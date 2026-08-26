@@ -70,5 +70,15 @@ package() {
   install -Dm755 bin/c7shell-setup "$pkgdir/usr/bin/c7shell-setup"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
+
+  # The settings window is a launchable app, so its entry and icon go where
+  # every launcher already looks. They also travel inside the shipped config
+  # above (the shell reads its own Assets), but a copy under ~/.config is not
+  # on any launcher's search path -- these two lines are what make the app
+  # appear in the launcher's "apps" tab, wofi, rofi and any app grid.
+  install -Dm644 quickshell/c7shell/Assets/applications/c7shell-settings.desktop \
+    "$pkgdir/usr/share/applications/c7shell-settings.desktop"
+  install -Dm644 quickshell/c7shell/Assets/applications/c7shell-settings.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/c7shell-settings.svg"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
