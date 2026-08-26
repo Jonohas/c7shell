@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Copy the GambleLand configs from /usr/share into the user's ~/.config.
+# Neither hyprland nor quickshell reads config from /usr/share or
+# XDG_CONFIG_DIRS, so this copy is what makes an installed package usable.
+set -euo pipefail
+
+share=${GAMBLELAND_SHARE:-/usr/share/gambleland}
+conf=${XDG_CONFIG_HOME:-$HOME/.config}
+parts=(hypr quickshell)
+force=0
+dry=0
+
+usage() {
+  cat <<USAGE
+usage: gambleland-setup [--force] [--dry-run]
+
+  --force     replace existing ~/.config/{hypr,quickshell}, keeping a
+              timestamped .bak-<stamp> copy of each
+  --dry-run   print what would happen and change nothing
+
+env: GAMBLELAND_SHARE (default /usr/share/gambleland)
+     XDG_CONFIG_HOME  (default \$HOME/.config)
+
+exit: 0 all parts installed, 3 nothing done because a target already exists
+USAGE
+}
+
+while (($#)); do
+  case $1 in
+    --force) force=1 ;;
+    --dry-run|-n) dry=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'gambleland-setup: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+if ((EUID == 0)) && [[ -z ${GAMBLELAND_ALLOW_ROOT:-} ]]; then
+  echo "gambleland-setup: run this as your own user, not root" >&2
+  exit 2
+fi
+
+for part in "${parts[@]}"; do
+  [[ -d $share/$part ]] || { printf 'gambleland-setup: missing %s -- is the package installed?\n' "$share/$part" >&2; exit 1; }
+done
+
+run() { if ((dry)); then printf '  would: %s\n' "$*"; else "$@"; fi; }
+
+stamp=$(date +%Y%m%d%H%M%S)
+skipped=0
+installed=0
+
+for part in "${parts[@]}"; do
+  dst=$conf/$part
+  if [[ -e $dst ]]; then
+    if ((force)); then
+      printf 'backing up %s -> %s.bak-%s\n' "$dst" "$dst" "$stamp"
+      run mv -- "$dst" "$dst.bak-$stamp"
+    else
+      printf '%s already exists, left alone (rerun with --force to replace it)\n' "$dst" >&2
+      skipped=1
+      continue
+    fi
+  fi
+  printf 'installing %s -> %s\n' "$share/$part" "$dst"
+  run mkdir -p -- "$conf"
+  run cp -a -- "$share/$part" "$dst"
+  installed=1
+done
+
+if ((installed == 0 && skipped)); then
+  exit 3
+fi
+
+cat <<'MSG'
+
+Done. Log out and pick the "GambleLand" session in your display manager, or
+start it from a TTY with: Hyprland
+
+Notes:
+  - ~/.config/hypr/appearance.json is written by the settings app on first
+    change; until then the defaults in conf/appearance.lua apply.
+  - Logitech thumb-button gestures expect ~/.config/solaar/rules.yaml, which
+    is yours to write; the autostart entry is harmless without it.
+MSG

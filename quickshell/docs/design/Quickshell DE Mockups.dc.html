@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"><style>body{margin:0;background:#0f0e10;font-family:'JetBrains Mono',monospace}a{color:#e5717a}a:hover{color:#f2949b}.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(255,255,255,.08);scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 8px}.dv-tid{font:600 10px 'JetBrains Mono',monospace;padding:3px 7px;background:#e53a44;color:#fff;border-radius:4px;text-decoration:none}.dv-tname{font:600 13px/1.2 'Space Grotesk',sans-serif;color:#f0eff1}.dv-note{max-width:860px;font:400 11.5px/1.7 'JetBrains Mono',monospace;color:rgba(240,239,241,.5);margin:0 0 24px}.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}.dv-oid{font:600 10.5px 'JetBrains Mono',monospace;padding:3px 7px;background:rgba(255,255,255,.1);color:#f0eff1;border-radius:5px;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 'JetBrains Mono',monospace;color:rgba(240,239,241,.55)}.dv-card{max-width:100%;background:#0a0a0c;border:1px solid rgba(255,255,255,.09);border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.5);overflow:hidden}.dv-opt:target .dv-oid{background:#e53a44;color:#fff}.dv-next{margin:24px 0 0;font:11px/1.5 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)}</style></helmet>
+<section class="dv-turn" id="t8">
+<div class="dv-thd"><a class="dv-tid" href="#t8">8</a><span class="dv-tname">Screenshare picker — xdg-desktop-portal dialog</span></div>
+<p class="dv-note"><a class="dv-oid" href="#8a">8a</a> replaces the stock portal picker: appears centered when an app requests capture, shows who's asking, tabs for screens / windows / region, live thumbnails. While sharing, the crimson screen icon sits in the <a class="dv-oid" href="#1a">1a</a> quick settings.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="8a"><div class="dv-olabel"><a class="dv-oid" href="#8a">8a</a>Share picker — screens · windows · region</div>
+<div class="dv-card"><div style="position:relative;width:840px;height:520px;background:#0a0a0c;background-image:radial-gradient(600px 360px at 50% -20%,rgba(229,58,68,.18),transparent 70%);overflow:hidden;display:flex;align-items:center;justify-content:center">
+<div style="position:absolute;inset:0;background:rgba(6,6,8,.5);backdrop-filter:blur(8px)"></div>
+<div style="position:relative;width:560px;border-radius:20px;background:rgba(15,15,19,.8);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.7);padding:16px 18px;display:flex;flex-direction:column;gap:13px">
+<div style="display:flex;align-items:center;gap:11px">
+<span style="width:32px;height:32px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">zm</span>
+<div style="flex:1"><div style="font:600 12px 'JetBrains Mono',monospace;color:#f0eff1">Zoom wants to share your screen</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);margin-top:2px">via xdg-desktop-portal · choose what to share</div></div>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);padding:3px 7px;border:1px solid rgba(255,255,255,.12);border-radius:6px">esc</span>
+</div>
+<div style="display:flex;gap:2px;padding:3px;border-radius:11px;background:rgba(255,255,255,.06);width:fit-content">
+<span style="font:600 10px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:5px 12px;border-radius:8px">screens</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55);padding:5px 12px;border-radius:8px">windows</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55);padding:5px 12px;border-radius:8px">region</span>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<div style="border-radius:13px;border:2px solid #e53a44;overflow:hidden;box-shadow:0 0 20px rgba(229,58,68,.25)">
+<div style="height:120px;background:#0d0d10;position:relative;background-image:radial-gradient(160px 90px at 70% 10%,rgba(229,58,68,.35),transparent 70%)">
+<div style="position:absolute;top:8px;left:8px;right:8px;height:6px;border-radius:3px;background:rgba(255,255,255,.14)"></div>
+<div style="position:absolute;top:20px;left:8px;width:45%;height:70px;border-radius:5px;background:rgba(255,255,255,.08)"></div>
+<div style="position:absolute;top:20px;right:8px;width:38%;height:44px;border-radius:5px;background:rgba(255,255,255,.05)"></div>
+</div>
+<div style="padding:7px 10px;background:rgba(229,58,68,.12);display:flex;justify-content:space-between;align-items:center"><span style="font:600 10px 'JetBrains Mono',monospace;color:#f0eff1">DP-1 · 3440×1440 @144</span><span style="width:14px;height:14px;border-radius:7px;background:#e53a44;display:flex;align-items:center;justify-content:center"><svg width="8" height="8" viewBox="0 0 16 16" fill="none"><path d="m3.5 8.5 3 3 6-6.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
+</div>
+<div style="border-radius:13px;border:1px solid rgba(255,255,255,.1);overflow:hidden">
+<div style="height:120px;background:#0d0d10;position:relative">
+<div style="position:absolute;top:8px;left:8px;right:8px;height:6px;border-radius:3px;background:rgba(255,255,255,.1)"></div>
+<div style="position:absolute;top:20px;left:8px;right:8px;height:70px;border-radius:5px;background:rgba(255,255,255,.05)"></div>
+</div>
+<div style="padding:7px 10px;display:flex;justify-content:space-between;align-items:center"><span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.65)">HDMI-A-1 · 1920×1080 (vertical)</span><span style="width:14px;height:14px;border-radius:7px;border:1.5px solid rgba(255,255,255,.25)"></span></div>
+</div>
+</div>
+<div style="display:flex;align-items:center;gap:9px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:9px 12px">
+<span style="width:26px;height:15px;border-radius:8px;background:#e53a44;position:relative"><span style="position:absolute;right:2px;top:2px;width:11px;height:11px;border-radius:6px;background:#fff"></span></span>
+<span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);flex:1">hide notifications while sharing</span>
+<span style="width:26px;height:15px;border-radius:8px;background:rgba(255,255,255,.12);position:relative"><span style="position:absolute;left:2px;top:2px;width:11px;height:11px;border-radius:6px;background:rgba(255,255,255,.5)"></span></span>
+<span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6)">share audio</span>
+</div>
+<div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid rgba(255,255,255,.07);padding-top:12px">
+<span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:8px 14px;border-radius:10px;background:rgba(255,255,255,.06)">cancel</span>
+<span style="font:600 10.5px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:8px 16px;border-radius:10px;box-shadow:0 0 14px rgba(229,58,68,.35)">share DP-1 →</span>
+</div>
+</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "windows tab state" · "the while-sharing popover from the crimson bar icon (who's watching + stop)"</p>
+</section>
+<section class="dv-turn" id="t7">
+<div class="dv-thd"><a class="dv-tid" href="#t7">7</a><span class="dv-tname">Update wizard — approve → run → clean up</span></div>
+<p class="dv-note">"update all" in <a class="dv-oid" href="#6a">6a</a> opens this wizard (tiling window, like settings). Dry-run first, so all questions are answered up front in step 1 — the run itself never prompts. <a class="dv-oid" href="#7a">7a</a> review &amp; approve · <a class="dv-oid" href="#7b">7b</a> progress (closable, keeps running; dropdown shows state) · <a class="dv-oid" href="#7c">7c</a> finish: pacnew files, reboot.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="7a"><div class="dv-olabel"><a class="dv-oid" href="#7a">7a</a>Step 1 — review &amp; approve</div>
+<div class="dv-card"><div style="position:relative;width:640px;background:#0a0a0c;background-image:radial-gradient(500px 300px at 70% -20%,rgba(229,58,68,.16),transparent 70%);padding:22px;display:flex;justify-content:center">
+<div style="width:560px;border-radius:20px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:14px">
+<div style="flex:1"><div style="font:700 14px 'Space Grotesk',sans-serif;color:#f0eff1">System update</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);margin-top:2px">23 packages · 481 MB · pacman 14 · aur 6 · flatpak 3</div></div>
+<div style="display:flex;align-items:center;gap:6px">
+<span style="width:20px;height:20px;border-radius:10px;background:#e53a44;color:#fff;font:700 9.5px 'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center">1</span><span style="width:14px;height:1px;background:rgba(255,255,255,.15)"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:rgba(255,255,255,.07);color:rgba(240,239,241,.45);font:600 9.5px 'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center">2</span><span style="width:14px;height:1px;background:rgba(255,255,255,.15)"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:rgba(255,255,255,.07);color:rgba(240,239,241,.45);font:600 9.5px 'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center">3</span>
+</div>
+</div>
+<div style="display:flex;align-items:center;gap:10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:10px 12px">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="m3 8.5 3 3 7-7" stroke="#4ade80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<span style="flex:1;font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">19 packages auto-approved — routine version bumps</span>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">show ▸</span>
+</div>
+<div style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">needs your ok · 4</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="border-radius:12px;background:rgba(229,58,68,.11);border:1px solid rgba(229,58,68,.28);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1.5 14 5v6l-6 3.5L2 11V5l6-3.5Z" stroke="#e5717a" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 8v3.5M8 5.5v.5" stroke="#e5717a" stroke-width="1.4" stroke-linecap="round"/></svg>
+<div style="flex:1"><div style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">linux <span style="color:rgba(240,239,241,.45);font-weight:400">6.15.4 → 6.16.1</span></div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">kernel · reboot required after update</div></div>
+<span style="width:16px;height:16px;border-radius:5px;background:#e53a44;display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="m3.5 8.5 3 3 6-6.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2 2 8l6 6 6-6-6-6Z" stroke="rgba(240,239,241,.65)" stroke-width="1.3" stroke-linejoin="round"/></svg>
+<div style="flex:1"><div style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">jack2 → pipewire-jack</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">package replacement</div></div>
+<span style="width:16px;height:16px;border-radius:5px;background:#e53a44;display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="m3.5 8.5 3 3 6-6.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="6" r="3" stroke="rgba(240,239,241,.65)" stroke-width="1.3"/><path d="m8.5 8.5 4.5 4.5M11 13l2-2" stroke="rgba(240,239,241,.65)" stroke-width="1.3" stroke-linecap="round"/></svg>
+<div style="flex:1"><div style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">pgp key import <span style="color:rgba(240,239,241,.45);font-weight:400">3B94A80E…</span></div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">signed by: Levente Polyak (arch developer)</div></div>
+<span style="width:16px;height:16px;border-radius:5px;background:#e53a44;display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="m3.5 8.5 3 3 6-6.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M5 2h5l3 3v9H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" stroke="rgba(240,239,241,.65)" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 8h4M6 10.5h4" stroke="rgba(240,239,241,.65)" stroke-width="1.2" stroke-linecap="round"/></svg>
+<div style="flex:1"><div style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">quickshell-git <span style="color:rgba(240,239,241,.45);font-weight:400">aur</span></div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">PKGBUILD changed since last build · <span style="color:#e5717a">view diff</span></div></div>
+<span style="width:16px;height:16px;border-radius:5px;border:1.5px solid rgba(255,255,255,.25)"></span>
+</div>
+</div>
+<div style="display:flex;gap:8px;align-items:center;border-top:1px solid rgba(255,255,255,.07);padding-top:13px">
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35);flex:1">unchecked items are skipped, not blocked</span>
+<span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:8px 14px;border-radius:10px;background:rgba(255,255,255,.06)">cancel</span>
+<span style="font:600 10.5px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:8px 16px;border-radius:10px;box-shadow:0 0 14px rgba(229,58,68,.35)">start update →</span>
+</div>
+</div>
+</div></div></div>
+
+<div class="dv-opt" id="7b"><div class="dv-olabel"><a class="dv-oid" href="#7b">7b</a>Step 2 — running, never asks</div>
+<div class="dv-card"><div style="position:relative;width:640px;background:#0a0a0c;background-image:radial-gradient(500px 300px at 30% -20%,rgba(229,58,68,.16),transparent 70%);padding:22px;display:flex;justify-content:center">
+<div style="width:560px;border-radius:20px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:14px">
+<div style="flex:1"><div style="font:700 14px 'Space Grotesk',sans-serif;color:#f0eff1">Updating</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);margin-top:2px">14 of 23 · pacman done · aur building 2 of 6</div></div>
+<div style="display:flex;align-items:center;gap:6px">
+<span style="width:20px;height:20px;border-radius:10px;background:rgba(255,255,255,.07);color:rgba(240,239,241,.45);font:600 9.5px 'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="m3.5 8.5 3 3 6-6.5" stroke="rgba(240,239,241,.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span style="width:14px;height:1px;background:rgba(255,255,255,.15)"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:#e53a44;color:#fff;font:700 9.5px 'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center">2</span><span style="width:14px;height:1px;background:rgba(255,255,255,.15)"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:rgba(255,255,255,.07);color:rgba(240,239,241,.45);font:600 9.5px 'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center">3</span>
+</div>
+</div>
+<div style="height:6px;border-radius:3px;background:rgba(255,255,255,.08);position:relative"><div style="position:absolute;inset:0 39% 0 0;border-radius:3px;background:#e53a44;box-shadow:0 0 12px rgba(229,58,68,.4)"></div></div>
+<div style="border-radius:12px;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.07);padding:11px 13px;display:flex;flex-direction:column;gap:4px;font:400 9.5px 'JetBrains Mono',monospace">
+<span style="color:rgba(240,239,241,.35)">(12/14) upgrading systemd… done</span>
+<span style="color:rgba(240,239,241,.35)">(13/14) upgrading mesa… done</span>
+<span style="color:rgba(240,239,241,.35)">(14/14) upgrading linux… done</span>
+<span style="color:rgba(240,239,241,.75)">[aur] quickshell-git: building <span style="color:#e5717a">▮▮▮▮▮▮▮▮</span> cmake 68%</span>
+</div>
+<div style="display:flex;gap:8px;align-items:center;border-top:1px solid rgba(255,255,255,.07);padding-top:13px">
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35);flex:1">safe to close — continues in background, bar icon shows progress</span>
+<span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:8px 14px;border-radius:10px;background:rgba(255,255,255,.06)">hide</span>
+<span style="font:500 10.5px 'JetBrains Mono',monospace;color:#e5717a;padding:8px 14px;border-radius:10px;border:1px solid rgba(229,58,68,.35)">abort</span>
+</div>
+</div>
+</div></div></div>
+
+<div class="dv-opt" id="7c"><div class="dv-olabel"><a class="dv-oid" href="#7c">7c</a>Step 3 — finish: pacnew &amp; reboot</div>
+<div class="dv-card"><div style="position:relative;width:640px;background:#0a0a0c;background-image:radial-gradient(500px 300px at 70% -20%,rgba(229,58,68,.16),transparent 70%);padding:22px;display:flex;justify-content:center">
+<div style="width:560px;border-radius:20px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:14px">
+<div style="flex:1"><div style="font:700 14px 'Space Grotesk',sans-serif;color:#f0eff1">Done — 23 updated</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);margin-top:2px">6m 41s · log saved to ~/.cache/c7up/2026-08-25.log</div></div>
+<div style="display:flex;align-items:center;gap:6px">
+<span style="width:20px;height:20px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="m3.5 8.5 3 3 6-6.5" stroke="rgba(240,239,241,.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span style="width:14px;height:1px;background:rgba(255,255,255,.15)"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="m3.5 8.5 3 3 6-6.5" stroke="rgba(240,239,241,.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span style="width:14px;height:1px;background:rgba(255,255,255,.15)"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:#e53a44;color:#fff;font:700 9.5px 'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center">3</span>
+</div>
+</div>
+<div style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">config files to review · 2 pacnew</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M5 2h5l3 3v9H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" stroke="#e5717a" stroke-width="1.3" stroke-linejoin="round"/></svg>
+<div style="flex:1"><div style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">/etc/pacman.conf<span style="color:#e5717a">.pacnew</span></div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">3 changed lines · you edited this file</div></div>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:4px 9px;border-radius:7px;background:rgba(255,255,255,.06)">keep mine</span>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:4px 9px;border-radius:7px;background:rgba(255,255,255,.06)">take new</span>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:#fff;padding:4px 9px;border-radius:7px;background:#e53a44">merge…</span>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M5 2h5l3 3v9H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" stroke="#e5717a" stroke-width="1.3" stroke-linejoin="round"/></svg>
+<div style="flex:1"><div style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">/etc/mkinitcpio.conf<span style="color:#e5717a">.pacnew</span></div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">1 changed line · default untouched → safe to take new</div></div>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:4px 9px;border-radius:7px;background:rgba(255,255,255,.06)">keep mine</span>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:#fff;padding:4px 9px;border-radius:7px;background:#e53a44">take new</span>
+</div>
+</div>
+<div style="border-radius:12px;background:rgba(229,58,68,.11);border:1px solid rgba(229,58,68,.28);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M13 8a5 5 0 1 1-2-4" stroke="#e5717a" stroke-width="1.4" stroke-linecap="round"/><path d="M11 1.5 11.3 4 8.8 4.3" stroke="#e5717a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<span style="flex:1;font:500 10.5px 'JetBrains Mono',monospace;color:#f0eff1">kernel updated — reboot when convenient</span>
+<span style="font:600 10px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:5px 12px;border-radius:8px">reboot now</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:5px 10px">later</span>
+</div>
+<div style="display:flex;gap:8px;align-items:center;border-top:1px solid rgba(255,255,255,.07);padding-top:13px">
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35);flex:1">unresolved pacnews stay listed in settings → system</span>
+<span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:8px 14px;border-radius:10px;background:rgba(255,255,255,.06)">view log</span>
+<span style="font:600 10.5px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:8px 16px;border-radius:10px">close</span>
+</div>
+</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "the merge… diff view for a pacnew" · "6a dropdown mid-update state" · "PKGBUILD diff viewer"</p>
+</section>
+<section class="dv-turn" id="t6">
+<div class="dv-thd"><a class="dv-tid" href="#t6">6</a><span class="dv-tname">Arch updates — bar module + dropdown</span></div>
+<p class="dv-note"><a class="dv-oid" href="#6a">6a</a> the update indicator lives in the tray pill of <a class="dv-oid" href="#1a">1a</a>: count badge, normal state dim, <span style="color:#e5717a">crimson when a kernel update is pending</span>. Dropdown groups by source (pacman · aur · flatpak) with expandable package lists.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="6a"><div class="dv-olabel"><a class="dv-oid" href="#6a">6a</a>Update dropdown — grouped by source</div>
+<div class="dv-card"><div style="position:relative;width:470px;height:560px;background:#0a0a0c;background-image:radial-gradient(400px 280px at 80% -10%,rgba(229,58,68,.2),transparent 70%);overflow:hidden;display:flex;flex-direction:column;align-items:flex-end;padding:10px 12px;gap:10px">
+<div style="display:flex;align-items:center;gap:8px">
+<div style="height:38px;display:flex;align-items:center;gap:10px;padding:0 12px;border-radius:19px;background:rgba(15,15,19,.68);backdrop-filter:blur(24px) saturate(1.3);border:1px solid rgba(255,255,255,.09)">
+<span style="width:14px;height:14px;border-radius:4px;background:rgba(255,255,255,.14)"></span>
+<div style="display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:9px;background:rgba(229,58,68,.16);border:1px solid rgba(229,58,68,.35)">
+<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 12V4M4.5 7.5 8 4l3.5 3.5" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 13.5h9" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round"/></svg>
+<span style="font:700 10.5px 'JetBrains Mono',monospace;color:#e5717a">23</span>
+</div>
+<span style="width:14px;height:14px;border-radius:7px;background:rgba(255,255,255,.14)"></span>
+</div>
+</div>
+<div style="width:330px;border-radius:18px;background:rgba(15,15,19,.74);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);padding:14px;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:center;gap:10px">
+<span style="font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1;flex:1">updates <span style="color:#e5717a">23</span></span>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">checked 4m ago</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)">⟳</span>
+</div>
+<div style="border-radius:12px;background:rgba(229,58,68,.13);border:1px solid rgba(229,58,68,.3);padding:10px 12px;display:flex;align-items:center;gap:10px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1.5 14 5v6l-6 3.5L2 11V5l6-3.5Z" stroke="#e5717a" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 8v3.5M8 5.5v.5" stroke="#e5717a" stroke-width="1.4" stroke-linecap="round"/></svg>
+<div style="flex:1"><div style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">kernel update</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55)">linux 6.15.4 → 6.16.1 · reboot required after</div></div>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);overflow:hidden">
+<div style="display:flex;align-items:center;gap:10px;padding:10px 12px">
+<span style="width:24px;height:24px;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">pac</span>
+<span style="flex:1;font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">pacman</span>
+<span style="font:600 10.5px 'JetBrains Mono',monospace;color:#e5717a">14</span>
+<span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">▾</span>
+</div>
+<div style="border-top:1px solid rgba(255,255,255,.06);padding:8px 12px 10px;display:flex;flex-direction:column;gap:6px">
+<div style="display:flex;justify-content:space-between;font:400 9.5px 'JetBrains Mono',monospace"><span style="color:#e5717a">linux</span><span style="color:rgba(240,239,241,.4)">6.15.4 → 6.16.1</span></div>
+<div style="display:flex;justify-content:space-between;font:400 9.5px 'JetBrains Mono',monospace"><span style="color:rgba(240,239,241,.7)">mesa</span><span style="color:rgba(240,239,241,.4)">25.1.2 → 25.1.4</span></div>
+<div style="display:flex;justify-content:space-between;font:400 9.5px 'JetBrains Mono',monospace"><span style="color:rgba(240,239,241,.7)">pipewire</span><span style="color:rgba(240,239,241,.4)">1.4.1 → 1.4.2</span></div>
+<div style="display:flex;justify-content:space-between;font:400 9.5px 'JetBrains Mono',monospace"><span style="color:rgba(240,239,241,.7)">systemd</span><span style="color:rgba(240,239,241,.4)">257.5 → 257.6</span></div>
+<span style="font:400 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3)">+ 10 more</span>
+</div>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:10px 12px;display:flex;align-items:center;gap:10px">
+<span style="width:24px;height:24px;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">aur</span>
+<span style="flex:1;font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">aur</span>
+<span style="font:600 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55)">6</span>
+<span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">▸</span>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:10px 12px;display:flex;align-items:center;gap:10px">
+<span style="width:24px;height:24px;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">fp</span>
+<span style="flex:1;font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">flatpak</span>
+<span style="font:600 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55)">3</span>
+<span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">▸</span>
+</div>
+<div style="display:flex;gap:8px;border-top:1px solid rgba(255,255,255,.07);padding-top:11px">
+<span style="flex:1;text-align:center;font:600 10.5px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:8px 0;border-radius:10px;box-shadow:0 0 14px rgba(229,58,68,.35)">update all</span>
+<span style="text-align:center;font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7);background:rgba(255,255,255,.06);padding:8px 14px;border-radius:10px">terminal</span>
+</div>
+</div>
+<div style="position:absolute;bottom:12px;left:16px;font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.28)">badge dim grey when no kernel update · hidden at 0 · "update all" runs in a terminal window</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "normal (non-kernel) badge state side by side" · "post-update reboot prompt toast"</p>
+</section>
+<section class="dv-turn" id="t5">
+<div class="dv-thd"><a class="dv-tid" href="#t5">5</a><span class="dv-tname">Capture — screenshots &amp; screen recording</span></div>
+<p class="dv-note">One overlay for both, toggled in the toolbar. <a class="dv-oid" href="#5a">5a</a> screenshot mode with rectangle selection (region · window · screen · all screens). <a class="dv-oid" href="#5b">5b</a> record mode + the live recording state in the <a class="dv-oid" href="#1a">1a</a> bar.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="5a"><div class="dv-olabel"><a class="dv-oid" href="#5a">5a</a>Screenshot — rectangle selection</div>
+<div class="dv-card"><div style="position:relative;width:960px;height:430px;background:#0a0a0c;background-image:radial-gradient(700px 400px at 70% -20%,rgba(229,58,68,.18),transparent 70%);overflow:hidden">
+<div style="position:absolute;inset:0;background:rgba(4,4,6,.6)"></div>
+<div style="position:absolute;left:170px;top:90px;width:420px;height:230px;background:rgba(229,58,68,.04);border:1.5px solid #e53a44;border-radius:4px;box-shadow:0 0 0 9999px rgba(4,4,6,.35),0 0 24px rgba(229,58,68,.25)">
+<span style="position:absolute;left:-4px;top:-4px;width:7px;height:7px;border-radius:2px;background:#fff;border:1.5px solid #e53a44"></span>
+<span style="position:absolute;right:-4px;top:-4px;width:7px;height:7px;border-radius:2px;background:#fff;border:1.5px solid #e53a44"></span>
+<span style="position:absolute;left:-4px;bottom:-4px;width:7px;height:7px;border-radius:2px;background:#fff;border:1.5px solid #e53a44"></span>
+<span style="position:absolute;right:-4px;bottom:-4px;width:7px;height:7px;border-radius:2px;background:#fff;border:1.5px solid #e53a44"></span>
+<span style="position:absolute;right:0;top:-26px;font:600 10px 'JetBrains Mono',monospace;color:#f0eff1;background:rgba(15,15,19,.85);border:1px solid rgba(255,255,255,.12);padding:3px 8px;border-radius:7px">1680 × 920</span>
+</div>
+<div style="position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:6px;border-radius:17px;background:rgba(15,15,19,.82);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 60px rgba(0,0,0,.65)">
+<div style="display:flex;gap:2px;padding:3px;border-radius:11px;background:rgba(255,255,255,.06);margin-right:6px">
+<span style="font:600 10px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:5px 11px;border-radius:8px">shot</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55);padding:5px 11px;border-radius:8px">rec</span>
+</div>
+<span style="display:flex;align-items:center;gap:7px;font:600 10px 'JetBrains Mono',monospace;color:#f0eff1;background:rgba(229,58,68,.16);border:1px solid rgba(229,58,68,.3);padding:6px 12px;border-radius:10px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 5V3.5A1.5 1.5 0 0 1 3.5 2H5M11 2h1.5A1.5 1.5 0 0 1 14 3.5V5M14 11v1.5a1.5 1.5 0 0 1-1.5 1.5H11M5 14H3.5A1.5 1.5 0 0 1 2 12.5V11" stroke="#e5717a" stroke-width="1.4" stroke-linecap="round"/></svg>region</span>
+<span style="display:flex;align-items:center;gap:7px;font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:6px 12px;border-radius:10px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3" width="11" height="10" rx="2" stroke="rgba(240,239,241,.6)" stroke-width="1.3"/><path d="M2.5 6h11" stroke="rgba(240,239,241,.6)" stroke-width="1.3"/></svg>window</span>
+<span style="display:flex;align-items:center;gap:7px;font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:6px 12px;border-radius:10px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="8.5" rx="1.5" stroke="rgba(240,239,241,.6)" stroke-width="1.3"/><path d="M6 14h4" stroke="rgba(240,239,241,.6)" stroke-width="1.3" stroke-linecap="round"/></svg>screen</span>
+<span style="display:flex;align-items:center;gap:7px;font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:6px 12px;border-radius:10px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="4" width="7" height="5" rx="1" stroke="rgba(240,239,241,.6)" stroke-width="1.2"/><rect x="7.5" y="7" width="7" height="5" rx="1" stroke="rgba(240,239,241,.6)" stroke-width="1.2"/></svg>all screens</span>
+<span style="width:1px;height:18px;background:rgba(255,255,255,.1);margin:0 3px"></span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:6px 10px">⏱ 3s</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:6px 10px">copy</span>
+<span style="font:600 10px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:6px 14px;border-radius:10px;box-shadow:0 0 16px rgba(229,58,68,.4)">capture ↵</span>
+</div>
+<div style="position:absolute;top:14px;left:20px;font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">drag to select · space moves selection · esc cancels</div>
+</div></div></div>
+
+<div class="dv-opt" id="5b"><div class="dv-olabel"><a class="dv-oid" href="#5b">5b</a>Record mode + live state in topbar</div>
+<div class="dv-card"><div style="position:relative;width:960px;height:430px;background:#0a0a0c;background-image:radial-gradient(700px 400px at 30% -20%,rgba(229,58,68,.18),transparent 70%);overflow:hidden">
+<div style="position:absolute;top:10px;left:12px;right:12px;height:38px;display:flex;align-items:center;padding:0 8px;border-radius:19px;background:rgba(15,15,19,.68);backdrop-filter:blur(24px) saturate(1.3);border:1px solid rgba(255,255,255,.09)">
+<div style="display:flex;align-items:center;gap:12px;flex:1">
+<div style="display:flex;align-items:center;gap:5px">
+<div style="width:20px;height:20px;border-radius:7px;background:#e53a44;box-shadow:0 0 10px rgba(229,58,68,.5);position:relative"><span style="position:absolute;left:4px;top:4px;width:3.5px;height:3.5px;border-radius:2px;background:#fff"></span><span style="position:absolute;left:8.25px;top:8.25px;width:3.5px;height:3.5px;border-radius:2px;background:#fff"></span><span style="position:absolute;left:12.5px;top:12.5px;width:3.5px;height:3.5px;border-radius:2px;background:#fff"></span></div>
+<div style="width:20px;height:20px;border-radius:7px;background:rgba(255,255,255,.07);position:relative"><span style="position:absolute;left:8.25px;top:8.25px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.55)"></span></div>
+<div style="width:20px;height:20px;border-radius:7px;background:rgba(255,255,255,.07);position:relative"><span style="position:absolute;left:4px;top:4px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.55)"></span><span style="position:absolute;left:12.5px;top:12.5px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.55)"></span></div>
+<div style="width:20px;height:20px;border-radius:7px;background:rgba(255,255,255,.04);position:relative"><span style="position:absolute;left:4px;top:4px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.22)"></span><span style="position:absolute;left:12.5px;top:4px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.22)"></span><span style="position:absolute;left:4px;top:12.5px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.22)"></span><span style="position:absolute;left:12.5px;top:12.5px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.22)"></span></div>
+</div>
+<div style="display:flex;align-items:center;gap:2px">
+<span style="font:700 11px 'JetBrains Mono',monospace;color:#f0eff1;padding:3px 8px;border-radius:8px">Firefox</span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:3px 8px;border-radius:8px">File</span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:3px 8px;border-radius:8px">Edit</span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:3px 8px;border-radius:8px">View</span>
+</div>
+</div>
+<div style="display:flex;align-items:center;gap:9px;padding:5px 14px;border-radius:13px;background:rgba(229,58,68,.85);box-shadow:0 0 16px rgba(229,58,68,.4)">
+<span style="width:8px;height:8px;border-radius:4px;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.8)"></span>
+<span style="font:700 11.5px 'JetBrains Mono',monospace;color:#fff">02:14</span>
+<span style="width:1px;height:12px;background:rgba(255,255,255,.3)"></span>
+<span style="font:600 11px 'JetBrains Mono',monospace;color:#fff">■</span>
+<span style="font:600 11px 'JetBrains Mono',monospace;color:rgba(255,255,255,.7)">⏸</span>
+</div>
+<div style="display:flex;align-items:center;gap:4px;flex:1;justify-content:flex-end">
+<div style="display:flex;align-items:center;gap:9px;padding:5px 10px;border-radius:13px;background:rgba(255,255,255,.05)">
+<span style="width:14px;height:14px;border-radius:4px;background:rgba(255,255,255,.14)"></span>
+<span style="width:14px;height:14px;border-radius:7px;background:rgba(255,255,255,.14)"></span>
+<span style="width:14px;height:14px;border-radius:4px;background:rgba(229,58,68,.35)"></span>
+</div>
+<div style="display:flex;align-items:center;gap:10px;padding:5px 12px;border-radius:13px;background:rgba(255,255,255,.05)">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6.5a9 9 0 0 1 12 0M4.4 9.2a5.4 5.4 0 0 1 7.2 0" stroke="#f0eff1" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1.3" fill="#f0eff1"/></svg>
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M5 4.5 11 11 8 13.5v-11L11 5 5 11.5" stroke="#f0eff1" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 6v4h2.5L9 13V3L5.5 6H3Z" fill="#f0eff1"/><path d="M11 5.5a3.6 3.6 0 0 1 0 5" stroke="#f0eff1" stroke-width="1.3" stroke-linecap="round"/></svg>
+<div style="display:flex;align-items:center;gap:5px"><svg width="18" height="11" viewBox="0 0 20 12" fill="none"><rect x="1" y="1.5" width="15" height="9" rx="3" stroke="rgba(240,239,241,.6)" stroke-width="1.2"/><rect x="3" y="3.5" width="8.5" height="5" rx="1.5" fill="#e53a44"/><rect x="17.5" y="4.5" width="2" height="3" rx="1" fill="rgba(240,239,241,.6)"/></svg><span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6)">64%</span></div>
+</div>
+<div style="width:28px;height:28px;border-radius:14px;background:rgba(229,58,68,.14);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v5" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round"/><path d="M4.5 4.5a5 5 0 1 0 7 0" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+</div>
+</div>
+<div style="position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:6px;border-radius:17px;background:rgba(15,15,19,.82);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 60px rgba(0,0,0,.65)">
+<div style="display:flex;gap:2px;padding:3px;border-radius:11px;background:rgba(255,255,255,.06);margin-right:6px">
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55);padding:5px 11px;border-radius:8px">shot</span>
+<span style="font:600 10px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:5px 11px;border-radius:8px">rec</span>
+</div>
+<span style="display:flex;align-items:center;gap:7px;font:600 10px 'JetBrains Mono',monospace;color:#f0eff1;background:rgba(229,58,68,.16);border:1px solid rgba(229,58,68,.3);padding:6px 12px;border-radius:10px">region</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:6px 12px">window</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:6px 12px">screen</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:6px 12px">all screens</span>
+<span style="width:1px;height:18px;background:rgba(255,255,255,.1);margin:0 3px"></span>
+<span style="display:flex;align-items:center;gap:6px;font:500 10px 'JetBrains Mono',monospace;color:#f0eff1;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.07)"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="6" y="2" width="4" height="8" rx="2" stroke="#e5717a" stroke-width="1.3"/><path d="M4 8a4 4 0 0 0 8 0M8 12v2" stroke="#e5717a" stroke-width="1.3" stroke-linecap="round"/></svg>mic</span>
+<span style="display:flex;align-items:center;gap:6px;font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5);padding:6px 10px">sys audio</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:6px 10px">60fps</span>
+<span style="font:600 10px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:6px 14px;border-radius:10px;box-shadow:0 0 16px rgba(229,58,68,.4)">● start</span>
+</div>
+<div style="position:absolute;top:60px;right:22px;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:13px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px);border:1px solid rgba(255,255,255,.1);box-shadow:0 12px 40px rgba(0,0,0,.55)">
+<span style="width:52px;height:32px;border-radius:7px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.08),rgba(255,255,255,.08) 4px,rgba(255,255,255,.03) 4px,rgba(255,255,255,.03) 8px);display:flex;align-items:center;justify-content:center;font:400 7.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">thumb</span>
+<div><div style="font:500 10.5px 'JetBrains Mono',monospace;color:#f0eff1">rec_2026-08-25.mp4</div><div style="font:400 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);margin-top:2px"><span style="color:#e5717a">open</span> · folder · delete</div></div>
+</div>
+<div style="position:absolute;bottom:78px;left:22px;font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">while recording the bar shows the rec pill (stop/pause) · finished capture pops a toast with preview</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "post-capture edit view (crop, annotate)" · "make <a class="dv-oid" href="#5a">5a</a> window-mode showing window highlight" · "lock screen next"</p>
+</section>
+<section class="dv-turn" id="t4">
+<div class="dv-thd"><a class="dv-tid" href="#t4">4</a><span class="dv-tname">Keyboard-shortcut feedback (OSDs)</span></div>
+<p class="dv-note"><a class="dv-oid" href="#4a">4a</a> volume / brightness pill — bottom-center, appears on keypress, fades after 1.2s, repeated presses just update it. <a class="dv-oid" href="#4b">4b</a> toggle feedback reuses the same pill.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="4a"><div class="dv-olabel"><a class="dv-oid" href="#4a">4a</a>Volume + brightness OSD</div>
+<div class="dv-card"><div style="position:relative;width:560px;height:300px;background:#0a0a0c;background-image:radial-gradient(500px 300px at 50% -20%,rgba(229,58,68,.18),transparent 70%);overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px">
+<div style="display:flex;align-items:center;gap:14px;width:320px;padding:13px 18px;border-radius:18px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 60px rgba(0,0,0,.6)">
+<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 6v4h2.5L9 13V3L5.5 6H3Z" fill="#f0eff1"/><path d="M11 5.5a3.6 3.6 0 0 1 0 5" stroke="#f0eff1" stroke-width="1.3" stroke-linecap="round"/></svg>
+<div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.1);position:relative"><div style="position:absolute;inset:0 32% 0 0;border-radius:3px;background:#e53a44;box-shadow:0 0 12px rgba(229,58,68,.4)"></div></div>
+<span style="font:600 12px 'JetBrains Mono',monospace;color:#f0eff1;width:28px;text-align:right">68</span>
+</div>
+<div style="display:flex;align-items:center;gap:14px;width:320px;padding:13px 18px;border-radius:18px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 60px rgba(0,0,0,.6)">
+<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" stroke="#f0eff1" stroke-width="1.3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1" stroke="#f0eff1" stroke-width="1.2" stroke-linecap="round"/></svg>
+<div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.1);position:relative"><div style="position:absolute;inset:0 55% 0 0;border-radius:3px;background:#e53a44;box-shadow:0 0 12px rgba(229,58,68,.4)"></div></div>
+<span style="font:600 12px 'JetBrains Mono',monospace;color:#f0eff1;width:28px;text-align:right">45</span>
+</div>
+<div style="display:flex;align-items:center;gap:14px;width:320px;padding:13px 18px;border-radius:18px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(229,58,68,.35)">
+<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 6v4h2.5L9 13V3L5.5 6H3Z" fill="#e5717a"/><path d="m11 6 3.5 4M14.5 6 11 10" stroke="#e5717a" stroke-width="1.4" stroke-linecap="round"/></svg>
+<div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.1)"></div>
+<span style="font:600 11px 'JetBrains Mono',monospace;color:#e5717a">mute</span>
+</div>
+<div style="position:absolute;bottom:12px;font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.28)">states: volume · brightness · muted (crimson border)</div>
+</div></div></div>
+
+<div class="dv-opt" id="4b"><div class="dv-olabel"><a class="dv-oid" href="#4b">4b</a>Toggle feedback — same pill as <a class="dv-oid" href="#4a">4a</a></div>
+<div class="dv-card"><div style="position:relative;width:560px;height:300px;background:#0a0a0c;background-image:radial-gradient(500px 300px at 50% -20%,rgba(229,58,68,.18),transparent 70%);overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px">
+<div style="display:flex;align-items:center;gap:14px;width:320px;padding:13px 18px;border-radius:18px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(229,58,68,.35);box-shadow:0 20px 60px rgba(0,0,0,.6)">
+<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><rect x="6" y="2" width="4" height="8" rx="2" stroke="#e5717a" stroke-width="1.3"/><path d="M4 8a4 4 0 0 0 8 0M8 12v2M3 3l10 10" stroke="#e5717a" stroke-width="1.3" stroke-linecap="round"/></svg>
+<span style="flex:1;font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1">mic muted</span>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">super+m</span>
+</div>
+<div style="display:flex;align-items:center;gap:14px;width:320px;padding:13px 18px;border-radius:18px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 60px rgba(0,0,0,.6)">
+<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="8" rx="2" stroke="#f0eff1" stroke-width="1.3"/><path d="M5 12v1.5M11 12v1.5" stroke="#f0eff1" stroke-width="1.3" stroke-linecap="round"/></svg>
+<span style="flex:1;font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1">layout <span style="color:rgba(240,239,241,.4)">us →</span> de</span>
+</div>
+<div style="display:flex;align-items:center;gap:14px;width:320px;padding:13px 18px;border-radius:18px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 60px rgba(0,0,0,.6)">
+<span style="width:17px;height:17px;border-radius:6px;background:#e53a44;position:relative"><span style="position:absolute;left:3px;top:3px;width:3px;height:3px;border-radius:2px;background:#fff"></span><span style="position:absolute;left:7px;top:7px;width:3px;height:3px;border-radius:2px;background:#fff"></span><span style="position:absolute;left:11px;top:11px;width:3px;height:3px;border-radius:2px;background:#fff"></span></span>
+<span style="flex:1;font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1">workspace 3</span>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">super+3</span>
+</div>
+<div style="position:absolute;bottom:12px;font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.28)">same bottom-center spot as 4a · one pill at a time · icon crimson when state is "off/muted"</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "caps-lock style pill instead of toasts" · "vertical volume OSD on the side" · "lock screen next"</p>
+</section>
+<section class="dv-turn" id="t3">
+<div class="dv-thd"><a class="dv-tid" href="#t3">3</a><span class="dv-tname">Power menu</span></div>
+<p class="dv-note"><a class="dv-oid" href="#3a">3a</a> dropdown from the power button in the <a class="dv-oid" href="#1a">1a</a> topbar, same anchoring as the other popovers.</p>
+<div class="dv-opts">
+<div class="dv-opt" id="3a"><div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>Power dropdown — lock · logout · suspend · reboot · shutdown</div>
+<div class="dv-card"><div style="position:relative;width:400px;height:330px;background:#0a0a0c;background-image:radial-gradient(400px 260px at 85% -10%,rgba(229,58,68,.2),transparent 70%);overflow:hidden;display:flex;justify-content:flex-end;padding:14px">
+<div style="width:232px;height:fit-content;border-radius:16px;background:rgba(15,15,19,.74);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);padding:8px;display:flex;flex-direction:column;gap:2px">
+<div style="padding:6px 10px 8px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:4px">
+<div style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">red@c7-desk</div>
+<div style="font:400 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);margin-top:2px">up 6h 12m</div>
+</div>
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="6" width="10" height="8" rx="2" stroke="rgba(240,239,241,.75)" stroke-width="1.3"/><path d="M5.5 6V4.5a2.5 2.5 0 0 1 5 0V6" stroke="rgba(240,239,241,.75)" stroke-width="1.3"/></svg>
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">lock</span>
+<span style="font:400 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3)">super+l</span>
+</div>
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2M10 5l3 3-3 3M13 8H6" stroke="rgba(240,239,241,.75)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">logout</span>
+</div>
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M13 9.5A5.5 5.5 0 0 1 6.5 3 5.5 5.5 0 1 0 13 9.5Z" stroke="rgba(240,239,241,.75)" stroke-width="1.3" stroke-linejoin="round"/></svg>
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">suspend</span>
+</div>
+<div style="height:1px;background:rgba(255,255,255,.07);margin:4px 8px"></div>
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M13 8a5 5 0 1 1-2-4" stroke="rgba(240,239,241,.75)" stroke-width="1.4" stroke-linecap="round"/><path d="M11 1.5 11.3 4 8.8 4.3" stroke="rgba(240,239,241,.75)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">reboot</span>
+</div>
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px;background:rgba(229,58,68,.14);border:1px solid rgba(229,58,68,.3)">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v5" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round"/><path d="M4.5 4.5a5 5 0 1 0 7 0" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round"/></svg>
+<span style="flex:1;font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">shutdown</span>
+<span style="font:400 9px 'JetBrains Mono',monospace;color:#e5717a">hold ↵</span>
+</div>
+</div>
+</div></div></div>
+</div>
+<p class="dv-next">Try next: "add a confirm step with countdown" · "lock screen in this style"</p>
+</section>
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Settings app — same shell language as <a class="dv-oid" href="#1a">1a</a></span></div>
+<p class="dv-note">One window, two pages shown: <a class="dv-oid" href="#2a">2a</a> network/vpn · <a class="dv-oid" href="#2b">2b</a> appearance. Sidebar mirrors the popovers — each popover's "settings →" deep-links here.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Settings — VPN page</div>
+<div class="dv-card"><div style="position:relative;width:860px;background:#0a0a0c;background-image:radial-gradient(600px 340px at 70% -20%,rgba(229,58,68,.16),transparent 70%);padding:24px;display:flex;justify-content:center">
+<div style="width:790px;border-radius:20px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);overflow:hidden;display:flex">
+<div style="width:212px;border-right:1px solid rgba(255,255,255,.07);padding:12px 10px;display:flex;flex-direction:column;gap:2px">
+<div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:9px;background:rgba(255,255,255,.05);margin-bottom:8px"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="rgba(240,239,241,.4)" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="rgba(240,239,241,.4)" stroke-width="1.5" stroke-linecap="round"/></svg><span style="font:400 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">search settings</span></div>
+<span style="font:500 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3);padding:4px 9px 2px">connectivity</span>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">wi-fi</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px;background:#e53a44"><span style="font:600 11px 'JetBrains Mono',monospace;color:#fff">network &amp; vpn</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">bluetooth</span></div>
+<span style="font:500 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3);padding:10px 9px 2px">system</span>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">appearance</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">displays</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">audio</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">power</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">notifications</span></div>
+<span style="font:500 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3);padding:10px 9px 2px">shell</span>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">topbar &amp; widgets</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">keybinds</span></div>
+</div>
+<div style="flex:1;padding:18px 22px;display:flex;flex-direction:column;gap:14px">
+<div><div style="font:700 15px 'Space Grotesk',sans-serif;color:#f0eff1">Network &amp; VPN</div><div style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);margin-top:2px">wired · vpn tunnels · dns</div></div>
+<div style="border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:12px 14px;display:flex;align-items:center;gap:12px">
+<span style="width:8px;height:8px;border-radius:4px;background:#4ade80"></span>
+<div style="flex:1"><div style="font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1">eth0 — wired</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)">connected · 10.7.0.21 · 1.0 gbps</div></div>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)">details →</span>
+</div>
+<div style="display:flex;align-items:center;justify-content:space-between">
+<span style="font:600 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55)">vpn tunnels</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:#e5717a;padding:3px 10px;border:1px solid rgba(229,58,68,.35);border-radius:8px">+ add tunnel</span>
+</div>
+<div style="border-radius:14px;background:rgba(229,58,68,.1);border:1px solid rgba(229,58,68,.25);padding:12px 14px;display:flex;align-items:center;gap:12px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="6" width="10" height="8" rx="2" stroke="#e5717a" stroke-width="1.3"/><path d="M5.5 6V4.5a2.5 2.5 0 0 1 5 0V6" stroke="#e5717a" stroke-width="1.3"/></svg>
+<div style="flex:1"><div style="font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1">c7-hq · wireguard</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">active 2h 14m · 10.100.0.4 · endpoint hq.crimson7.io:51820</div></div>
+<span style="width:30px;height:17px;border-radius:9px;background:#e53a44;position:relative"><span style="position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:7px;background:#fff"></span></span>
+</div>
+<div style="border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:12px 14px;display:flex;align-items:center;gap:12px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="6" width="10" height="8" rx="2" stroke="rgba(240,239,241,.5)" stroke-width="1.3"/><path d="M5.5 6V4.5a2.5 2.5 0 0 1 5 0V6" stroke="rgba(240,239,241,.5)" stroke-width="1.3"/></svg>
+<div style="flex:1"><div style="font:600 11.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">lab-jump · openvpn</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">off · last used yesterday</div></div>
+<span style="width:30px;height:17px;border-radius:9px;background:rgba(255,255,255,.12);position:relative"><span style="position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:7px;background:rgba(255,255,255,.5)"></span></span>
+</div>
+<div style="border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;justify-content:space-between;align-items:center"><span style="font:600 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">dns</span><span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)">custom</span></div>
+<div style="display:flex;gap:8px">
+<span style="font:500 10px 'JetBrains Mono',monospace;color:#f0eff1;background:rgba(255,255,255,.07);padding:4px 10px;border-radius:8px">1.1.1.1</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:#f0eff1;background:rgba(255,255,255,.07);padding:4px 10px;border-radius:8px">9.9.9.9</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);padding:4px 8px">+ add</span>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:center"><span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">route all traffic through active vpn</span><span style="width:30px;height:17px;border-radius:9px;background:#e53a44;position:relative"><span style="position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:7px;background:#fff"></span></span></div>
+</div>
+</div>
+</div>
+</div></div></div>
+
+<div class="dv-opt" id="2b"><div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>Settings — appearance page</div>
+<div class="dv-card"><div style="position:relative;width:860px;background:#0a0a0c;background-image:radial-gradient(600px 340px at 30% -20%,rgba(229,58,68,.16),transparent 70%);padding:24px;display:flex;justify-content:center">
+<div style="width:790px;border-radius:20px;background:rgba(15,15,19,.78);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);overflow:hidden;display:flex">
+<div style="width:212px;border-right:1px solid rgba(255,255,255,.07);padding:12px 10px;display:flex;flex-direction:column;gap:2px">
+<div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:9px;background:rgba(255,255,255,.05);margin-bottom:8px"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="rgba(240,239,241,.4)" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="rgba(240,239,241,.4)" stroke-width="1.5" stroke-linecap="round"/></svg><span style="font:400 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">search settings</span></div>
+<span style="font:500 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3);padding:4px 9px 2px">connectivity</span>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">wi-fi</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">network &amp; vpn</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">bluetooth</span></div>
+<span style="font:500 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3);padding:10px 9px 2px">system</span>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px;background:#e53a44"><span style="font:600 11px 'JetBrains Mono',monospace;color:#fff">appearance</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">displays</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">audio</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">power</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">notifications</span></div>
+<span style="font:500 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3);padding:10px 9px 2px">shell</span>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">topbar &amp; widgets</span></div>
+<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px"><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">keybinds</span></div>
+</div>
+<div style="flex:1;padding:18px 22px;display:flex;flex-direction:column;gap:14px">
+<div><div style="font:700 15px 'Space Grotesk',sans-serif;color:#f0eff1">Appearance</div><div style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);margin-top:2px">theme · accent · shell geometry</div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+<div style="border-radius:13px;border:2px solid #e53a44;overflow:hidden"><div style="height:58px;background:#0d0d10;position:relative"><div style="position:absolute;top:6px;left:6px;right:6px;height:7px;border-radius:4px;background:rgba(255,255,255,.12)"></div><div style="position:absolute;top:19px;left:6px;width:40%;height:26px;border-radius:5px;background:rgba(255,255,255,.07)"></div></div><div style="padding:6px 9px;font:600 9.5px 'JetBrains Mono',monospace;color:#f0eff1;background:rgba(229,58,68,.12)">dark · default</div></div>
+<div style="border-radius:13px;border:1px solid rgba(255,255,255,.1);overflow:hidden"><div style="height:58px;background:#050506;position:relative"><div style="position:absolute;top:6px;left:6px;right:6px;height:7px;border-radius:4px;background:rgba(255,255,255,.09)"></div><div style="position:absolute;top:19px;left:6px;width:40%;height:26px;border-radius:5px;background:rgba(255,255,255,.05)"></div></div><div style="padding:6px 9px;font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6)">oled black</div></div>
+<div style="border-radius:13px;border:1px solid rgba(255,255,255,.1);overflow:hidden"><div style="height:58px;background:#e9e6e2;position:relative"><div style="position:absolute;top:6px;left:6px;right:6px;height:7px;border-radius:4px;background:rgba(0,0,0,.12)"></div><div style="position:absolute;top:19px;left:6px;width:40%;height:26px;border-radius:5px;background:rgba(0,0,0,.07)"></div></div><div style="padding:6px 9px;font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6)">light (why)</div></div>
+</div>
+<div style="border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:12px 14px;display:flex;align-items:center;gap:12px">
+<span style="font:600 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85);flex:1">accent</span>
+<span style="width:22px;height:22px;border-radius:11px;background:#e53a44;border:2px solid #fff"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:oklch(0.62 0.19 25)"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:oklch(0.62 0.19 300)"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:oklch(0.62 0.19 230)"></span>
+<span style="width:20px;height:20px;border-radius:10px;background:oklch(0.62 0.19 150)"></span>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);margin-left:4px">from wallpaper</span>
+<span style="width:30px;height:17px;border-radius:9px;background:rgba(255,255,255,.12);position:relative"><span style="position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:7px;background:rgba(255,255,255,.5)"></span></span>
+</div>
+<div style="border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:12px 14px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;align-items:center;gap:12px"><span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7);width:90px">rounding</span><div style="flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.1);position:relative"><div style="position:absolute;inset:0 40% 0 0;border-radius:3px;background:#e53a44"></div><div style="position:absolute;top:-4px;left:60%;width:13px;height:13px;border-radius:7px;background:#fff"></div></div><span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45);width:30px;text-align:right">19px</span></div>
+<div style="display:flex;align-items:center;gap:12px"><span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7);width:90px">gaps</span><div style="flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.1);position:relative"><div style="position:absolute;inset:0 60% 0 0;border-radius:3px;background:#e53a44"></div><div style="position:absolute;top:-4px;left:40%;width:13px;height:13px;border-radius:7px;background:#fff"></div></div><span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45);width:30px;text-align:right">12px</span></div>
+<div style="display:flex;align-items:center;gap:12px"><span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7);width:90px">blur</span><div style="flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.1);position:relative"><div style="position:absolute;inset:0 25% 0 0;border-radius:3px;background:#e53a44"></div><div style="position:absolute;top:-4px;left:75%;width:13px;height:13px;border-radius:7px;background:#fff"></div></div><span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45);width:30px;text-align:right">24</span></div>
+<div style="display:flex;justify-content:space-between;align-items:center"><span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">window opacity on inactive</span><span style="width:30px;height:17px;border-radius:9px;background:#e53a44;position:relative"><span style="position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:7px;background:#fff"></span></span></div>
+</div>
+<div style="border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:12px 14px;display:flex;align-items:center;gap:12px">
+<span style="font:600 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85);flex:1">wallpaper</span>
+<span style="width:64px;height:36px;border-radius:8px;background:radial-gradient(50px 30px at 70% 0%,rgba(229,58,68,.5),#0d0d10);border:1px solid rgba(255,255,255,.12)"></span>
+<span style="width:64px;height:36px;border-radius:8px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.07),rgba(255,255,255,.07) 4px,rgba(255,255,255,.03) 4px,rgba(255,255,255,.03) 8px);border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font:400 8px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">img</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:#e5717a">browse →</span>
+</div>
+</div>
+</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "add a keybinds page" · "add a topbar &amp; widgets page" · "make the settings window resizable-looking with a smaller compact mode"</p>
+</section>
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Quickshell DE — crimson7 direction</span></div>
+<p class="dv-note">Direction from your answers: mono-heavy operator type (JetBrains Mono UI, Space Grotesk only for the odd heading), glassy hyprland blur on near-black, crimson accent #e53a44 from crimson7.io. Workspaces as dice pips. Topbar: <a class="dv-oid" href="#1a">1a</a> floating island with global menu (flush variant 1b scrapped). Command window <a class="dv-oid" href="#1c">1c</a>. Clock click → calendar + notifications <a class="dv-oid" href="#1d">1d</a>. Per-icon popovers: wifi <a class="dv-oid" href="#1e">1e</a> · bluetooth <a class="dv-oid" href="#1f">1f</a> · audio <a class="dv-oid" href="#1g">1g</a>. Battery icon states <a class="dv-oid" href="#1h">1h</a>, network icon states <a class="dv-oid" href="#1i">1i</a>. Popovers are exclusive: clicking a quick-settings icon closes any open one and opens the clicked one immediately. Each quick-settings icon has a hover state — rgba(255,255,255,.09) rounded pill (r8) behind the icon, 120ms fade; active/open icon holds a crimson-tint pill (rgba(229,58,68,.16)). Icons are placeholder strokes.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Topbar — floating island · dice workspaces</div>
+<div class="dv-card"><div style="position:relative;width:960px;height:280px;background:#0a0a0c;background-image:radial-gradient(700px 340px at 78% -20%,rgba(229,58,68,.22),transparent 70%),radial-gradient(520px 300px at 10% 120%,rgba(229,58,68,.1),transparent 70%);overflow:hidden">
+<div style="position:absolute;top:10px;left:12px;right:12px;height:38px;display:flex;align-items:center;padding:0 8px;border-radius:19px;background:rgba(15,15,19,.68);backdrop-filter:blur(24px) saturate(1.3);border:1px solid rgba(255,255,255,.09);box-shadow:0 12px 40px rgba(0,0,0,.5)">
+<div style="display:flex;align-items:center;gap:12px;flex:1">
+<div style="display:flex;align-items:center;gap:5px">
+<div style="width:20px;height:20px;border-radius:7px;background:#e53a44;box-shadow:0 0 10px rgba(229,58,68,.5);position:relative"><span style="position:absolute;left:4px;top:4px;width:3.5px;height:3.5px;border-radius:2px;background:#fff"></span><span style="position:absolute;left:8.25px;top:8.25px;width:3.5px;height:3.5px;border-radius:2px;background:#fff"></span><span style="position:absolute;left:12.5px;top:12.5px;width:3.5px;height:3.5px;border-radius:2px;background:#fff"></span></div>
+<div style="width:20px;height:20px;border-radius:7px;background:rgba(255,255,255,.07);position:relative"><span style="position:absolute;left:8.25px;top:8.25px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.55)"></span></div>
+<div style="width:20px;height:20px;border-radius:7px;background:rgba(255,255,255,.07);position:relative"><span style="position:absolute;left:4px;top:4px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.55)"></span><span style="position:absolute;left:12.5px;top:12.5px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.55)"></span></div>
+<div style="width:20px;height:20px;border-radius:7px;background:rgba(255,255,255,.04);position:relative"><span style="position:absolute;left:4px;top:4px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.22)"></span><span style="position:absolute;left:12.5px;top:4px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.22)"></span><span style="position:absolute;left:4px;top:12.5px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.22)"></span><span style="position:absolute;left:12.5px;top:12.5px;width:3.5px;height:3.5px;border-radius:2px;background:rgba(255,255,255,.22)"></span></div>
+</div>
+<div style="display:flex;align-items:center;gap:2px">
+<span style="font:700 11px 'JetBrains Mono',monospace;color:#f0eff1;padding:3px 8px;border-radius:8px">Firefox</span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#fff;padding:3px 8px;border-radius:8px;background:rgba(255,255,255,.1)">File</span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:3px 8px;border-radius:8px">Edit</span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:3px 8px;border-radius:8px">View</span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:3px 8px;border-radius:8px">History</span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6);padding:3px 8px;border-radius:8px">Help</span>
+</div>
+</div>
+<div style="display:flex;align-items:center;gap:8px;padding:5px 14px;border-radius:13px;background:rgba(255,255,255,.05)">
+<span style="font:600 11.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75)">tue aug 25</span>
+<span style="width:1px;height:12px;background:rgba(255,255,255,.15)"></span>
+<span style="font:700 11.5px 'JetBrains Mono',monospace;color:#e5717a">14:32</span>
+</div>
+<div style="display:flex;align-items:center;gap:4px;flex:1;justify-content:flex-end">
+<div style="display:flex;align-items:center;gap:9px;padding:5px 10px;border-radius:13px;background:rgba(255,255,255,.05)">
+<span style="width:14px;height:14px;border-radius:4px;background:rgba(255,255,255,.14)"></span>
+<span style="width:14px;height:14px;border-radius:7px;background:rgba(255,255,255,.14)"></span>
+<span style="width:14px;height:14px;border-radius:4px;background:rgba(229,58,68,.35)"></span>
+</div>
+<div style="display:flex;align-items:center;gap:2px;padding:5px 6px;border-radius:13px;background:rgba(255,255,255,.05)">
+<span style="display:flex;align-items:center;justify-content:center;width:24px;height:22px;border-radius:8px;background:rgba(229,58,68,.18);transition:background 120ms" style-hover="background:rgba(229,58,68,.3)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="8.5" rx="1.5" stroke="#e5717a" stroke-width="1.3"/><circle cx="8" cy="6.75" r="2" fill="#e5717a"/><path d="M5.5 14h5" stroke="#e5717a" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+<span style="display:flex;align-items:center;justify-content:center;width:24px;height:22px;border-radius:8px;transition:background 120ms" style-hover="background:rgba(255,255,255,.09)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6.5a9 9 0 0 1 12 0M4.4 9.2a5.4 5.4 0 0 1 7.2 0" stroke="#f0eff1" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1.3" fill="#f0eff1"/></svg></span>
+<span style="display:flex;align-items:center;justify-content:center;width:24px;height:22px;border-radius:8px;transition:background 120ms" style-hover="background:rgba(255,255,255,.09)"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M5 4.5 11 11 8 13.5v-11L11 5 5 11.5" stroke="#f0eff1" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg></span>
+<span style="display:flex;align-items:center;justify-content:center;width:24px;height:22px;border-radius:8px;transition:background 120ms" style-hover="background:rgba(255,255,255,.09)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 6v4h2.5L9 13V3L5.5 6H3Z" fill="#f0eff1"/><path d="M11 5.5a3.6 3.6 0 0 1 0 5" stroke="#f0eff1" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+<span style="display:flex;align-items:center;gap:5px;height:22px;padding:0 6px;border-radius:8px;transition:background 120ms" style-hover="background:rgba(255,255,255,.09)"><svg width="18" height="11" viewBox="0 0 20 12" fill="none"><rect x="1" y="1.5" width="15" height="9" rx="3" stroke="rgba(240,239,241,.6)" stroke-width="1.2"/><rect x="3" y="3.5" width="8.5" height="5" rx="1.5" fill="#e53a44"/><rect x="17.5" y="4.5" width="2" height="3" rx="1" fill="rgba(240,239,241,.6)"/></svg><span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6)">64%</span></span>
+</div>
+<div style="width:28px;height:28px;border-radius:14px;background:rgba(229,58,68,.14);display:flex;align-items:center;justify-content:center;transition:background 120ms" style-hover="background:rgba(229,58,68,.28)"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v5" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round"/><path d="M4.5 4.5a5 5 0 1 0 7 0" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+</div>
+</div>
+<div style="position:absolute;top:54px;left:150px;width:180px;border-radius:13px;background:rgba(15,15,19,.78);backdrop-filter:blur(24px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 16px 48px rgba(0,0,0,.6);padding:5px;display:flex;flex-direction:column">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border-radius:8px;background:rgba(229,58,68,.85)"><span style="font:500 10.5px 'JetBrains Mono',monospace;color:#fff">New Tab</span><span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(255,255,255,.7)">⌘T</span></div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border-radius:8px"><span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">New Window</span><span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">⌘N</span></div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border-radius:8px"><span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">Private Window</span><span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">⇧⌘P</span></div>
+<div style="height:1px;background:rgba(255,255,255,.08);margin:4px 6px"></div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border-radius:8px"><span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">Settings</span><span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">⌘,</span></div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border-radius:8px"><span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">Quit</span><span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">⌘Q</span></div>
+</div>
+<div style="position:absolute;bottom:13px;left:20px;font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.28)">gaps_out 12 · rounding 19 · blur 24 · dice pips = workspaces · global menu via dbusmenu/appmenu, falls back to window title · crimson screen icon = screenshare active (hidden otherwise; click reveals which app + stop)</div>
+</div></div></div>
+
+<div class="dv-opt" id="1b" style="display:none"><div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Topbar — full-width flush, hairline bottom</div>
+<div class="dv-card"><div style="position:relative;width:960px;height:180px;background:#0a0a0c;background-image:radial-gradient(700px 340px at 25% -20%,rgba(229,58,68,.2),transparent 70%),radial-gradient(520px 300px at 90% 120%,rgba(229,58,68,.1),transparent 70%);overflow:hidden">
+<div style="position:absolute;top:0;left:0;right:0;height:34px;display:flex;align-items:center;padding:0 14px;background:rgba(12,12,15,.75);backdrop-filter:blur(24px) saturate(1.3);border-bottom:1px solid rgba(255,255,255,.08)">
+<div style="display:flex;align-items:center;gap:14px;flex:1">
+<span style="width:8px;height:8px;border-radius:2.5px;background:#e53a44;box-shadow:0 0 8px rgba(229,58,68,.8)"></span>
+<div style="display:flex;align-items:center;gap:7px">
+<div style="width:18px;height:18px;border-radius:5px;background:#e53a44;position:relative"><span style="position:absolute;left:3.5px;top:3.5px;width:3px;height:3px;border-radius:2px;background:#fff"></span><span style="position:absolute;left:7.5px;top:7.5px;width:3px;height:3px;border-radius:2px;background:#fff"></span><span style="position:absolute;left:11.5px;top:11.5px;width:3px;height:3px;border-radius:2px;background:#fff"></span></div>
+<div style="width:18px;height:18px;border-radius:5px;border:1px solid rgba(255,255,255,.14);position:relative"><span style="position:absolute;left:6.7px;top:6.7px;width:3px;height:3px;border-radius:2px;background:rgba(255,255,255,.5)"></span></div>
+<div style="width:18px;height:18px;border-radius:5px;border:1px solid rgba(255,255,255,.14);position:relative"><span style="position:absolute;left:3px;top:3px;width:3px;height:3px;border-radius:2px;background:rgba(255,255,255,.5)"></span><span style="position:absolute;left:10.5px;top:10.5px;width:3px;height:3px;border-radius:2px;background:rgba(255,255,255,.5)"></span></div>
+<div style="width:18px;height:18px;border-radius:5px;border:1px solid rgba(255,255,255,.08);position:relative"><span style="position:absolute;left:3px;top:3px;width:3px;height:3px;border-radius:2px;background:rgba(255,255,255,.2)"></span><span style="position:absolute;left:10.5px;top:3px;width:3px;height:3px;border-radius:2px;background:rgba(255,255,255,.2)"></span><span style="position:absolute;left:3px;top:10.5px;width:3px;height:3px;border-radius:2px;background:rgba(255,255,255,.2)"></span><span style="position:absolute;left:10.5px;top:10.5px;width:3px;height:3px;border-radius:2px;background:rgba(255,255,255,.2)"></span></div>
+</div>
+<span style="font:400 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">[3/9 tiled]</span>
+</div>
+<div style="display:flex;align-items:baseline;gap:8px;padding:3px 12px;border-radius:8px;background:rgba(229,58,68,.1);border:1px solid rgba(229,58,68,.2)">
+<span style="font:700 11.5px 'JetBrains Mono',monospace;color:#f0eff1">14:32<span style="color:rgba(240,239,241,.35)">:07</span></span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:#e5717a">aug.25</span>
+</div>
+<div style="display:flex;align-items:center;gap:13px;flex:1;justify-content:flex-end">
+<div style="display:flex;align-items:center;gap:9px">
+<span style="width:13px;height:13px;border-radius:4px;background:rgba(255,255,255,.14)"></span>
+<span style="width:13px;height:13px;border-radius:7px;background:rgba(255,255,255,.14)"></span>
+<span style="width:13px;height:13px;border-radius:4px;background:rgba(229,58,68,.35)"></span>
+</div>
+<span style="width:1px;height:14px;background:rgba(255,255,255,.12)"></span>
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 6.5a9 9 0 0 1 12 0M4.4 9.2a5.4 5.4 0 0 1 7.2 0" stroke="#f0eff1" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1.3" fill="#f0eff1"/></svg>
+<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M5 4.5 11 11 8 13.5v-11L11 5 5 11.5" stroke="rgba(240,239,241,.55)" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 6v4h2.5L9 13V3L5.5 6H3Z" fill="#f0eff1"/><path d="M11 5.5a3.6 3.6 0 0 1 0 5" stroke="#f0eff1" stroke-width="1.3" stroke-linecap="round"/></svg>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6)">bat 64%</span>
+<span style="width:24px;height:24px;border-radius:8px;background:rgba(229,58,68,.14);display:flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2v5" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round"/><path d="M4.5 4.5a5 5 0 1 0 7 0" stroke="#e5717a" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+</div>
+</div>
+<div style="position:absolute;bottom:13px;left:20px;font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.28)">flush bar · windows keep gaps below · denser, GNOME-like · outlined pips for empty workspaces</div>
+</div></div></div>
+
+<div class="dv-opt" id="1h"><div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>Battery icon — granular states</div>
+<div class="dv-card"><div style="position:relative;width:400px;background:#0a0a0c;background-image:radial-gradient(300px 200px at 80% -10%,rgba(229,58,68,.16),transparent 70%);padding:18px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;align-items:center;gap:12px;padding:9px 13px;border-radius:13px;background:rgba(15,15,19,.68);border:1px solid rgba(255,255,255,.09);width:fit-content">
+<div style="display:flex;align-items:center;gap:5px"><svg width="20" height="12" viewBox="0 0 22 12" fill="none"><rect x="1" y="1.5" width="15" height="9" rx="3" stroke="rgba(240,239,241,.6)" stroke-width="1.2"/><rect x="3" y="3.5" width="8.5" height="5" rx="1.5" fill="#e53a44"/><rect x="17.5" y="4.5" width="2" height="3" rx="1" fill="rgba(240,239,241,.6)"/></svg><span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6)">64%</span></div>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">discharging</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:9px 13px;border-radius:13px;background:rgba(15,15,19,.68);border:1px solid rgba(255,255,255,.09);width:fit-content">
+<div style="display:flex;align-items:center;gap:5px"><svg width="20" height="12" viewBox="0 0 22 12" fill="none"><rect x="1" y="1.5" width="15" height="9" rx="3" stroke="rgba(240,239,241,.6)" stroke-width="1.2"/><rect x="3" y="3.5" width="8.5" height="5" rx="1.5" fill="#4ade80"/><rect x="17.5" y="4.5" width="2" height="3" rx="1" fill="rgba(240,239,241,.6)"/><path d="M9.2 1 6.5 6.4h2L7.8 11l3.7-5.8h-2.2L10.9 1h-1.7Z" fill="#fff" stroke="#0a0a0c" stroke-width=".8"/></svg><span style="font:500 10px 'JetBrains Mono',monospace;color:#4ade80">64%</span></div>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">charging — bolt, green fill</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:9px 13px;border-radius:13px;background:rgba(15,15,19,.68);border:1px solid rgba(255,255,255,.09);width:fit-content">
+<div style="display:flex;align-items:center;gap:5px"><svg width="20" height="12" viewBox="0 0 22 12" fill="none"><rect x="1" y="1.5" width="15" height="9" rx="3" stroke="rgba(240,239,241,.6)" stroke-width="1.2"/><rect x="3" y="3.5" width="11" height="5" rx="1.5" fill="rgba(240,239,241,.55)"/><rect x="17.5" y="4.5" width="2" height="3" rx="1" fill="rgba(240,239,241,.6)"/><path d="M8.5 3.2v2M6.8 3.2v2M5.9 5.2h3.5v1.6a1.7 1.7 0 0 1-1.75 1.7A1.7 1.7 0 0 1 5.9 6.8V5.2Z" fill="none" stroke="#fff" stroke-width=".9" stroke-linecap="round" transform="translate(1.2,.4)"/></svg><span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.6)">80%</span></div>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">on power, not charging — plug, grey fill</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:9px 13px;border-radius:13px;background:rgba(15,15,19,.68);border:1px solid rgba(255,255,255,.09);width:fit-content">
+<div style="display:flex;align-items:center;gap:5px"><svg width="20" height="12" viewBox="0 0 22 12" fill="none"><rect x="1" y="1.5" width="15" height="9" rx="3" stroke="rgba(229,58,68,.8)" stroke-width="1.2"/><rect x="3" y="3.5" width="2.5" height="5" rx="1" fill="#e53a44"/><rect x="17.5" y="4.5" width="2" height="3" rx="1" fill="rgba(229,58,68,.8)"/></svg><span style="font:600 10px 'JetBrains Mono',monospace;color:#e5717a">9%</span></div>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">critical — crimson outline + %</span>
+</div>
+<div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.28)">same icon+% slot in the bar (1a) · fill color carries the state, glyph overlays the fill</div>
+</div></div></div>
+
+<div class="dv-opt" id="1i"><div class="dv-olabel"><a class="dv-oid" href="#1i">1i</a>Network icon — wifi vs lan</div>
+<div class="dv-card"><div style="position:relative;width:400px;background:#0a0a0c;background-image:radial-gradient(300px 200px at 20% -10%,rgba(229,58,68,.16),transparent 70%);padding:18px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;align-items:center;gap:12px;padding:9px 13px;border-radius:13px;background:rgba(15,15,19,.68);border:1px solid rgba(255,255,255,.09);width:fit-content">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6.5a9 9 0 0 1 12 0M4.4 9.2a5.4 5.4 0 0 1 7.2 0" stroke="#f0eff1" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1.3" fill="#f0eff1"/></svg>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">wifi is primary route</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:9px 13px;border-radius:13px;background:rgba(15,15,19,.68);border:1px solid rgba(255,255,255,.09);width:fit-content">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="5.5" y="2" width="5" height="4" rx="1" stroke="#f0eff1" stroke-width="1.3"/><rect x="1.5" y="10" width="5" height="4" rx="1" stroke="#f0eff1" stroke-width="1.3"/><rect x="9.5" y="10" width="5" height="4" rx="1" stroke="#f0eff1" stroke-width="1.3"/><path d="M8 6v2M4 10V8h8v2" stroke="#f0eff1" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">lan is primary — icon swaps, same slot, same popover (1e shows eth0 card on top)</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:9px 13px;border-radius:13px;background:rgba(15,15,19,.68);border:1px solid rgba(255,255,255,.09);width:fit-content">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6.5a9 9 0 0 1 12 0M4.4 9.2a5.4 5.4 0 0 1 7.2 0" stroke="rgba(229,113,122,.9)" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1.3" fill="rgba(229,113,122,.9)"/><path d="m12 10 3 3M15 10l-3 3" stroke="#e5717a" stroke-width="1.3" stroke-linecap="round"/></svg>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">no connectivity — crimson tint + ✕</span>
+</div>
+</div></div></div>
+
+<div class="dv-opt" id="1c"><div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Command window — apps · actions · windows · calc · files</div>
+<div class="dv-card"><div style="position:relative;width:960px;height:470px;background:#0a0a0c;background-image:radial-gradient(700px 400px at 50% -20%,rgba(229,58,68,.18),transparent 70%);overflow:hidden;display:flex;align-items:center;justify-content:center">
+<div style="width:600px;border-radius:20px;background:rgba(15,15,19,.74);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);overflow:hidden">
+<div style="display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid rgba(255,255,255,.07)">
+<span style="font:600 12px 'JetBrains Mono',monospace;color:#e5717a">&gt;_</span>
+<span style="flex:1;font:500 14px 'JetBrains Mono',monospace;color:#f0eff1">fire<span style="display:inline-block;width:8px;height:16px;background:#e53a44;vertical-align:-3px;margin-left:1px"></span></span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4);padding:3px 7px;border:1px solid rgba(255,255,255,.12);border-radius:6px">esc</span>
+</div>
+<div style="display:flex;gap:6px;padding:10px 14px 4px">
+<span style="font:600 10.5px 'JetBrains Mono',monospace;color:#fff;background:#e53a44;padding:4px 11px;border-radius:9px">apps</span>
+<span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55);padding:4px 11px;border-radius:9px;background:rgba(255,255,255,.05)">actions</span>
+<span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55);padding:4px 11px;border-radius:9px;background:rgba(255,255,255,.05)">windows</span>
+<span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55);padding:4px 11px;border-radius:9px;background:rgba(255,255,255,.05)">calc</span>
+<span style="font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55);padding:4px 11px;border-radius:9px;background:rgba(255,255,255,.05)">files</span>
+<span style="margin-left:auto;font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3);align-self:center">tab ⇥ cycles</span>
+</div>
+<div style="display:flex;flex-direction:column;gap:2px;padding:8px">
+<div style="display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:12px;background:rgba(229,58,68,.13);border:1px solid rgba(229,58,68,.25)">
+<div style="width:32px;height:32px;border-radius:10px;background:rgba(229,58,68,.2);display:flex;align-items:center;justify-content:center;font:700 11px 'JetBrains Mono',monospace;color:#e5717a">ff</div>
+<div style="flex:1"><div style="font:600 12.5px 'JetBrains Mono',monospace;color:#f0eff1">Firefox</div><div style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">app · web browser</div></div>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:#e5717a;padding:3px 8px;border:1px solid rgba(229,58,68,.4);border-radius:6px">↵</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:12px">
+<div style="width:32px;height:32px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">fj</div>
+<div style="flex:1"><div style="font:500 12.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">Files (Nautilus)</div><div style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">app · file manager</div></div>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:12px">
+<div style="width:32px;height:32px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2v5" stroke="rgba(240,239,241,.7)" stroke-width="1.5" stroke-linecap="round"/><path d="M4.5 4.5a5 5 0 1 0 7 0" stroke="rgba(240,239,241,.7)" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+<div style="flex:1"><div style="font:500 12.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">firewall-reload</div><div style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">action · ~/.config/qs/scripts</div></div>
+<span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3)">run</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:12px">
+<div style="width:32px;height:32px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;position:relative"><span style="position:absolute;left:9px;top:9px;width:3px;height:3px;border-radius:2px;background:rgba(240,239,241,.6)"></span><span style="position:absolute;left:14.5px;top:14.5px;width:3px;height:3px;border-radius:2px;background:rgba(240,239,241,.6)"></span><span style="position:absolute;left:20px;top:20px;width:3px;height:3px;border-radius:2px;background:rgba(240,239,241,.6)"></span></div>
+<div style="flex:1"><div style="font:500 12.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">firefox — HackerFlow docs</div><div style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">window · workspace ⚂ 3</div></div>
+<span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3)">jump</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:12px">
+<div style="width:32px;height:32px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">⏻</div>
+<div style="flex:1"><div style="font:500 12.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">fire… lock session</div><div style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">system · hyprlock</div></div>
+<span style="font:400 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3)">ctrl+l</span>
+</div>
+</div>
+<div style="display:flex;align-items:center;gap:14px;padding:10px 16px;border-top:1px solid rgba(255,255,255,.07);font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">
+<span>↑↓ move</span><span>↵ open</span><span>ctrl+↵ terminal</span><span>= calc inline</span>
+<span style="margin-left:auto;display:flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:2px;background:#e53a44"></span>c7shell</span>
+</div>
+</div>
+</div></div></div>
+
+<div class="dv-opt" id="1d"><div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Clock click — calendar + notifications</div>
+<div class="dv-card"><div style="position:relative;width:470px;height:600px;background:#0a0a0c;background-image:radial-gradient(500px 300px at 50% -10%,rgba(229,58,68,.18),transparent 70%);overflow:hidden;display:flex;justify-content:center;padding:14px">
+<div style="width:360px;height:fit-content;border-radius:20px;background:rgba(15,15,19,.74);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);padding:16px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:baseline;justify-content:space-between">
+<div><span style="font:700 22px 'JetBrains Mono',monospace;color:#f0eff1">14:32</span><span style="font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)"> :07</span></div>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#e5717a">tue, aug 25 2026</span>
+</div>
+<div style="border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:12px">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px">
+<span style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">august 2026</span>
+<span style="display:flex;gap:10px;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)"><span>‹</span><span>›</span></span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;text-align:center;font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35);line-height:20px">
+<span>mo</span><span>tu</span><span>we</span><span>th</span><span>fr</span><span style="color:rgba(229,113,122,.5)">sa</span><span style="color:rgba(229,113,122,.5)">su</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;text-align:center;font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.75);line-height:24px">
+<span style="opacity:.25">27</span><span style="opacity:.25">28</span><span style="opacity:.25">29</span><span style="opacity:.25">30</span><span style="opacity:.25">31</span><span>1</span><span>2</span>
+<span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span>
+<span>10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span>
+<span>17</span><span>18</span><span>19</span><span>20</span><span>21</span><span>22</span><span>23</span>
+<span>24</span><span style="background:#e53a44;color:#fff;border-radius:8px;font-weight:700">25</span><span>26</span><span>27</span><span>28</span><span>29</span><span>30</span>
+<span>31</span><span style="opacity:.25">1</span><span style="opacity:.25">2</span><span style="opacity:.25">3</span><span style="opacity:.25">4</span><span style="opacity:.25">5</span><span style="opacity:.25">6</span>
+</div>
+</div>
+<div style="display:flex;align-items:center;justify-content:space-between">
+<span style="font:600 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.55)">notifications <span style="color:#e5717a">3</span></span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35);padding:2px 8px;border:1px solid rgba(255,255,255,.1);border-radius:6px">clear all</span>
+</div>
+<div style="display:flex;flex-direction:column;gap:7px">
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:10px 12px;display:flex;gap:10px">
+<div style="width:28px;height:28px;border-radius:9px;background:rgba(229,58,68,.16);display:flex;align-items:center;justify-content:center;font:700 10px 'JetBrains Mono',monospace;color:#e5717a">hf</div>
+<div style="flex:1"><div style="display:flex;justify-content:space-between"><span style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">HackerFlow</span><span style="font:400 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">2m</span></div>
+<div style="font:400 10px/1.5 'JetBrains Mono',monospace;color:rgba(240,239,241,.55)">Run #482 finished — 3 detections missed</div></div>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:10px 12px;display:flex;gap:10px">
+<div style="width:28px;height:28px;border-radius:9px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">sl</div>
+<div style="flex:1"><div style="display:flex;justify-content:space-between"><span style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">Slack</span><span style="font:400 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">14m</span></div>
+<div style="font:400 10px/1.5 'JetBrains Mono',monospace;color:rgba(240,239,241,.55)">#red-team: staging creds rotated</div></div>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:10px 12px;display:flex;gap:10px">
+<div style="width:28px;height:28px;border-radius:9px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">up</div>
+<div style="flex:1"><div style="display:flex;justify-content:space-between"><span style="font:600 11px 'JetBrains Mono',monospace;color:#f0eff1">pacman</span><span style="font:400 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">1h</span></div>
+<div style="font:400 10px/1.5 'JetBrains Mono',monospace;color:rgba(240,239,241,.55)">12 updates available</div></div>
+</div>
+</div>
+<div style="display:flex;align-items:center;justify-content:space-between;font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">
+<span>do not disturb</span>
+<span style="width:26px;height:15px;border-radius:8px;background:rgba(255,255,255,.1);position:relative"><span style="position:absolute;left:2px;top:2px;width:11px;height:11px;border-radius:6px;background:rgba(255,255,255,.5)"></span></span>
+</div>
+</div>
+</div></div></div>
+
+<div class="dv-opt" id="1e"><div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Wi-Fi popover</div>
+<div class="dv-card"><div style="position:relative;width:400px;height:470px;background:#0a0a0c;background-image:radial-gradient(400px 260px at 85% -10%,rgba(229,58,68,.2),transparent 70%);overflow:hidden;display:flex;justify-content:flex-end;padding:14px">
+<div style="width:320px;height:fit-content;border-radius:18px;background:rgba(15,15,19,.74);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);padding:14px;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:center;gap:10px">
+<span style="font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1;flex:1">wi-fi</span>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">wlan0</span>
+<span style="width:30px;height:17px;border-radius:9px;background:#e53a44;position:relative"><span style="position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:7px;background:#fff"></span></span>
+</div>
+<div style="border-radius:12px;background:rgba(229,58,68,.13);border:1px solid rgba(229,58,68,.25);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 6.5a9 9 0 0 1 12 0M4.4 9.2a5.4 5.4 0 0 1 7.2 0" stroke="#e5717a" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1.3" fill="#e5717a"/></svg>
+<div style="flex:1"><div style="font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1">c7-lab-5g</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">connected · wpa3 · 10.7.0.21</div></div>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:#e5717a">-42dBm</span>
+</div>
+<div style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35);padding:2px 2px 0">other networks</div>
+<div style="display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6.5a9 9 0 0 1 12 0M4.4 9.2a5.4 5.4 0 0 1 7.2 0" stroke="rgba(240,239,241,.7)" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1.3" fill="rgba(240,239,241,.7)"/></svg>
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">c7-guest</span>
+<svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="3" y="6" width="10" height="8" rx="2" stroke="rgba(240,239,241,.4)" stroke-width="1.5"/><path d="M5.5 6V4.5a2.5 2.5 0 0 1 5 0V6" stroke="rgba(240,239,241,.4)" stroke-width="1.5"/></svg>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">-58</span>
+</div>
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6.5a9 9 0 0 1 12 0" stroke="rgba(240,239,241,.3)" stroke-width="1.4" stroke-linecap="round"/><path d="M4.4 9.2a5.4 5.4 0 0 1 7.2 0" stroke="rgba(240,239,241,.6)" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1.3" fill="rgba(240,239,241,.6)"/></svg>
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">lab-iot</span>
+<svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="3" y="6" width="10" height="8" rx="2" stroke="rgba(240,239,241,.4)" stroke-width="1.5"/><path d="M5.5 6V4.5a2.5 2.5 0 0 1 5 0V6" stroke="rgba(240,239,241,.4)" stroke-width="1.5"/></svg>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">-71</span>
+</div>
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6.5a9 9 0 0 1 12 0M4.4 9.2a5.4 5.4 0 0 1 7.2 0" stroke="rgba(240,239,241,.3)" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1.3" fill="rgba(240,239,241,.5)"/></svg>
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">neighbor-24g</span>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">-83</span>
+</div>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,.07);padding-top:10px;font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)">
+<span>⟳ rescan</span><span style="color:#e5717a">network settings →</span>
+</div>
+</div>
+</div></div></div>
+
+<div class="dv-opt" id="1f"><div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>Bluetooth popover</div>
+<div class="dv-card"><div style="position:relative;width:400px;height:470px;background:#0a0a0c;background-image:radial-gradient(400px 260px at 85% -10%,rgba(229,58,68,.2),transparent 70%);overflow:hidden;display:flex;justify-content:flex-end;padding:14px">
+<div style="width:320px;height:fit-content;border-radius:18px;background:rgba(15,15,19,.74);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);padding:14px;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:center;gap:10px">
+<span style="font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1;flex:1">bluetooth</span>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35)">discoverable</span>
+<span style="width:30px;height:17px;border-radius:9px;background:#e53a44;position:relative"><span style="position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:7px;background:#fff"></span></span>
+</div>
+<div style="border-radius:12px;background:rgba(229,58,68,.13);border:1px solid rgba(229,58,68,.25);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M5 4.5 11 11 8 13.5v-11L11 5 5 11.5" stroke="#e5717a" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>
+<div style="flex:1"><div style="font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1">WH-1000XM5</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">connected · a2dp sink</div></div>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:#e5717a">▮ 80%</span>
+</div>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:11px 12px;display:flex;align-items:center;gap:11px">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M5 4.5 11 11 8 13.5v-11L11 5 5 11.5" stroke="rgba(240,239,241,.6)" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>
+<div style="flex:1"><div style="font:600 11.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.85)">MX Master 3S</div><div style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">connected · hid</div></div>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)">▮ 55%</span>
+</div>
+<div style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35);padding:2px 2px 0;display:flex;align-items:center;gap:7px">nearby<span style="width:8px;height:8px;border:1.5px solid rgba(229,113,122,.6);border-top-color:transparent;border-radius:5px;display:inline-block"></span></div>
+<div style="display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">Keychron Q1</span>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:#e5717a">pair</span>
+</div>
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">JBL Flip 6</span>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:#e5717a">pair</span>
+</div>
+<div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px">
+<span style="flex:1;font:500 11px 'JetBrains Mono',monospace;color:rgba(240,239,241,.5)">unknown 4C:87:…</span>
+<span style="font:400 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.3)">-79</span>
+</div>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,.07);padding-top:10px;font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)">
+<span>⟳ scan</span><span style="color:#e5717a">bluetooth settings →</span>
+</div>
+</div>
+</div></div></div>
+
+<div class="dv-opt" id="1g"><div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>Audio popover — devices + per-app mixer</div>
+<div class="dv-card"><div style="position:relative;width:400px;height:500px;background:#0a0a0c;background-image:radial-gradient(400px 260px at 85% -10%,rgba(229,58,68,.2),transparent 70%);overflow:hidden;display:flex;justify-content:flex-end;padding:14px">
+<div style="width:330px;height:fit-content;border-radius:18px;background:rgba(15,15,19,.74);backdrop-filter:blur(26px) saturate(1.3);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 80px rgba(0,0,0,.65);padding:14px;display:flex;flex-direction:column;gap:11px">
+<span style="font:600 11.5px 'JetBrains Mono',monospace;color:#f0eff1">audio</span>
+<div style="border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:11px 12px;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:center;gap:9px">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 6v4h2.5L9 13V3L5.5 6H3Z" fill="rgba(240,239,241,.75)"/><path d="M11 5.5a3.6 3.6 0 0 1 0 5" stroke="rgba(240,239,241,.75)" stroke-width="1.3" stroke-linecap="round"/></svg>
+<span style="flex:1;font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">output · WH-1000XM5</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)">68</span>
+</div>
+<div style="height:5px;border-radius:3px;background:rgba(255,255,255,.1);position:relative"><div style="position:absolute;inset:0 32% 0 0;border-radius:3px;background:#e53a44"></div><div style="position:absolute;top:-4px;left:68%;width:13px;height:13px;border-radius:7px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div></div>
+<div style="display:flex;align-items:center;gap:9px">
+<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="6" y="2" width="4" height="8" rx="2" stroke="rgba(240,239,241,.75)" stroke-width="1.3"/><path d="M4 8a4 4 0 0 0 8 0M8 12v2" stroke="rgba(240,239,241,.75)" stroke-width="1.3" stroke-linecap="round"/></svg>
+<span style="flex:1;font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.8)">input · Blue Yeti</span>
+<span style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.45)">54</span>
+</div>
+<div style="height:5px;border-radius:3px;background:rgba(255,255,255,.1);position:relative"><div style="position:absolute;inset:0 46% 0 0;border-radius:3px;background:rgba(229,113,122,.7)"></div><div style="position:absolute;top:-4px;left:54%;width:13px;height:13px;border-radius:7px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div></div>
+</div>
+<div style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35);padding:0 2px">devices</div>
+<div style="display:flex;flex-direction:column;gap:5px">
+<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:10px;background:rgba(229,58,68,.11);border:1px solid rgba(229,58,68,.22)">
+<span style="width:6px;height:6px;border-radius:3px;background:#e53a44"></span>
+<span style="flex:1;font:500 10.5px 'JetBrains Mono',monospace;color:#f0eff1">WH-1000XM5 (bt)</span>
+</div>
+<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:10px">
+<span style="width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.2)"></span>
+<span style="flex:1;font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">HDMI — DELL U2723QE</span>
+</div>
+<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:10px">
+<span style="width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.2)"></span>
+<span style="flex:1;font:500 10.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">built-in analog</span>
+</div>
+</div>
+<div style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.35);padding:0 2px">apps</div>
+<div style="display:flex;flex-direction:column;gap:9px">
+<div style="display:flex;align-items:center;gap:10px">
+<span style="width:24px;height:24px;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">sp</span>
+<div style="flex:1"><div style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7);margin-bottom:4px">spotify</div><div style="height:4px;border-radius:2px;background:rgba(255,255,255,.1);position:relative"><div style="position:absolute;inset:0 20% 0 0;border-radius:2px;background:rgba(229,58,68,.8)"></div></div></div>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">80</span>
+</div>
+<div style="display:flex;align-items:center;gap:10px">
+<span style="width:24px;height:24px;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">ff</span>
+<div style="flex:1"><div style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7);margin-bottom:4px">firefox</div><div style="height:4px;border-radius:2px;background:rgba(255,255,255,.1);position:relative"><div style="position:absolute;inset:0 55% 0 0;border-radius:2px;background:rgba(229,58,68,.8)"></div></div></div>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">45</span>
+</div>
+<div style="display:flex;align-items:center;gap:10px;opacity:.45">
+<span style="width:24px;height:24px;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font:700 9px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7)">dc</span>
+<div style="flex:1"><div style="font:500 10px 'JetBrains Mono',monospace;color:rgba(240,239,241,.7);margin-bottom:4px">discord · muted</div><div style="height:4px;border-radius:2px;background:rgba(255,255,255,.1)"></div></div>
+<span style="font:500 9.5px 'JetBrains Mono',monospace;color:rgba(240,239,241,.4)">✕</span>
+</div>
+</div>
+<div style="display:flex;justify-content:flex-end;border-top:1px solid rgba(255,255,255,.07);padding-top:10px;font:500 10px 'JetBrains Mono',monospace;color:#e5717a">sound settings →</div>
+</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "riff on <a class="dv-oid" href="#1a">1a</a> with a left vertical bar" · "make <a class="dv-oid" href="#1c">1c</a> show calc + files modes" · "lock screen + power menu in this style"</p>
+</section>
+</x-dc>
+</body>
+</html>

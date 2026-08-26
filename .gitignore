@@ -1,0 +1,16 @@
+# makepkg working files
+src/
+pkg/
+*.pkg.tar.*
+*.src.tar.*
+gambleland/
+
+# written at runtime by the settings app, regenerated from conf/appearance.lua
+hypr/appearance.json
+
+# local agent/tooling state, never part of a release
+.claude/
+.superpowers/
+graphify-out/
+docs/plans/
+docs/specs/
