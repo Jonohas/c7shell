@@ -43,7 +43,7 @@ Scope {
     id: win
 
     visible: false
-    title: "c7shell settings"
+    title: "gambleland settings"
     color: Theme.canvas
     implicitWidth: 790
     implicitHeight: 560

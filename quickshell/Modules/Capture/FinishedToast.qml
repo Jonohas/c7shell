@@ -31,7 +31,7 @@ PanelWindow {
   // pushed the card 48px below where the margins below place it.
   exclusionMode: ExclusionMode.Ignore
   color: "transparent"
-  WlrLayershell.namespace: "c7shell-toast"
+  WlrLayershell.namespace: "gambleland-toast"
   WlrLayershell.layer: WlrLayer.Overlay
 
   // Clear of the 38px bar (10px margin + 38px island), per the mockup: card top

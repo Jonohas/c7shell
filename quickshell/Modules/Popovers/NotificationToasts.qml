@@ -50,7 +50,7 @@ PanelWindow {
   implicitWidth: win.cardWidth + Theme.barMarginSide + win.gutter
   implicitHeight: Math.max(1, stack.implicitHeight + win.gutter)
   color: "transparent"
-  WlrLayershell.namespace: "c7shell-toasts"
+  WlrLayershell.namespace: "gambleland-toasts"
 
   // Claim no space of its own, or the toasts would shove windows around.
   exclusiveZone: 0

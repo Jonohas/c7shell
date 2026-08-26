@@ -10,7 +10,7 @@ import QtQuick
 // Nothing here talks DBus, because Quickshell 0.3.1 cannot: Quickshell.Io has
 // no DBus binding, so the shell cannot own com.canonical.AppMenu.Registrar, and
 // DBusMenuHandle is isCreatable:false, so QML cannot point one at a menu
-// somebody else discovered. scripts/c7shell-appmenud.py is the registrar
+// somebody else discovered. scripts/gambleland-appmenud.py is the registrar
 // instead; it owns the name, reads each app's menu over com.canonical.dbusmenu
 // and feeds it here as JSON lines over a unix socket.
 //
@@ -93,7 +93,7 @@ Singleton {
   // -- daemon link --
   readonly property string socketPath: {
     const dir = Quickshell.env("XDG_RUNTIME_DIR") ?? ""
-    return dir !== "" ? `${dir}/c7shell-appmenu.sock` : ""
+    return dir !== "" ? `${dir}/gambleland-appmenu.sock` : ""
   }
 
   // Whether the daemon link is up. Everything reads this rather than the Socket,

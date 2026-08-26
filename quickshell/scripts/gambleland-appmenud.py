@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""com.canonical.AppMenu.Registrar for c7shell.
+"""com.canonical.AppMenu.Registrar for gambleland.
 
 Quickshell 0.3.1 can neither own a DBus service name nor construct a
 DBusMenuHandle, so the shell cannot be the registrar itself. This daemon is the
@@ -13,7 +13,7 @@ name is resolved to a PID via org.freedesktop.DBus.GetConnectionUnixProcessID;
 the shell matches that against the focused Hyprland toplevel's
 `lastIpcObject.pid`.
 
-Protocol on $XDG_RUNTIME_DIR/c7shell-appmenu.sock (one JSON object per line):
+Protocol on $XDG_RUNTIME_DIR/gambleland-appmenu.sock (one JSON object per line):
   out  {"event":"menus","pid":N,"menus":[{"id":I,"label":L,"items":[...]}]}
   out  {"event":"gone","pid":N}
   in   {"event":"trigger","pid":N,"id":ITEM_ID}
@@ -39,7 +39,7 @@ CALL_TIMEOUT = 2.0  # seconds; a wedged app must not wedge the daemon
 
 SOCK_PATH = os.path.join(
     os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid(),
-    "c7shell-appmenu.sock",
+    "gambleland-appmenu.sock",
 )
 
 

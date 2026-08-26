@@ -64,7 +64,7 @@ Scope {
       // The OSD is feedback, never a target: an empty mask makes the whole
       // window click-through.
       mask: Region {}
-      WlrLayershell.namespace: "c7shell-osd"
+      WlrLayershell.namespace: "gambleland-osd"
       WlrLayershell.layer: WlrLayer.Overlay   // visible over fullscreen windows
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 

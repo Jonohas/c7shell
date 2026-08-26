@@ -98,7 +98,7 @@ Scope {
     exclusiveZone: 0
     color: "transparent"
 
-    WlrLayershell.namespace: "c7shell-launcher"
+    WlrLayershell.namespace: "gambleland-launcher"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 

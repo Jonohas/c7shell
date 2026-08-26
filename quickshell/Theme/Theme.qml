@@ -3,7 +3,7 @@ import Quickshell
 import QtQuick
 import qs.Services
 
-// All design tokens from the c7shell spec §4. Views take every color, radius,
+// All design tokens from the gambleland spec §4. Views take every color, radius,
 // size and font from here — no literals in views.
 //
 // Nothing under Services/ imports qs.Theme, so importing the store here is not

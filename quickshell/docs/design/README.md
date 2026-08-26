@@ -1,7 +1,7 @@
-# Handoff: Quickshell DE — crimson7 Hyprland shell
+# Handoff: Quickshell DE — GambleLand Hyprland shell
 
 ## Overview
-A complete desktop-shell design for Hyprland implemented with Quickshell: topbar, command window (launcher), per-icon popovers (wifi / bluetooth / audio), calendar + notifications, settings app, power dropdown, keyboard-shortcut OSDs, and a screenshot/screen-recording overlay. Visual language derived from crimson7.io: crimson accent on near-black glass, mono-heavy operator typography, macOS/GNOME roundness with a Hyprland vibe.
+A complete desktop-shell design for Hyprland implemented with Quickshell: topbar, command window (launcher), per-icon popovers (wifi / bluetooth / audio), calendar + notifications, settings app, power dropdown, keyboard-shortcut OSDs, and a screenshot/screen-recording overlay. Visual language: crimson accent on near-black glass, mono-heavy operator typography, macOS/GNOME roundness with a Hyprland vibe.
 
 ## About the Design Files
 The bundled \`Quickshell DE Mockups.dc.html\` is a **design reference created in HTML** — a static mockup canvas, not production code. The task is to **recreate these designs in Quickshell (QtQuick/QML)** on Hyprland, using layer-shell windows and the Quickshell service APIs. Open the HTML in a browser to see every screen; ids (1a, 1c, 1d…) below refer to the badges on the canvas.
@@ -49,7 +49,7 @@ Single 38px rounded island (r19) spanning the monitor minus 12px margins.
 - Header: ">_" prompt in #e5717a, 14px input with 8×16 crimson block caret, "esc" kbd chip (bordered, r6).
 - Provider chips: apps / actions / windows / calc / files — active solid crimson r9, inactive rgba(255,255,255,.05); right-aligned hint "tab ⇥ cycles".
 - Results: rows r12, 32px r10 icon tile (2-letter monogram or glyph), title 12.5/600 + sub 10/400 ("app · web browser", "action · ~/.config/qs/scripts", "window · workspace ⚂ 3", "system · hyprlock"). Selected row: crimson tint bg + border + "↵" chip. Right meta: run / jump / ctrl+l.
-- Footer: "↑↓ move · ↵ open · ctrl+↵ terminal · = calc inline", crimson square + "c7shell" right.
+- Footer: "↑↓ move · ↵ open · ctrl+↵ terminal · = calc inline", crimson square + "gambleland" right.
 
 ### 1d Calendar + notifications (clock popover)
 360px glass panel: big clock 22px/700 (+dim seconds), date right in #e5717a. Month card (rgba(255,255,255,.04)): header "august 2026" + ‹ › ; weekday row 9.5px .35 (sa/su tinted crimson .5); 7-col grid, 10.5px/500 .75, off-month .25, today = crimson r8 pill 700 white. Notifications header "notifications N" (count crimson) + bordered "clear all" chip; rows r12: 28px monogram tile, app 11/600, time 9px .35 right, body 10px .55. Footer: "do not disturb" + toggle.
@@ -64,7 +64,7 @@ Same skeleton. Connected devices as cards (first crimson-tinted): name 11.5/600,
 Card 1: output row (speaker icon, "output · WH-1000XM5", value) + slider; input row ("input · Blue Yeti") + softer slider (rgba(229,113,122,.7) fill). "devices": selectable rows r10, active = crimson tint + 6px crimson dot. "apps": per-app rows — 24px monogram tile, name 10/500, 4px mini slider, value; muted app at .45 opacity with ✕. Footer "sound settings →".
 
 ### 3a Power dropdown (232px, from power button)
-Header: "red@c7-desk" 11/600 + "up 6h 12m" 9px .4, bottom hairline. Rows r10 (icon 13px, label 11/500, right hint): lock (super+l), logout, suspend, — separator — reboot, shutdown = crimson tint + border, 600, right hint "hold ↵" (hold-to-confirm).
+Header: "red@gl-desk" 11/600 + "up 6h 12m" 9px .4, bottom hairline. Rows r10 (icon 13px, label 11/500, right hint): lock (super+l), logout, suspend, — separator — reboot, shutdown = crimson tint + border, 600, right hint "hold ↵" (hold-to-confirm).
 
 ### 4a/4b OSD pills
 320px wide pill, r18, bottom-center, glass, shadow 0 20px 60px. Icon 17–18px + 6px track slider + value 12/600 (volume 68, brightness 45). Muted: crimson border, crimson icon, empty track, "mute" in #e5717a. Toggle events reuse the pill: mic muted (crimson border + icon, right hint super+m), layout "us → de", workspace N with crimson pip tile. One pill at a time, replace-in-place, hide after ~1.2s.
@@ -77,7 +77,7 @@ Same toolbar, rec active: targets + mic chip (active, crimson mic glyph), "sys a
 
 ### 2a/2b Settings app (790px window, tiles — NO close/min/max buttons)
 Sidebar 212px, right hairline: search field (rgba(255,255,255,.05) r9), group labels 9px .3 (connectivity / system / shell), items 11px/500 .75 padding 7px 9px r9, active = solid crimson 600 white. Pages: wi-fi, network & vpn, bluetooth, appearance, displays, audio, power, notifications, topbar & widgets, keybinds.
-- 2a Network & VPN: title 15/700 Space Grotesk + sub 10 .4; eth0 card with green dot + "details →"; "vpn tunnels" header + bordered "+ add tunnel" chip; tunnel cards (active = crimson tint, lock icon, "active 2h 14m · 10.100.0.4 · endpoint hq.crimson7.io:51820", toggle on; inactive dim with off toggle); dns card: chips 1.1.1.1 / 9.9.9.9 / "+ add", "route all traffic through active vpn" + toggle.
+- 2a Network & VPN: title 15/700 Space Grotesk + sub 10 .4; eth0 card with green dot + "details →"; "vpn tunnels" header + bordered "+ add tunnel" chip; tunnel cards (active = crimson tint, lock icon, "active 2h 14m · 10.100.0.4 · endpoint hq.example.net:51820", toggle on; inactive dim with off toggle); dns card: chips 1.1.1.1 / 9.9.9.9 / "+ add", "route all traffic through active vpn" + toggle.
 - 2b Appearance: theme preview cards ×3 (dark default selected w/ 2px crimson border, oled black, light), accent swatch row (crimson selected w/ white ring + 4 oklch alternates + "from wallpaper" toggle), sliders card: rounding 19px / gaps 12px / blur 24 + "window opacity on inactive" toggle, wallpaper card: current thumb (crimson radial) + striped "img" placeholder + "browse →".
 
 ## Interactions & Behavior

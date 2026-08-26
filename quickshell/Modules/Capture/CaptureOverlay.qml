@@ -53,7 +53,7 @@ PanelWindow {
   // selected at all.
   exclusionMode: ExclusionMode.Ignore
   color: "transparent"
-  WlrLayershell.namespace: "c7shell-capture"
+  WlrLayershell.namespace: "gambleland-capture"
   WlrLayershell.layer: WlrLayer.Overlay
   WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 

@@ -1,6 +1,6 @@
 # GambleLand
 
-A Hyprland desktop: the compositor configured in Lua, plus **c7shell** — a
+A Hyprland desktop: the compositor configured in Lua, plus **gambleland** — a
 [Quickshell](https://quickshell.org) shell providing the bar, launcher, global
 menu, notifications, OSDs, capture/recording, power menu and settings app.
 
@@ -45,7 +45,7 @@ it can never eat local edits by accident.
 | `hypr/conf/autostart.lua` | starts the appmenu daemon, `qs`, hyprpaper, hypridle, solaar |
 | `quickshell/shell.qml` | shell entry point |
 | `quickshell/Services/` | brightness, network, bluetooth, audio, notifications, capture |
-| `quickshell/scripts/c7shell-appmenud.py` | `com.canonical.AppMenu.Registrar` for the global menu |
+| `quickshell/scripts/gambleland-appmenud.py` | `com.canonical.AppMenu.Registrar` for the global menu |
 
 ## Optional pieces
 

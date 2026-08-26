@@ -13,7 +13,7 @@ local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close())
 hl.bind(mainMod .. " + M", hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"))
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(programs.fileManager))
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
-hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("qs ipc call launcher toggle")) -- c7shell launcher replaced programs.menu
+hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("qs ipc call launcher toggle")) -- gambleland launcher replaced programs.menu
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))    -- dwindle only
 
@@ -66,7 +66,7 @@ hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause"), { locked = tr
 hl.bind("XF86AudioPlay",  hl.dsp.exec_cmd("playerctl play-pause"), { locked = true })
 hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd("playerctl previous"),   { locked = true })
 
--- c7shell: lock, launcher, capture (targets land as the shell modules merge;
+-- gambleland: lock, launcher, capture (targets land as the shell modules merge;
 -- until then the ipc calls are harmless no-ops with an error on stderr)
 hl.bind(mainMod .. " + L",     hl.dsp.exec_cmd("hyprlock"))
 hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("qs ipc call launcher toggle"))

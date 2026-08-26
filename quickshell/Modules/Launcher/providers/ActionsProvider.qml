@@ -32,7 +32,7 @@ Item {
   readonly property var settingsActions: ["appearance", "wifi", "bluetooth", "audio"]
     .map(p => ({
       title: `${p} settings`,
-      sub: "settings · c7shell",
+      sub: "settings · gambleland",
       meta: "open",
       mono: "⚙",
       page: p

@@ -24,7 +24,7 @@ Scope {
       implicitHeight: Theme.barMarginTop + Theme.barHeight + 36
       exclusiveZone: Theme.barMarginTop + Theme.barHeight
       color: "transparent"
-      WlrLayershell.namespace: "c7shell-bar"
+      WlrLayershell.namespace: "gambleland-bar"
       // OnDemand, for the popovers rather than for the bar itself: a popover is
       // an xdg-popup of this surface, and the keyboard grab one takes when a
       // text field inside it is focused (the wifi row's password) is REFUSED if

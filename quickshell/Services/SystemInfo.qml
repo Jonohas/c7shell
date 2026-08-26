@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 
-// Identity line for the power dropdown header (mockup 3a): "red@c7-desk" and
+// Identity line for the power dropdown header (mockup 3a): "red@gl-desk" and
 // "up 6h 12m".
 Singleton {
   id: root

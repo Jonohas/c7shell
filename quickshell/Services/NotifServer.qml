@@ -75,7 +75,7 @@ Singleton {
     const next = root.outbox[0]
     root.outbox = root.outbox.slice(1)
     notify.inFlight = `${next[0]} — ${next[1]}`
-    notify.exec(["notify-send", "-a", "c7shell", next[0], next[1]])
+    notify.exec(["notify-send", "-a", "gambleland", next[0], next[1]])
     sendCheck.restart()
   }
 
@@ -89,7 +89,7 @@ Singleton {
     onExited: (code, status) => {
       sendCheck.stop()
       if (code !== 0 || status !== 0) {
-        console.warn(`c7shell: NOTIFICATION UNDELIVERED: ${notify.inFlight} `
+        console.warn(`gambleland: NOTIFICATION UNDELIVERED: ${notify.inFlight} `
           + `(${notifyErr.text.trim() || `notify-send exited ${code}`})`)
       }
       notify.inFlight = ""
@@ -105,7 +105,7 @@ Singleton {
     interval: 2000
     onTriggered: {
       if (notify.running || notify.inFlight === "") return
-      console.warn(`c7shell: NOTIFICATION UNDELIVERED: ${notify.inFlight} `
+      console.warn(`gambleland: NOTIFICATION UNDELIVERED: ${notify.inFlight} `
         + "(notify-send did not run)")
       notify.inFlight = ""
       root.pump()
@@ -183,7 +183,7 @@ Singleton {
       // The shell's own failure notices are exempt: send() is the §8 channel,
       // and do-not-disturb silencing the shell telling you why something broke
       // makes the never-silent rule a lie whenever the toggle is on.
-      if (root.dnd && notification.appName !== "c7shell") return
+      if (root.dnd && notification.appName !== "gambleland") return
 
       // Critical notifications are exempt from nothing else, but they do get
       // the same 6s as the rest — the list is the durable copy.
@@ -237,6 +237,6 @@ Singleton {
   // Turning dnd on clears what is on screen -- except the shell's own failure
   // notices, which onNotification lets through in the first place.
   onDndChanged: if (root.dnd) Qt.callLater(() => {
-    root.popups = root.popups.filter(id => root.byId(id)?.appName === "c7shell")
+    root.popups = root.popups.filter(id => root.byId(id)?.appName === "gambleland")
   })
 }

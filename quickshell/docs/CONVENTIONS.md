@@ -1,11 +1,11 @@
-# c7shell conventions (read before writing any QML here)
+# gambleland conventions (read before writing any QML here)
 
 ## Verified environment quirks — violating these costs a debug cycle
 - Hyprland uses a Lua dispatch dialect: `Hyprland.dispatch('hl.dsp.focus({ workspace = N })')`,
   `hl.dsp.window.move({...})`. Stock dispatcher strings ("workspace 3") FAIL. Lua API stubs:
   /usr/share/hypr/stubs/hl.meta.lua.
-- Blur invariant (conf/rules.lua, ignore_alpha = 0.7): every c7shell glass surface alpha ≥ 0.7
-  (bar .78, panels .80); every c7shell shadow peak alpha ≤ .65 (barShadowColor .5,
+- Blur invariant (conf/rules.lua, ignore_alpha = 0.7): every gambleland glass surface alpha ≥ 0.7
+  (bar .78, panels .80); every gambleland shadow peak alpha ≤ .65 (barShadowColor .5,
   panelShadowColor .65). New surfaces/shadows must respect this or blur breaks.
 - `font.pixelSize` is int — 11.5 is a load error; round it.
 - Tray/dbus menus need `//@ pragma UseQApplication` (already in shell.qml).

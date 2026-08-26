@@ -31,7 +31,7 @@ Item {
     }
     Text {
       anchors.verticalCenter: parent.verticalCenter
-      text: "c7shell"
+      text: "gambleland"
       font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.alpha(Theme.text, 0.35)
     }

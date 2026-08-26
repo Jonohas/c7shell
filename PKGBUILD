@@ -1,8 +1,8 @@
-# Maintainer: Jonas Faber <Jonas.faber@crimson7.io>
+# Maintainer: Jonohas <https://github.com/Jonohas>
 pkgname=gambleland
 pkgver=0.1.0
 pkgrel=1
-pkgdesc='GambleLand desktop environment: Hyprland (lua config) with the c7shell Quickshell shell'
+pkgdesc='GambleLand desktop environment: Hyprland (lua config) with the gambleland Quickshell shell'
 arch=('any')
 url='https://github.com/Jonohas/GambleLand'
 license=('custom')
@@ -62,7 +62,7 @@ package() {
   # Dev-facing only, and setup copies whatever is here into the user's config.
   rm -rf "$pkgdir/usr/share/$pkgname/quickshell/docs"
   chmod -R u=rwX,go=rX "$pkgdir/usr/share/$pkgname"
-  chmod 755 "$pkgdir/usr/share/$pkgname/quickshell/scripts/c7shell-appmenud.py"
+  chmod 755 "$pkgdir/usr/share/$pkgname/quickshell/scripts/gambleland-appmenud.py"
 
   install -Dm755 bin/gambleland-setup "$pkgdir/usr/bin/gambleland-setup"
   install -Dm644 share/gambleland.desktop \

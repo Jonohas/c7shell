@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=GambleLand
-Comment=Hyprland with the c7shell Quickshell shell
+Comment=Hyprland with the gambleland Quickshell shell
 Exec=Hyprland
 Type=Application
 DesktopNames=Hyprland
