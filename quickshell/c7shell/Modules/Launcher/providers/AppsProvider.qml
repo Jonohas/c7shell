@@ -17,9 +17,25 @@ Item {
     .filter(e => !e.noDisplay)
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  // Desktop id of the shell's own settings app (Assets/applications).
+  readonly property string ownId: "c7shell-settings"
+
+  // c7shell's settings app leads anything that reads as typing "settings".
+  // Prepended, not hoisted or score-boosted: the fuzzy score puts it 42nd for
+  // "set", behind nm-connection-editor and KDE's two system-settings entries
+  // and outside rank()'s own limit, so there is nothing left in `hits` to
+  // hoist. (A bare "s" does not even match -- one character against a long
+  // haystack scores below the length penalty -- hence the 2-char floor in
+  // isPrefixIntent rather than a check for presence.)
+  function ownFirst(query, hits) {
+    if (!Search.isPrefixIntent(query, "settings")) return hits
+    const own = root.entries.find(e => e.id === root.ownId)
+    return own ? [own].concat(hits.filter(e => e.id !== root.ownId)) : hits
+  }
+
   function search(query) {
-    const hits = Search.rank(query, root.entries, e =>
-      `${e.name} ${e.genericName ?? ""} ${e.comment ?? ""} ${(e.keywords ?? []).join(" ")}`, 30)
+    const hits = root.ownFirst(query, Search.rank(query, root.entries, e =>
+      `${e.name} ${e.genericName ?? ""} ${e.comment ?? ""} ${(e.keywords ?? []).join(" ")}`, 30))
 
     // Rows carry the entry id, never the DesktopEntry pointer: a JS array of
     // live QObjects bound as a model has segfaulted here before (CONVENTIONS).

@@ -46,15 +46,14 @@ function rank(query, items, textOf, limit) {
   return scored.slice(0, limit || 40).map(function (e) { return e.v; });
 }
 
-// Move the first item `pick` accepts to the front, leaving the rest in order.
-// A hard hoist rather than a score bonus: "first hit" that depends on out-
-// scoring whatever the machine happens to have installed is not a guarantee.
-function pinFirst(items, pick) {
-  const at = items.findIndex(pick);
-  if (at <= 0) return items;
-  const out = items.slice();
-  out.unshift(out.splice(at, 1)[0]);
-  return out;
+// True when `query` reads as someone typing `word`: a prefix of it, at least
+// minLen characters (default 2) so a single letter is not treated as intent.
+// AppsProvider pins its own settings entry on this rather than on a score
+// bonus -- "first hit" that depends on out-scoring whatever control panels the
+// machine happens to have installed is not a guarantee.
+function isPrefixIntent(query, word, minLen) {
+  const q = String(query).trim().toLowerCase();
+  return q.length >= (minLen || 2) && String(word).toLowerCase().startsWith(q);
 }
 
 // Two-letter monogram for the result tile: initials of the first two words,

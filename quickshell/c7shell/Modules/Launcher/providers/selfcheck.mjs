@@ -15,7 +15,7 @@ function load(file, names) {
 }
 
 const Calc = load("./Calc.js", ["evaluate", "format", "tryEval"]);
-const Search = load("./Search.js", ["score", "rank", "initials"]);
+const Search = load("./Search.js", ["score", "rank", "initials", "isPrefixIntent"]);
 
 // -- arithmetic --
 assert.equal(Calc.evaluate("1+2*3"), 7, "precedence");
@@ -46,6 +46,15 @@ assert.deepEqual(Search.rank("", apps, (x) => x), apps, "empty query keeps input
 assert.equal(Search.rank("fi", apps, (x) => x)[0], "Firefox");
 assert.equal(Search.rank("nau", apps, (x) => x).length, 1, "misses are dropped");
 assert.equal(Search.rank("i", apps, (x) => x, 2).length, 2, "limit honoured");
+
+// -- prefix intent (AppsProvider pins its own settings entry on this) --
+for (const q of ["se", "set", "sett", "settings", "  Settings "]) {
+  assert.ok(Search.isPrefixIntent(q, "settings"), `must read as settings: ${q}`);
+}
+for (const q of ["", "s", "sx", "system settings", "settingsx", "fire"]) {
+  assert.equal(Search.isPrefixIntent(q, "settings"), false, `must not: ${q}`);
+}
+assert.ok(Search.isPrefixIntent("s", "settings", 1), "floor is overridable");
 
 assert.equal(Search.initials("Firefox"), "fi");
 assert.equal(Search.initials("Files (Nautilus)"), "fn");
