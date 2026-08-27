@@ -9,7 +9,8 @@ hypr/                 hyprland.lua + conf/*.lua   (Hyprland 0.56+, Lua config)
 quickshell/c7shell/   shell.qml, Modules, Services, Theme, Assets, bin, scripts
 bin/                  c7shell-setup (copies the configs into ~/.config),
                       c7shell-doctor (checks the runtime requirements),
-                      c7shell-bootstrap (sets up a bare Arch install)
+                      c7shell-bootstrap (sets up a bare Arch install),
+                      c7shell-upgrade (updates an existing install)
 PKGBUILD              the package
 ```
 
@@ -95,7 +96,11 @@ builds *that*, not the working tree you run `./install.sh` from. Local commits
 and pulled feature branches therefore do nothing until they are pushed and
 named — to build one, `C7SHELL_BRANCH=my-branch ./install.sh`.
 
-Then log out and pick the **c7shell** session, or run `Hyprland` from a TTY.
+Then log out and pick the **c7shell** session, or run `start-hyprland` from a
+TTY. `start-hyprland` rather than `Hyprland`: since 0.53 it is the launcher
+Hyprland expects, it exports the session and portal environment, and it gives
+you crash recovery and safe mode. Launching the binary directly makes Hyprland
+warn that it "was started without start-hyprland".
 
 The shell installs as a [named Quickshell
 config](https://quickshell.org/docs/master/guide/distribution/) at
@@ -107,15 +112,37 @@ Everything comes from the Arch `extra` repository — no AUR helper needed.
 
 ## Updating
 
-The package owns `/usr/share/c7shell`; your copies in `~/.config` are yours.
-After a `pacman -Syu` that bumps `c7shell`:
-
 ```bash
-c7shell-setup --force    # backs up ~/.config/hypr and ~/.config/quickshell/c7shell first
+c7shell-upgrade              # rebuild the package from git, then refresh ~/.config
+c7shell-upgrade --dry-run    # show what both halves would change
 ```
 
-Without `--force` the command refuses to touch existing config and exits 3, so
-it can never eat local edits by accident.
+`pacman -Syu` cannot do this: `c7shell` is built locally, so there is no
+repository to upgrade it from. `c7shell-upgrade` keeps a build clone under
+`~/.cache/c7shell`, rebuilds when the installed commit is behind (the commit is
+baked into `pkgver`), and then refreshes the configs.
+
+The config half is pacnew-style, because `~/.config` is yours to edit:
+
+| Your file | What happens |
+| --- | --- |
+| untouched since it was installed | updated in place |
+| edited by you, and changed upstream | **kept**, new version written beside it as `<file>.new`, listed at the end (exit 4) |
+| edited by you, unchanged upstream | left alone |
+| new upstream | added |
+| dropped upstream, untouched by you | removed |
+| dropped upstream, edited by you | kept, reported |
+
+Which case a file falls into comes from a manifest of the hashes last
+installed (`~/.local/state/c7shell/manifest`, written by `c7shell-setup` and
+`c7shell-upgrade`). An install predating that manifest has nothing to compare
+against, so every difference is treated as your edit and kept — the safe
+direction, at the cost of more `.new` files on the first run.
+
+`--package-only` and `--config-only` run one half. To replace your copies
+outright instead, `c7shell-setup --force` still backs them up to
+`.bak-<stamp>` first; without `--force` it refuses and exits 3, so it can never
+eat local edits by accident.
 
 ## What is where
 
@@ -144,4 +171,5 @@ without them.
 tests/test-setup.sh
 tests/test-doctor.sh
 tests/test-bootstrap.sh
+tests/test-upgrade.sh
 ```

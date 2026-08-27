@@ -151,6 +151,6 @@ Next: copy the configs into your home directory (as your own user, not root):
 
     c7shell-setup
 
-Then log out and pick the "c7shell" session, or run Hyprland from a TTY.
+Then log out and pick the "c7shell" session, or run start-hyprland from a TTY.
 Re-run c7shell-doctor at any time to re-check the requirements.
 MSG

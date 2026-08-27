@@ -23,7 +23,7 @@ for helper in grep head; do ln -s "$(command -v "$helper")" "$bin/$helper"; done
 
 stub() { printf '#!/bin/sh\nexit 0\n' > "$bin/$1"; chmod +x "$bin/$1"; }
 
-required_cmds=(hyprctl qs hypridle hyprlock hyprpaper hyprpicker grim
+required_cmds=(hyprctl start-hyprland qs hypridle hyprlock hyprpaper hyprpicker grim
                wf-recorder wl-copy notify-send wpctl bluetoothctl nmcli systemctl)
 for cmd in "${required_cmds[@]}"; do stub "$cmd"; done
 # Every python import the appmenu daemon needs is reported present.
@@ -40,7 +40,8 @@ mkdir -p "$root/usr/lib/hyprpolkitagent" "$root/usr/lib" \
 : > "$root/usr/lib/hyprpolkitagent/hyprpolkitagent"
 : > "$root/usr/lib/xdg-desktop-portal-hyprland"
 : > "$root/usr/lib/pam_kwallet_init"
-: > "$root/usr/share/wayland-sessions/c7shell.desktop"
+printf '[Desktop Entry]\nName=c7shell\nExec=start-hyprland\n' \
+  > "$root/usr/share/wayland-sessions/c7shell.desktop"
 : > "$root/dev/dri/card0"
 : > "$root/dev/dri/renderD128"
 
@@ -113,6 +114,18 @@ rm "$bin/grim"
 out=$(run --quiet 2>&1 || true)
 grep -q 'FAIL  grim' <<<"$out" || fail "--quiet dropped the failure:\n$out"
 ! grep -q '  ok    ' <<<"$out" || fail "--quiet printed passing checks:\n$out"
+
+# an install from before the launcher fix is spotted, and names the repair
+stub grim   # the --quiet case above removed it; this case wants a clean pass
+printf '[Desktop Entry]\nName=c7shell\nExec=Hyprland\n' \
+  > "$root/usr/share/wayland-sessions/c7shell.desktop"
+out=$(run 2>&1) || fail "an old session entry should warn, not fail:\n$out"
+grep -q 'execs Hyprland directly' <<<"$out" || fail "the old launcher was not noticed:\n$out"
+grep -q 'c7shell-upgrade' <<<"$out" || fail "no repair command named:\n$out"
+printf '[Desktop Entry]\nName=c7shell\nExec=start-hyprland\n' \
+  > "$root/usr/share/wayland-sessions/c7shell.desktop"
+out=$(run --quiet 2>&1 || true)
+grep -q 'execs Hyprland directly' <<<"$out" && fail "a current session entry still warned:\n$out"
 
 # --- the optional-package picker -------------------------------------------
 # It needs a terminal to prompt on, so drive it through a pty with `script`.

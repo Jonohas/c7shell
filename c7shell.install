@@ -34,7 +34,11 @@ post_upgrade() {
 c7shell updated. The files under /usr/share/c7shell changed; your copies
 in ~/.config did not. To take the new version:
 
-    c7shell-setup --force     # backs up your current ~/.config/{hypr,quickshell}
+    c7shell-upgrade --config-only   # keeps your edits, parks new versions as .new
+
+or, to replace your copies outright:
+
+    c7shell-setup --force           # backs up ~/.config/{hypr,quickshell} first
 
 MSG
 }

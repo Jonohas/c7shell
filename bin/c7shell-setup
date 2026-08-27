@@ -6,6 +6,7 @@ set -euo pipefail
 
 share=${C7SHELL_SHARE:-/usr/share/c7shell}
 conf=${XDG_CONFIG_HOME:-$HOME/.config}
+state=${C7SHELL_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/c7shell}
 parts=(hypr quickshell/c7shell)
 force=0
 dry=0
@@ -20,6 +21,7 @@ usage: c7shell-setup [--force] [--dry-run]
 
 env: C7SHELL_SHARE (default /usr/share/c7shell)
      XDG_CONFIG_HOME  (default \$HOME/.config)
+     C7SHELL_STATE    (default \$XDG_STATE_HOME/c7shell)
 
 exit: 0 all parts installed, 3 nothing done because a target already exists
 USAGE
@@ -79,10 +81,25 @@ if ((installed == 0 && skipped)); then
   exit 3
 fi
 
+# Record the hash of every file as installed. c7shell-upgrade compares against
+# this to tell "you edited it" from "it is just an old copy" -- without it, a
+# later upgrade has to assume every difference is a local edit and can only
+# park new versions as .new files.
+if ((dry == 0)); then
+  mkdir -p -- "$state"
+  : > "$state/manifest"
+  for part in "${parts[@]}"; do
+    [[ -d $conf/$part ]] || continue
+    while read -r f; do
+      printf '%s\t%s\n' "${f#"$conf/"}" "$(sha256sum -- "$f" | cut -d' ' -f1)"
+    done < <(find "$conf/$part" -type f ! -name '*.new' | sort)
+  done >> "$state/manifest"
+fi
+
 cat <<'MSG'
 
 Done. Log out and pick the "c7shell" session in your display manager, or
-start it from a TTY with: Hyprland
+start it from a TTY with: start-hyprland
 
 Notes:
   - The shell is the named quickshell config "c7shell": it runs as

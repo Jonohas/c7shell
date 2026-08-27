@@ -146,7 +146,12 @@ need_py() {
 }
 
 section 'compositor'
-need_cmd Hyprland hyprland 'the compositor the session execs'
+need_cmd Hyprland hyprland 'the compositor itself'
+# The session entry execs start-hyprland, not Hyprland: it is the launcher
+# Hyprland has expected since 0.53 (it exports the session and portal
+# environment and adds crash recovery), and Hyprland warns on screen when it
+# is bypassed. Shipped by the same package, so a missing one means it is old.
+need_cmd start-hyprland hyprland 'the launcher the c7shell session entry execs'
 need_cmd hyprctl  hyprland 'dispatching to the compositor from the shell'
 
 # The config is hyprland.lua, and lua config landed in Hyprland 0.56. An older
@@ -218,6 +223,23 @@ fi
 section 'session entry'
 need_file /usr/share/wayland-sessions/c7shell.desktop c7shell \
   'the "c7shell" entry your greeter lists'
+
+# An install from before the launcher fix still has Exec=Hyprland here, which
+# makes Hyprland warn at every login that it was started without
+# start-hyprland. The file is package-owned, so the fix is a package rebuild.
+entry=$root/usr/share/wayland-sessions/c7shell.desktop
+if [[ -f $entry ]]; then
+  exec_line=$(grep -m1 '^Exec=' "$entry" || true)
+  case $exec_line in
+    'Exec=start-hyprland') ok 'session entry execs start-hyprland' ;;
+    'Exec=Hyprland')
+      warn 'the installed session entry execs Hyprland directly, so Hyprland warns'
+      note 'at login that it "was started without start-hyprland". Rebuild the'
+      note 'package to fix it:  c7shell-upgrade'
+      ;;
+    *) warn "unexpected launcher in $entry: ${exec_line:-none}" ;;
+  esac
+fi
 
 section 'user config'
 # This is the one that produces the classic "black screen, back to the

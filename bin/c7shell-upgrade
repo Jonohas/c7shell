@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+# Bring an existing c7shell install up to date: rebuild the package from git,
+# then refresh the configs in ~/.config without eating local edits.
+#
+# c7shell is built locally, so `pacman -Syu` never upgrades it -- there is no
+# repository to upgrade it from. And the configs under ~/.config are copies the
+# user is expected to edit, so a fix that lands in a shipped file has no way to
+# reach them: c7shell-setup --force replaces them wholesale and keeps only a
+# timestamped backup. This command closes both gaps.
+#
+# The config refresh is pacnew-style: a file you never touched is updated in
+# place, a file you edited is left alone and the new shipped version is written
+# next to it as <file>.new for you to merge. Which of the two it is comes from a
+# manifest of the hashes last installed; with no manifest (an install from
+# before this command existed) anything that differs is treated as edited,
+# which is the safe direction.
+set -euo pipefail
+
+repo=${C7SHELL_REPO:-https://github.com/Jonohas/c7shell.git}
+branch=${C7SHELL_BRANCH:-main}
+share=${C7SHELL_SHARE:-/usr/share/c7shell}
+conf=${XDG_CONFIG_HOME:-$HOME/.config}
+cache=${C7SHELL_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/c7shell}
+state=${C7SHELL_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/c7shell}
+manifest=$state/manifest
+
+parts=(hypr quickshell/c7shell)
+dry=0
+do_package=1
+do_config=1
+do_doctor=1
+force=0
+
+usage() {
+  cat <<USAGE
+usage: c7shell-upgrade [options]
+
+Rebuilds the c7shell package from git and refreshes the configs in ~/.config.
+pacman cannot do the first (the package is built locally, not from a repo) and
+must not do the second (the configs are yours to edit).
+
+  -n, --dry-run        print what would change and change nothing
+      --package-only   rebuild and reinstall the package, leave ~/.config alone
+      --config-only    refresh ~/.config from $share, don't touch the package
+      --no-doctor      skip the c7shell-doctor run at the end
+  -f, --force          rebuild even when the installed version is current
+  -h, --help           this text
+
+Files you edited are never overwritten: the new shipped version is written
+beside them as <file>.new and reported.
+
+env: C7SHELL_REPO   (default $repo)
+     C7SHELL_BRANCH (default main)
+     C7SHELL_SHARE  (default /usr/share/c7shell)
+     C7SHELL_CACHE  (default \$XDG_CACHE_HOME/c7shell)
+     C7SHELL_STATE  (default \$XDG_STATE_HOME/c7shell)
+
+exit: 0 up to date, 1 something went wrong, 4 updated but files need merging
+USAGE
+}
+
+while (($#)); do
+  case $1 in
+    -n|--dry-run) dry=1 ;;
+    --package-only) do_config=0 ;;
+    --config-only) do_package=0 ;;
+    --no-doctor) do_doctor=0 ;;
+    -f|--force) force=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'c7shell-upgrade: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+if ((EUID == 0)); then
+  echo 'c7shell-upgrade: run this as your own user; makepkg refuses to run as root' >&2
+  exit 2
+fi
+
+run() { if ((dry)); then printf '  would: %s\n' "$*"; else "$@"; fi; }
+step() { printf '\n== %s\n' "$1"; }
+info() { printf '   %s\n' "$1"; }
+warn() { printf '   warn: %s\n' "$1" >&2; }
+
+hash_of() { sha256sum -- "$1" | cut -d' ' -f1; }
+
+# c7shell-setup rewrites the $HOME placeholder in xdph.conf when it copies it,
+# because xdph does no variable expansion. Compare against the same rewrite or
+# that one file looks locally edited on every single upgrade.
+shipped_at() {
+  local rel=$1 src=$2
+  if [[ $rel == hypr/xdph.conf ]]; then
+    sed "s#\$HOME/.config/quickshell#$conf/quickshell#" "$src"
+  else
+    cat -- "$src"
+  fi
+}
+shipped_hash() { shipped_at "$1" "$2" | sha256sum | cut -d' ' -f1; }
+
+# ---------------------------------------------------------------------------
+# the package
+# ---------------------------------------------------------------------------
+
+if ((do_package)); then
+  step "package"
+  for cmd in git makepkg; do
+    command -v "$cmd" >/dev/null || { printf 'c7shell-upgrade: %s is required\n' "$cmd" >&2; exit 1; }
+  done
+
+  src=$cache/src
+  if [[ -d $src/.git ]]; then
+    info "refreshing $src ($branch)"
+    run git -C "$src" fetch --quiet origin "$branch"
+    # Hard reset, not merge: this checkout is a build cache, not somewhere to
+    # keep work, and a dirty tree here would silently build the wrong thing.
+    run git -C "$src" reset --quiet --hard "origin/$branch"
+  else
+    info "cloning $repo ($branch) into $src"
+    run mkdir -p -- "$cache"
+    run git clone --quiet --branch "$branch" "$repo" "$src"
+  fi
+
+  remote_sha=$(git -C "$src" rev-parse --short HEAD 2>/dev/null || echo unknown)
+  installed=$(pacman -Q c7shell 2>/dev/null | cut -d' ' -f2 || true)
+  info "installed: ${installed:-not installed}"
+  info "upstream:  $branch at $remote_sha"
+
+  # pkgver() bakes the commit into the version, so the installed version tells
+  # us exactly which commit is on the machine.
+  if [[ -n $installed && $installed == *"g$remote_sha"* ]] && ((force == 0)); then
+    info 'already the current commit, not rebuilding (use --force to rebuild anyway)'
+  else
+    info 'building and installing'
+    # --no-bootstrap: this machine is already set up, this is an upgrade.
+    # The doctor runs once at the end of this script instead.
+    if ((dry)); then
+      printf '  would: (cd %s && C7SHELL_BRANCH=%s ./install.sh --no-bootstrap)\n' "$src" "$branch"
+    else
+      ( cd "$src" && C7SHELL_BRANCH=$branch C7SHELL_SKIP_DOCTOR=1 ./install.sh --no-bootstrap )
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# the configs
+# ---------------------------------------------------------------------------
+
+conflicts=()
+updated=0
+added=0
+removed=0
+
+if ((do_config)); then
+  step 'configs'
+  for part in "${parts[@]}"; do
+    [[ -d $share/$part ]] || { printf 'c7shell-upgrade: missing %s -- is the package installed?\n' "$share/$part" >&2; exit 1; }
+  done
+
+  if [[ ! -e $conf/${parts[0]} ]]; then
+    info "no $conf/${parts[0]} yet -- run c7shell-setup first"
+  else
+    # Load the manifest of what was last installed: path<TAB>hash.
+    declare -A last=()
+    if [[ -f $manifest ]]; then
+      while IFS=$'\t' read -r p h; do [[ -n $p ]] && last[$p]=$h; done < "$manifest"
+    else
+      info 'no manifest from a previous run: anything that differs is treated as'
+      info 'locally edited and kept (the safe direction)'
+    fi
+    declare -A now=()
+
+    for part in "${parts[@]}"; do
+      while read -r src; do
+        rel=${src#"$share/"}
+        dst=$conf/$rel
+        want=$(shipped_hash "$rel" "$src")
+        now[$rel]=$want
+
+        if [[ ! -e $dst ]]; then
+          # New file in this version, or one the user deleted. Either way the
+          # shipped tree is the reference and a missing file breaks imports.
+          info "add     $rel"
+          run mkdir -p -- "$(dirname -- "$dst")"
+          if ((dry)); then printf '  would: install %s\n' "$dst"
+          else shipped_at "$rel" "$src" > "$dst"; fi
+          ((++added))
+          continue
+        fi
+
+        have=$(hash_of "$dst")
+        [[ $have == "$want" ]] && continue
+
+        if [[ ${last[$rel]:-} == "$have" ]]; then
+          # Untouched since we installed it, so replacing it loses nothing.
+          info "update  $rel"
+          if ((dry)); then printf '  would: rewrite %s\n' "$dst"
+          else shipped_at "$rel" "$src" > "$dst"; fi
+          ((++updated))
+        else
+          # Edited locally and changed upstream: keep theirs, park ours.
+          if [[ -e $dst.new ]] && [[ $(hash_of "$dst.new") == "$want" ]]; then
+            conflicts+=("$rel")
+            continue
+          fi
+          info "kept    $rel  (new version written to $rel.new)"
+          if ((dry)); then printf '  would: write %s.new\n' "$dst"
+          else shipped_at "$rel" "$src" > "$dst.new"; fi
+          conflicts+=("$rel")
+          # The manifest keeps the older hash on purpose: it is still the
+          # version this file diverged from, which is what the next upgrade
+          # needs to compare against.
+          now[$rel]=${last[$rel]:-$want}
+        fi
+      done < <(find "$share/$part" -type f | sort)
+    done
+
+    # Files this version dropped. Only remove what the user never touched --
+    # anything else is theirs, and .bak/.new files are never ours to delete.
+    for part in "${parts[@]}"; do
+      [[ -d $conf/$part ]] || continue
+      while read -r dst; do
+        rel=${dst#"$conf/"}
+        [[ -n ${now[$rel]:-} ]] && continue
+        [[ $rel == *.new || $rel == *.bak-* ]] && continue
+        if [[ ${last[$rel]:-} == "$(hash_of "$dst")" ]]; then
+          info "remove  $rel  (dropped upstream)"
+          run rm -f -- "$dst"
+          ((++removed))
+        else
+          warn "$rel is no longer shipped but differs from what we installed -- left alone"
+        fi
+      done < <(find "$conf/$part" -type f | sort)
+    done
+
+    if ((dry)); then
+      info "would record the manifest at $manifest"
+    else
+      mkdir -p -- "$state"
+      : > "$manifest"
+      for rel in "${!now[@]}"; do printf '%s\t%s\n' "$rel" "${now[$rel]}" >> "$manifest"; done
+      sort -o "$manifest" "$manifest"
+    fi
+
+    ((added || updated || removed || ${#conflicts[@]})) \
+      || info 'configs already match the installed version'
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+
+if ((do_doctor)) && ((dry == 0)) && command -v c7shell-doctor >/dev/null; then
+  step 'checking the requirements'
+  c7shell-doctor --quiet || true
+fi
+
+step 'summary'
+((do_config)) && info "added $added, updated $updated, removed $removed, kept ${#conflicts[@]}"
+if ((${#conflicts[@]})); then
+  printf '\nThese files you had edited, and the shipped version changed too. Yours is\nuntouched; the new one is beside it as <file>.new:\n\n'
+  for rel in "${conflicts[@]}"; do printf '  %s\n' "$conf/$rel"; done
+  printf '\nMerge with e.g.:  diff -u %s/%s{,.new}\n' "$conf" "${conflicts[0]}"
+  ((dry)) && exit 0
+  exit 4
+fi
+((dry)) && { printf '\n--dry-run: nothing was changed.\n'; exit 0; }
+echo
+echo 'Up to date. Log out and back in to pick up a new session entry or config.'
