@@ -8,18 +8,52 @@ menu, notifications, OSDs, capture/recording, power menu and settings app.
 hypr/                 hyprland.lua + conf/*.lua   (Hyprland 0.56+, Lua config)
 quickshell/c7shell/   shell.qml, Modules, Services, Theme, Assets, bin, scripts
 bin/                  c7shell-setup (copies the configs into ~/.config),
-                      c7shell-doctor (checks the runtime requirements)
+                      c7shell-doctor (checks the runtime requirements),
+                      c7shell-bootstrap (sets up a bare Arch install)
 PKGBUILD              the package
 ```
 
 ## Install
 
+From a bare Arch install — a CLI, `sudo` and a network connection is enough:
+
 ```bash
 git clone https://github.com/Jonohas/c7shell.git
 cd c7shell
-./install.sh         # builds and installs the c7shell package + dependencies
+./install.sh         # bootstrap the system, then build and install c7shell
 c7shell-setup        # copies the configs into ~/.config (run as your user)
 ```
+
+`./install.sh` runs four steps, and shows you the plan before it changes
+anything:
+
+1. **build tools** — `base-devel`, because `makepkg` will not start without
+   them (see below).
+2. **`c7shell-bootstrap`** — what a fresh Arch box is missing underneath the
+   session: GPU driver, SDDM, the pipewire daemons, fonts, an icon theme,
+   `xdg-utils`, and the enabled system services. It prints the whole plan and
+   waits for a `y` first. `./install.sh --dry-run` shows that plan and stops.
+3. **`makepkg -si`** — builds and installs the package itself.
+4. **`c7shell-doctor`** — checks the result and offers the optional programs.
+
+What the bootstrap decides for you, and how to override it:
+
+| Area | What it does |
+| --- | --- |
+| GPU | `lspci` detection → `mesa` plus `vulkan-intel` / `vulkan-radeon`, or `nvidia-open-dkms` + `nvidia-utils` + the headers of every installed kernel, and `/etc/modprobe.d/c7shell-nvidia.conf` setting `nvidia_drm modeset=1`. A pre-Turing card (GTX 10xx and older) is reported, not guessed at — `nvidia-open-dkms` does not support it. `--no-drivers` opts out. |
+| Greeter | `sddm`, enabled but not started, so it takes over at the next boot. If gdm/lightdm/greetd is already enabled it says so and enables nothing — two display managers fight over the seat and neither comes up. `--no-greeter` opts out. |
+| Audio | `pipewire`, `pipewire-pulse`, `pipewire-alsa`, `wireplumber` + the user units. `wireplumber` is a session manager, not a sound server: without the daemons under it the volume keys do nothing. |
+| Network | `NetworkManager` and `bluetooth` enabled — unless `systemd-networkd` or `iwd` is already driving the network, in which case it warns instead of stacking two managers on one link. |
+| Fonts, icons | `ttf-jetbrains-mono` (`Theme.fontMono`), `noto-fonts`, `noto-fonts-emoji`, `hicolor`/`adwaita`/`breeze` icon themes for the launcher's real app icons. |
+| AUR | `paru-bin` if no AUR helper is present, for `ttf-space-grotesk` (`Theme.fontDisplay`, not in the official repos; fontconfig falls back without it). `--no-aur` opts out. |
+| Extras | `kitty`, `dolphin` (the SUPER+Q / SUPER+E binds), `ddcutil`, `brightnessctl`, `playerctl`, plus `i2c-dev` and the `i2c` group so `ddcutil` can reach external monitors. `--no-extras` opts out. |
+
+It also runs a full `pacman -Syu` first: a partial upgrade is unsupported on
+Arch, and a DKMS driver built against the headers of a kernel you are not
+running is the same as no driver at all. `--no-upgrade` skips it.
+
+`c7shell-bootstrap` is installed as a command too, so it can be re-run later
+(`c7shell-bootstrap --dry-run` to see what it would change).
 
 `install.sh` is a thin wrapper around `makepkg -si`. On a fresh machine
 `makepkg` aborts before it reads the PKGBUILD if the Arch build tools are not
@@ -109,4 +143,5 @@ without them.
 ```bash
 tests/test-setup.sh
 tests/test-doctor.sh
+tests/test-bootstrap.sh
 ```

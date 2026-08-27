@@ -78,6 +78,9 @@ package() {
   # quickshell was built with, the DRM device, and whether the configs have
   # been copied into ~/.config yet.
   install -Dm755 bin/c7shell-doctor "$pkgdir/usr/bin/c7shell-doctor"
+  # Re-runnable after install: drivers, greeter, services and fonts are system
+  # state a package must not touch itself, so it stays a command you invoke.
+  install -Dm755 bin/c7shell-bootstrap "$pkgdir/usr/bin/c7shell-bootstrap"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
 
