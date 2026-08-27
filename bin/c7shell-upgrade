@@ -37,6 +37,11 @@ force=0
 # it is a line in /etc/sddm.conf.d that no package may write. An install from
 # before the theme existed has the files and not the selection, which is exactly
 # the gap this step closes.
+# Bumped whenever a step is added after the package half below. That half
+# replaces this very script, so on the upgrade that introduces a step it is the
+# *old* code that would run it -- see the hand-over after the package step.
+upgrade_revision=2
+
 etc_root=${C7SHELL_ROOT:-}
 sddm_dropin=$etc_root/etc/sddm.conf.d/10-c7shell.conf
 sddm_theme_dir=${C7SHELL_SDDM_THEMES:-$etc_root/usr/share/sddm/themes}/c7shell
@@ -71,13 +76,17 @@ exit: 0 up to date, 1 something went wrong, 4 updated but files need merging
 USAGE
 }
 
+# The flags that still mean something to the half after the package step, kept
+# for the hand-over below.
+pass_on=()
+
 while (($#)); do
   case $1 in
     -n|--dry-run) dry=1 ;;
     --package-only) do_config=0 ;;
     --config-only) do_package=0 ;;
-    --no-doctor) do_doctor=0 ;;
-    --no-greeter) do_greeter=0 ;;
+    --no-doctor) do_doctor=0; pass_on+=(--no-doctor) ;;
+    --no-greeter) do_greeter=0; pass_on+=(--no-greeter) ;;
     -f|--force) force=1 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'c7shell-upgrade: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -150,6 +159,28 @@ if ((do_package)); then
       printf '  would: (cd %s && C7SHELL_BRANCH=%s ./install.sh --no-bootstrap)\n' "$src" "$branch"
     else
       ( cd "$src" && C7SHELL_BRANCH=$branch C7SHELL_SKIP_DOCTOR=1 ./install.sh --no-bootstrap )
+    fi
+  fi
+
+  # Everything after this point is code that the step above just replaced. On
+  # the upgrade that introduces a step -- the sddm theme selection was the first
+  # one -- the version running here predates it, so the step silently does not
+  # happen and the machine ends up half upgraded: new files, old side effects.
+  # So hand over to the version just installed, once, for the rest of the run.
+  #
+  # bash keeps reading this script from the file descriptor it opened, and pacman
+  # replaces files by rename, so the running copy stays intact either way; this
+  # is about which *steps* exist, not about the read.
+  if ((dry == 0)) && ((do_config)) && [[ -z ${C7SHELL_HANDOVER:-} ]]; then
+    installed=$(command -v c7shell-upgrade || true)
+    if [[ -n $installed && -x $installed ]]; then
+      # Read the marker out of the file on disk, not out of this process.
+      new_rev=$(sed -n 's/^upgrade_revision=\([0-9]\+\)$/\1/p' "$installed" | head -1)
+      if [[ -n $new_rev ]] && ((new_rev > upgrade_revision)); then
+        info "c7shell-upgrade grew a step in this version; continuing with the new one"
+        # --config-only: the package half is done, and repeating it would loop.
+        C7SHELL_HANDOVER=1 exec "$installed" --config-only ${pass_on[@]+"${pass_on[@]}"}
+      fi
     fi
   fi
 fi

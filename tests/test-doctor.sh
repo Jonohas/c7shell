@@ -192,8 +192,14 @@ out=$(run 2>&1) || fail "a missing theme should not fail:\n$out"
 grep -q 'themes/c7shell is not' <<<"$out" || fail "the missing theme was not reported:\n$out"
 grep -q 'c7shell-upgrade' <<<"$out" || fail "no repair command for the missing theme:\n$out"
 
-mkdir -p "$root/usr/share/sddm/themes/c7shell" "$root/etc/sddm.conf.d"
+mkdir -p "$root/usr/share/sddm/themes/c7shell" "$root/etc/sddm.conf.d" "$root/usr/bin"
 : > "$root/usr/share/sddm/themes/c7shell/Main.qml"
+theme_meta=$root/usr/share/sddm/themes/c7shell/metadata.desktop
+printf '[SddmGreeterTheme]\nName=c7shell\nQtVersion=6\nMainScript=Main.qml\n' > "$theme_meta"
+# The binary sddm derives from QtVersion, and an ldd that reports its libraries
+# resolve -- what a machine that will actually show a login screen looks like.
+: > "$root/usr/bin/sddm-greeter-qt6"; chmod +x "$root/usr/bin/sddm-greeter-qt6"
+printf '#!/bin/sh\nexit 0\n' > "$bin/ldd"; chmod +x "$bin/ldd"
 out=$(run 2>&1) || fail "an unselected theme should not fail:\n$out"
 grep -q 'no sddm theme is selected' <<<"$out" || fail "the unselected theme was not reported:\n$out"
 
@@ -213,6 +219,29 @@ printf '[Theme]\nCurrent=c7shell\n\n[General]\nGreeterEnvironment=QML_XHR_ALLOW_
   > "$root/etc/sddm.conf.d/10-c7shell.conf"
 out=$(run 2>&1) || fail "a fully configured greeter should not fail:\n$out"
 grep -q 'may read /proc' <<<"$out" || fail "the greeter env was not recognised:\n$out"
+grep -q 'greeter binary sddm-greeter-qt6 runs' <<<"$out" || fail "the greeter binary was not checked:\n$out"
+
+# The black-screen case, and the reason this is checked at all: sddm builds the
+# greeter path as sddm-greeter + (QtVersion ? "-qt<n>" : ""), so a theme that
+# declares nothing gets handed to the Qt5 greeter -- present on Arch, but its
+# Qt5 libraries are only an optdepend of sddm. It exits 127 and the login screen
+# is black, with the reason only in sddm's journal. A failure, not a warning:
+# this machine will not let anyone in.
+printf '[SddmGreeterTheme]\nName=c7shell\nMainScript=Main.qml\n' > "$theme_meta"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "a greeter binary that is not installed should fail, got exit $rc:\n$out"
+grep -q 'black screen' <<<"$out" || fail "the black screen was not predicted:\n$out"
+
+# Same, for a binary that is there but cannot load its libraries
+: > "$root/usr/bin/sddm-greeter"; chmod +x "$root/usr/bin/sddm-greeter"
+printf '#!/bin/sh\necho "\tlibQt5Quick.so.5 => not found"\n' > "$bin/ldd"; chmod +x "$bin/ldd"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "an unloadable greeter binary should fail, got exit $rc:\n$out"
+grep -q 'cannot start' <<<"$out" || fail "the unloadable binary was not reported:\n$out"
+grep -q 'declares no QtVersion' <<<"$out" || fail "the missing QtVersion was not named:\n$out"
+
+printf '[SddmGreeterTheme]\nName=c7shell\nQtVersion=6\nMainScript=Main.qml\n' > "$theme_meta"
+printf '#!/bin/sh\nexit 0\n' > "$bin/ldd"; chmod +x "$bin/ldd"
 
 # --- the optional-package picker -------------------------------------------
 # It needs a terminal to prompt on, so drive it through a pty with `script`.

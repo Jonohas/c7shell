@@ -104,6 +104,15 @@ grep -q 'no manifest' <<<"$out" || fail "no note about the missing manifest:\n$o
 local_is hypr/hyprland.lua 'v3 entry'
 local_is hypr/hyprland.lua.new 'v4 entry'
 
+# --- the hand-over marker -------------------------------------------------
+# The package half replaces this script, so any step after it belongs to the
+# version just installed. c7shell-upgrade compares upgrade_revision on disk with
+# its own and hands over when it grew -- which only works while the marker stays
+# on one line, exactly as the sed in it expects.
+rev=$(sed -n 's/^upgrade_revision=\([0-9]\+\)$/\1/p' "$upgrade" | head -1)
+[[ -n $rev ]] || fail 'upgrade_revision is not a bare "upgrade_revision=<n>" line; the hand-over cannot read it'
+grep -q 'C7SHELL_HANDOVER=1 exec' "$upgrade" || fail 'the hand-over to the newly installed script is gone'
+
 # --- the greeter theme ----------------------------------------------------
 # The theme QML rides along with the package, but the selection is a line in
 # /etc/sddm.conf.d that no package may write -- so an install from before the

@@ -356,6 +356,37 @@ if [[ -d $sddm_theme ]]; then
       note 'that may well be deliberate; to switch, run: c7shell-bootstrap'
       ;;
   esac
+  # Which greeter binary sddm will launch for this theme, and whether it can
+  # actually run. sddm builds the path as sddm-greeter + (QtVersion ? "-qt<n>" :
+  # ""), so a theme that declares nothing is handed to the Qt5 greeter -- which
+  # Arch ships, but whose Qt5 libraries are only an optdepend of sddm. It exits
+  # 127 and the login screen is black, with the reason only in sddm's journal.
+  # Nothing else on this machine notices until the next reboot, which is why
+  # this is checked here rather than left to the theme.
+  if [[ $current == c7shell ]]; then
+    # Parsed in bash: this file's checks run under a PATH with almost nothing
+    # on it, and the rest of the doctor sticks to grep and head for the same
+    # reason.
+    qt_version=''
+    while IFS= read -r line; do
+      [[ $line =~ ^QtVersion=([0-9]+)[[:space:]]*$ ]] && qt_version=${BASH_REMATCH[1]}
+    done < "$sddm_theme/metadata.desktop" 2>/dev/null || true
+    greeter_bin=$root/usr/bin/sddm-greeter${qt_version:+-qt$qt_version}
+    if [[ ! -x $greeter_bin ]]; then
+      bad "the theme asks sddm for ${greeter_bin##*/}, which is not installed -- the greeter would be a black screen"
+      want_pkg sddm
+    elif ! command -v ldd >/dev/null; then
+      ok "greeter binary ${greeter_bin##*/} is installed"
+    elif missing_libs=$(ldd "$greeter_bin" 2>/dev/null | grep 'not found'); then
+      bad "${greeter_bin##*/} cannot start: ${missing_libs%%$'\n'*}"
+      note 'sddm picks that binary from QtVersion in the theme metadata; the'
+      note 'greeter exits 127 and the login screen is black.'
+      [[ -z $qt_version ]] && note 'the theme declares no QtVersion, so sddm defaulted to the Qt5 greeter'
+    else
+      ok "greeter binary ${greeter_bin##*/} runs"
+    fi
+  fi
+
   # Without this the greeter still comes up, but its top-left line loses the
   # kernel version and the bottom bar loses the battery: QML refuses file://
   # reads unless the greeter's environment allows them.

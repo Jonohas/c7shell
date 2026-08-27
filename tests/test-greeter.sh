@@ -28,6 +28,22 @@ grep -q '^Theme-Id=c7shell' "$theme/metadata.desktop" \
 grep -q '^ConfigFile=theme.conf' "$theme/metadata.desktop" \
   || fail 'metadata.desktop does not name theme.conf'
 
+# The one that costs a black screen at boot when it is wrong. sddm builds the
+# greeter path as /usr/bin/sddm-greeter + (QtVersion ? "-qt<n>" : ""), so a
+# theme that does not declare 6 is handed to the *Qt5* greeter -- which Arch
+# ships, but whose Qt5 libraries are only an optdepend of sddm: it exits 127 and
+# the login screen is a black rectangle. This theme is Qt6 QML (versionless
+# imports, required properties, QtQuick.Effects), so it has to say so.
+grep -q '^QtVersion=6' "$theme/metadata.desktop" \
+  || fail 'metadata.desktop does not declare QtVersion=6, so sddm would launch the Qt5 greeter'
+
+# Comments are deliberately absent from that file: Qt parses it with QSettings'
+# INI reader, which does not treat every comment marker the way a .desktop file
+# would, and a mis-parsed metadata line is exactly what a black screen looks
+# like. Explanations belong here instead.
+grep -q '^[[:space:]]*[#;]' "$theme/metadata.desktop" \
+  && fail 'metadata.desktop has a comment line; keep it to bare keys (see above)'
+
 # Every key Main.qml reads has to exist in theme.conf: config.stringValue() on
 # a key that is in neither theme.conf nor sddm.conf returns an empty string,
 # and the default silently becomes whatever the fallback happens to be.

@@ -36,6 +36,24 @@ MSG
 }
 
 post_upgrade() {
+  # The greeter theme selection is a write to /etc that a package must not make,
+  # so c7shell-upgrade does it -- but the step shipped in this version, which
+  # means the c7shell-upgrade that just ran predates it and skipped it. Later
+  # versions hand over to the newly installed script for exactly this reason;
+  # this one transition needs saying out loud.
+  if [ -d /usr/share/sddm/themes/c7shell ] \
+     && [ ! -e /etc/sddm.conf.d/10-c7shell.conf ] \
+     && [ -x /usr/bin/sddm ]; then
+    cat <<'MSG'
+
+The sddm greeter theme is installed but not selected yet. One more run picks it
+up (nothing else is rebuilt):
+
+    c7shell-upgrade --config-only
+
+MSG
+  fi
+
   cat <<'MSG'
 
 c7shell updated. The files under /usr/share/c7shell changed; your copies
