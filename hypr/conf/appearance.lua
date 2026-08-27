@@ -14,6 +14,7 @@ local defaults = {
     blurSize = 8, blurPasses = 3, inactiveOpacity = 1.0,
     borderWidth = 2, animationsEnabled = true, animationSpeed = 1.0,
     wallpaper = "",
+    cursorTheme = "Adwaita", cursorSize = 24,
 }
 
 local a = json.decode_flat(json.read_file(os.getenv("HOME") .. "/.config/hypr/appearance.json"))
