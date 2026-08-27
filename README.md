@@ -174,6 +174,23 @@ To export by hand at any time — palette and preference both:
 python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py
 ```
 
+## Global menu
+
+Apps that export a menu bar over dbusmenu — dolphin and other Qt/KDE apps —
+show it in the top bar next to the workspaces, and hide their own. That is a
+choice, not a fixture: **settings → topbar → global menu** turns it off, and
+the setting persists in `~/.config/hypr/shell.json`.
+
+The switch is the `com.canonical.AppMenu.Registrar` bus name itself, not just
+the chips in the bar. An app hands its menu bar over precisely because it finds
+that name owned, so a shell that only stopped drawing the export would leave
+dolphin with no menus anywhere. Off tells `c7shell-appmenud` to release the
+name; on tells it to take it back.
+
+A toolkit asks for the registrar once, when a window's menu bar is created, and
+caches the answer — so windows that are already open keep the menu bar they
+started with. Reopen them to see the change.
+
 ## Updating
 
 ```bash
@@ -220,6 +237,7 @@ eat local edits by accident.
 | `quickshell/c7shell/Services/` | brightness, network, bluetooth, audio, notifications, capture |
 | `quickshell/c7shell/bin/screenshare-picker.sh` | xdph `custom_picker_binary` wrapper |
 | `quickshell/c7shell/scripts/c7shell-appmenud.py` | `com.canonical.AppMenu.Registrar` for the global menu |
+| `~/.config/hypr/shell.json` | shell preferences the settings app writes (global menu) |
 
 ## Optional pieces
 
