@@ -7,7 +7,8 @@ menu, notifications, OSDs, capture/recording, power menu and settings app.
 ```
 hypr/                 hyprland.lua + conf/*.lua   (Hyprland 0.56+, Lua config)
 quickshell/c7shell/   shell.qml, Modules, Services, Theme, Assets, bin, scripts
-bin/                  c7shell-setup   (copies the configs into ~/.config)
+bin/                  c7shell-setup (copies the configs into ~/.config),
+                      c7shell-doctor (checks the runtime requirements)
 PKGBUILD              the package
 ```
 
@@ -26,6 +27,25 @@ there ("Cannot find the fakeroot binary", "Cannot find the debugedit binary"),
 so the wrapper installs `base-devel` first and then hands every argument you
 gave it to `makepkg`. If you already have `base-devel`, `makepkg -si` on its
 own still works exactly as before.
+
+After the build it runs `c7shell-doctor`, which checks everything `pacman`
+cannot: that Hyprland is 0.56 or newer (older versions do not read
+`hyprland.lua` at all), that quickshell was built with every QML module the
+shell imports, that the appmenu daemon's python modules import, that there is
+a DRM device to open, and that the configs have reached `~/.config`. Anything
+missing is reported with the package that provides it, and
+`c7shell-doctor --fix` installs those packages. Run it any time:
+
+```bash
+c7shell-doctor          # required + optional checks, exits 1 if something required is missing
+c7shell-doctor --quiet  # problems only
+c7shell-doctor --fix    # pacman -S --needed the packages behind the failures
+```
+
+A session that shows a black screen and drops straight back to the greeter is
+almost always one of the things it checks — most often that `c7shell-setup`
+was never run, since the package installs to `/usr/share/c7shell` and neither
+hyprland nor quickshell reads config from there.
 
 Then log out and pick the **c7shell** session, or run `Hyprland` from a TTY.
 
@@ -74,4 +94,5 @@ without them.
 
 ```bash
 tests/test-setup.sh
+tests/test-doctor.sh
 ```

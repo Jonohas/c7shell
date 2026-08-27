@@ -1,0 +1,285 @@
+#!/usr/bin/env bash
+# Check that everything c7shell needs to actually run is present.
+#
+# The package's depends= list is only checked at install time, and half of what
+# the session needs is not a package at all: the configs have to be copied into
+# ~/.config, Hyprland has to be new enough to read a lua config, quickshell has
+# to have been built with the QML modules the shell imports, and the machine
+# needs a DRM device to open. When any of that is missing the symptom is a
+# black screen and a bounce straight back to the greeter, with the reason
+# buried in a log -- so check it up front instead.
+set -euo pipefail
+
+conf=${XDG_CONFIG_HOME:-$HOME/.config}
+# Prefix for the absolute paths checked below. Empty in normal use; the test
+# suite points it at a fake tree so the checks can be exercised without
+# installing anything.
+root=${C7SHELL_ROOT:-}
+share=${C7SHELL_SHARE:-/usr/share/c7shell}
+fix=0
+quiet=0
+pending=0
+fail=0
+warned=0
+
+usage() {
+  cat <<USAGE
+usage: c7shell-doctor [--fix] [--quiet] [--setup-pending]
+
+Checks every runtime requirement of the c7shell session and reports what is
+missing. Nothing is installed or changed unless --fix is given.
+
+  --fix     pacman -S --needed the packages behind any missing requirement
+  --quiet   print only problems, not the things that are fine
+  --setup-pending
+            report an absent ~/.config copy as the next step to take rather
+            than as a failure (used right after installing the package, before
+            c7shell-setup has been run)
+
+env: C7SHELL_SHARE     (default /usr/share/c7shell)
+     XDG_CONFIG_HOME   (default \$HOME/.config)
+     C7SHELL_ROOT      prefix for the absolute paths checked (test hook)
+
+exit: 0 everything required is present (warnings may still be printed)
+      1 something required is missing
+USAGE
+}
+
+while (($#)); do
+  case $1 in
+    --fix) fix=1 ;;
+    --quiet|-q) quiet=1 ;;
+    --setup-pending) pending=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'c7shell-doctor: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+# Packages behind failed required checks, collected for --fix.
+missing_pkgs=()
+
+ok()   { ((quiet)) || printf '  ok    %s\n' "$*"; }
+bad()  { printf '  FAIL  %s\n' "$*" >&2; fail=1; }
+warn() { printf '  warn  %s\n' "$*" >&2; warned=1; }
+note() { printf '        %s\n' "$*" >&2; }
+section() { ((quiet)) || printf '\n%s\n' "$*"; }
+
+want_pkg() {
+  local pkg=$1
+  [[ -z $pkg ]] && return 0
+  for p in ${missing_pkgs[@]+"${missing_pkgs[@]}"}; do
+    [[ $p == "$pkg" ]] && return 0
+  done
+  missing_pkgs+=("$pkg")
+}
+
+# need_cmd <command> <package> <what it is for>
+need_cmd() {
+  if command -v "$1" >/dev/null; then
+    ok "$1"
+  else
+    bad "$1 not found -- $3 (package: $2)"
+    want_pkg "$2"
+  fi
+}
+
+# opt_cmd <command> <package> <what it is for>
+opt_cmd() {
+  if command -v "$1" >/dev/null; then
+    ok "$1 (optional)"
+  else
+    warn "$1 not found -- $3 (package: $2, optional)"
+  fi
+}
+
+# need_file <path> <package> <what it is for>
+need_file() {
+  if [[ -e $root$1 ]]; then
+    ok "$1"
+  else
+    bad "$1 missing -- $3 (package: $2)"
+    want_pkg "$2"
+  fi
+}
+
+qml_roots() {
+  local dir
+  for dir in "$root"/usr/lib/qt6/qml "$root"/usr/lib64/qt6/qml "$root"/usr/lib/qt/qml; do
+    [[ -d $dir ]] && printf '%s\n' "$dir"
+  done
+}
+
+# need_qml <Dotted.Module> <package> <what it is for>
+need_qml() {
+  local path=${1//.//} dir
+  while read -r dir; do
+    [[ -d $dir/$path ]] && { ok "QML $1"; return; }
+  done < <(qml_roots)
+  bad "QML module $1 not available -- $3 (package: $2)"
+  want_pkg "$2"
+}
+
+# need_py <import> <package> <what it is for>
+need_py() {
+  if python3 -c "import $1" 2>/dev/null; then
+    ok "python: $1"
+  else
+    bad "python module $1 not importable -- $3 (package: $2)"
+    want_pkg "$2"
+  fi
+}
+
+section 'compositor'
+need_cmd Hyprland hyprland 'the compositor the session execs'
+need_cmd hyprctl  hyprland 'dispatching to the compositor from the shell'
+
+# The config is hyprland.lua, and lua config landed in Hyprland 0.56. An older
+# Hyprland silently ignores it, writes a default hyprland.conf and comes up as
+# a bare compositor -- or refuses the session outright.
+if command -v Hyprland >/dev/null; then
+  ver=$(Hyprland --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)
+  if [[ -z $ver ]]; then
+    warn "could not read the Hyprland version; this config needs 0.56 or newer (lua config)"
+  else
+    IFS=. read -r maj min _ <<<"$ver"
+    if ((maj > 0 || min >= 56)); then
+      ok "Hyprland $ver (>= 0.56, reads hyprland.lua)"
+    else
+      bad "Hyprland $ver is too old: hypr/hyprland.lua needs 0.56 or newer"
+      want_pkg hyprland
+    fi
+  fi
+fi
+
+section 'shell'
+need_cmd qs quickshell 'the shell itself (qs -c c7shell)'
+# Quickshell modules are compile-time options; a build without them starts and
+# then throws on the import, which takes the whole shell down.
+need_qml Quickshell                       quickshell 'the shell core'
+need_qml Quickshell.Hyprland              quickshell 'workspaces and window state in the bar'
+need_qml Quickshell.Io                    quickshell 'IPC handlers behind every qs ipc call bind'
+need_qml Quickshell.Wayland               quickshell 'layer-shell surfaces (bar, launcher, OSDs)'
+need_qml Quickshell.Bluetooth             quickshell 'the bluetooth applet'
+need_qml Quickshell.Networking            quickshell 'the network applet'
+need_qml Quickshell.Services.Pipewire     quickshell 'volume control and the audio OSD'
+need_qml Quickshell.Services.UPower       quickshell 'the battery indicator'
+need_qml Quickshell.Services.SystemTray   quickshell 'the system tray'
+need_qml Quickshell.Services.Notifications quickshell 'the notification daemon'
+need_qml QtQuick.Effects qt6-declarative 'shadows and blur across the shell'
+need_qml QtQuick.Shapes  qt6-declarative 'the ring and arc indicators'
+
+section 'session helpers'
+need_cmd hypridle  hypridle  'idle timeouts, autostarted'
+need_cmd hyprlock  hyprlock  'the lock screen (SUPER+L, hypridle)'
+need_cmd hyprpaper hyprpaper 'the wallpaper, autostarted'
+need_cmd hyprpicker hyprpicker 'the colour picker in the settings app'
+need_file /usr/lib/hyprpolkitagent/hyprpolkitagent hyprpolkitagent \
+  'the polkit agent, started by conf/autostart.lua by absolute path'
+need_cmd grim        grim         'screenshots'
+need_cmd wf-recorder wf-recorder  'screen recording'
+need_cmd wl-copy     wl-clipboard 'copying captures to the clipboard'
+need_cmd notify-send libnotify    'notifications from the shell scripts'
+need_cmd wpctl       wireplumber  'the volume and mute keybinds'
+need_cmd bluetoothctl bluez-utils 'the bluetooth applet'
+need_cmd nmcli       networkmanager 'the network applet'
+need_cmd systemctl   systemd      'the power menu (suspend, reboot, poweroff)'
+
+section 'appmenu daemon'
+need_cmd python3 python 'the global menu daemon, autostarted first'
+need_py dbus python-dbus 'the daemon owns com.canonical.AppMenu.Registrar on the bus'
+need_py gi   python-gobject 'the daemon glib main loop'
+
+section 'portal'
+# Without the portal, screen sharing silently offers no sources.
+if compgen -G "$root/usr/lib*/xdg-desktop-portal-hyprland" >/dev/null \
+   || compgen -G "$root/usr/libexec/xdg-desktop-portal-hyprland" >/dev/null; then
+  ok 'xdg-desktop-portal-hyprland'
+else
+  bad 'xdg-desktop-portal-hyprland missing -- screen sharing (package: xdg-desktop-portal-hyprland)'
+  want_pkg xdg-desktop-portal-hyprland
+fi
+
+section 'session entry'
+need_file /usr/share/wayland-sessions/c7shell.desktop c7shell \
+  'the "c7shell" entry your greeter lists'
+
+section 'user config'
+# This is the one that produces the classic "black screen, back to the
+# greeter": the package deliberately installs to /usr/share, and neither
+# hyprland nor quickshell reads config from there.
+for rel in hypr/hyprland.lua quickshell/c7shell/shell.qml; do
+  if [[ -f $conf/$rel ]]; then
+    ok "$conf/$rel"
+  elif ((pending)); then
+    printf '  next  %s is not there yet -- run: c7shell-setup\n' "$conf/$rel"
+  else
+    bad "$conf/$rel missing -- the configs were never copied out of $share"
+    note "run: c7shell-setup      (as your own user, not root)"
+  fi
+done
+if [[ -d $share ]]; then
+  ok "$share"
+else
+  warn "$share missing -- the c7shell package does not look installed"
+fi
+
+section 'hardware'
+# A session that cannot open a DRM device dies immediately at startup, which
+# looks exactly like a config error from the greeter's side.
+if compgen -G "$root/dev/dri/card*" >/dev/null; then
+  ok "$(echo "$root"/dev/dri/card*)"
+else
+  bad '/dev/dri/card* missing -- no GPU driver is loaded, the compositor cannot start'
+  note 'check: lspci -k | grep -A3 -E "VGA|3D"   and install the matching driver'
+fi
+if [[ -e $root/dev/dri/renderD128 ]]; then
+  ok '/dev/dri/renderD128'
+else
+  warn '/dev/dri/renderD128 missing -- no render node, expect software rendering at best'
+fi
+
+section 'optional programs'
+opt_cmd kitty        kitty        'the terminal bound to SUPER+Q'
+opt_cmd dolphin      dolphin      'the file manager bound to SUPER+E'
+opt_cmd hyprlauncher hyprlauncher 'fallback launcher (the shell has its own)'
+opt_cmd ddcutil      ddcutil      'brightness on external monitors'
+opt_cmd brightnessctl brightnessctl 'brightness on internal panels'
+opt_cmd upower       upower       'battery readout in the bar'
+opt_cmd playerctl    playerctl    'the media keybinds'
+opt_cmd solaar       solaar       'Logitech thumb-button gestures, autostarted if present'
+opt_cmd jq           jq           'helper scripting'
+[[ -e $root/usr/lib/pam_kwallet_init ]] \
+  && ok '/usr/lib/pam_kwallet_init (optional)' \
+  || warn '/usr/lib/pam_kwallet_init missing -- kwallet will prompt for a password (package: kwallet, optional)'
+
+if ((fail)) && ((fix)) && ((${#missing_pkgs[@]})); then
+  # c7shell itself is not a fix target: it is what is being installed.
+  fixable=()
+  for p in "${missing_pkgs[@]}"; do [[ $p == c7shell ]] || fixable+=("$p"); done
+  if ((${#fixable[@]})); then
+    printf '\ninstalling: %s\n' "${fixable[*]}"
+    if command -v sudo >/dev/null; then sudo pacman -S --needed -- "${fixable[@]}"
+    elif command -v doas >/dev/null; then doas pacman -S --needed -- "${fixable[@]}"
+    else
+      printf 'c7shell-doctor: need root; run as root: pacman -S --needed %s\n' "${fixable[*]}" >&2
+      exit 1
+    fi
+    printf '\nre-checking...\n'
+    exec "$0" ${quiet:+--quiet}
+  fi
+fi
+
+printf '\n'
+if ((fail)); then
+  printf 'c7shell-doctor: required pieces are missing (see FAIL above).\n' >&2
+  if ((${#missing_pkgs[@]})); then
+    printf 'to install the packages behind them:  c7shell-doctor --fix\n' >&2
+  fi
+  exit 1
+fi
+if ((warned)); then
+  echo 'c7shell-doctor: everything required is present; optional pieces are missing (see warn above).'
+else
+  echo 'c7shell-doctor: everything checks out.'
+fi

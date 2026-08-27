@@ -39,6 +39,7 @@ optdepends=(
   'playerctl: media keys (XF86Audio{Next,Prev,Play,Pause})'
   'solaar: Logitech device support, autostarted if present'
   'jq: helper scripting'
+  'kwallet: secret storage unlocked at login by conf/autostart.lua'
 )
 makedepends=('git')
 source=("$pkgname::git+$url.git#branch=main")
@@ -68,6 +69,10 @@ package() {
             "$pkgdir/usr/share/$pkgname/quickshell/c7shell/bin/screenshare-picker.sh"
 
   install -Dm755 bin/c7shell-setup "$pkgdir/usr/bin/c7shell-setup"
+  # Checks what depends= cannot: the Hyprland version, the QML modules
+  # quickshell was built with, the DRM device, and whether the configs have
+  # been copied into ~/.config yet.
+  install -Dm755 bin/c7shell-doctor "$pkgdir/usr/bin/c7shell-doctor"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
 

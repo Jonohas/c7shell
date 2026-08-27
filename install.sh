@@ -5,6 +5,11 @@
 # ("Cannot find the fakeroot binary", "Cannot find the debugedit binary"),
 # and it aborts before the PKGBUILD is ever read -- so the PKGBUILD itself
 # cannot pull them in. This wrapper installs them first, then runs makepkg.
+#
+# Afterwards it runs c7shell-doctor, which checks the things pacman cannot:
+# the Hyprland version (the config is lua, 0.56+), the QML modules quickshell
+# was built with, the GPU device, the appmenu daemon's python modules and
+# whether the configs have reached ~/.config yet.
 set -euo pipefail
 
 # One representative command per base-devel package makepkg insists on.
@@ -27,7 +32,8 @@ usage: ./install.sh [makepkg options...]
 Installs the base-devel tools makepkg needs (fakeroot, debugedit, ...) if any
 are missing, then runs: makepkg -si <makepkg options>
 
-env: C7SHELL_SKIP_DEPS=1  don't touch base-devel, just run makepkg
+env: C7SHELL_SKIP_DEPS=1    don't touch base-devel, just run makepkg
+     C7SHELL_SKIP_DOCTOR=1  don't run the post-install c7shell-doctor check
 USAGE
 }
 
@@ -76,4 +82,29 @@ if [[ -z ${C7SHELL_SKIP_DEPS:-} ]]; then
   done
 fi
 
-exec makepkg -si "$@"
+makepkg -si "$@"
+
+if [[ -z ${C7SHELL_SKIP_DOCTOR:-} ]]; then
+  # Prefer the copy that was just installed; fall back to the tree we are in
+  # so this still works when makepkg only built a package (e.g. with -f, no -i).
+  doctor=$(command -v c7shell-doctor || echo "$(dirname -- "$0")/bin/c7shell-doctor")
+  echo
+  echo 'checking the runtime requirements...'
+  # A missing requirement is worth a non-zero exit, but the package did build
+  # and install -- say so rather than looking like the build failed.
+  "$doctor" --setup-pending || {
+    echo
+    echo 'install.sh: the package installed, but the checks above did not all pass.' >&2
+    exit 1
+  }
+fi
+
+cat <<'MSG'
+
+Next: copy the configs into your home directory (as your own user, not root):
+
+    c7shell-setup
+
+Then log out and pick the "c7shell" session, or run Hyprland from a TTY.
+Re-run c7shell-doctor at any time to re-check the requirements.
+MSG
