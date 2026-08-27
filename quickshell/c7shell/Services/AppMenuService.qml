@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Wayland
 import QtQuick
+import qs.Services
 
 // Global menu model. GlobalMenuSlot only renders what `menus` holds.
 //
@@ -58,7 +59,13 @@ Singleton {
   // Plain JS objects on purpose, copied out of JSON. The exporting app can die
   // with its menu open, and a plain array cannot dangle the way a QsMenuEntry
   // owned by a dropped DBus connection would.
-  readonly property var menus: root.mockEnabled ? root.mockMenus : (root.menuMap[root.activePid] ?? [])
+  //
+  // Empty while the global menu is switched off (ShellStore.globalMenu): the
+  // daemon has been told to drop the registrar by then, so whatever is still in
+  // menuMap describes a bar no app is exporting to us any more.
+  readonly property var menus: root.mockEnabled
+    ? root.mockMenus
+    : (ShellStore.globalMenu ? (root.menuMap[root.activePid] ?? []) : [])
 
   // The daemon turns `id` back into a com.canonical.dbusmenu Event("clicked")
   // on the exporting app. Mock items carry no id and only report themselves.
@@ -68,6 +75,30 @@ Singleton {
     if (item.id === undefined || !root.linked || !sock) return
     sock.write(JSON.stringify({ event: "trigger", pid: root.activePid, id: item.id }) + "\n")
     sock.flush()
+  }
+
+  // -- the switch ----------------------------------------------------------
+  // Hiding the chips is only half of it. An app that finds
+  // com.canonical.AppMenu.Registrar on the bus hands its menu bar over and
+  // draws none of its own, so a shell that just stopped rendering would leave
+  // dolphin (issue #17) with no menu at all. The daemon owns that name and this
+  // is what tells it whether to -- see its "registrar" message.
+  //
+  // Only sent once ShellStore has read the file: the adapter's default is on,
+  // and pushing that before the user's answer is known would flap the name on
+  // every login for anyone who turned it off.
+  function pushRegistrar() {
+    const sock = sockLoader.item
+    if (!ShellStore.ready || !root.linked || !sock) return
+    sock.write(JSON.stringify({ event: "registrar", enabled: ShellStore.globalMenu }) + "\n")
+    sock.flush()
+  }
+
+  Connections {
+    target: ShellStore
+    function onGlobalMenuChanged() { root.pushRegistrar() }
+    // The link is usually up long before the file has been read.
+    function onReadyChanged() { root.pushRegistrar() }
   }
 
   function ingest(line) {
@@ -128,8 +159,13 @@ Singleton {
   // a dropped link is normal, not fatal. Forget every menu on the way down: a
   // stale menu bar over a live window is worse than the title fallback.
   onLinkedChanged: {
-    if (root.linked) retry.interval = 1000
-    else root.menuMap = ({})
+    if (root.linked) {
+      retry.interval = 1000
+      // A restarted daemon comes up owning the registrar; tell it again.
+      root.pushRegistrar()
+    } else {
+      root.menuMap = ({})
+    }
   }
 
   // Reconnect with backoff, doubling to a 30s ceiling.
@@ -191,7 +227,8 @@ Singleton {
     target: "appmenu"
     function mock(on: bool): void { root.mockEnabled = on }
     function state(): string {
-      return `mock=${root.mockEnabled} daemon=${root.linked} pid=${root.activePid} `
+      return `mock=${root.mockEnabled} enabled=${ShellStore.globalMenu} daemon=${root.linked} `
+        + `pid=${root.activePid} `
         + `menus=${root.menus.length} known=${Object.keys(root.menuMap).join(",")}`
     }
   }

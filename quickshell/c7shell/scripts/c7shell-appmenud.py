@@ -18,7 +18,12 @@ Protocol on $XDG_RUNTIME_DIR/c7shell-appmenu.sock (one JSON object per line):
   out  {"event":"gone","pid":N}
   in   {"event":"trigger","pid":N,"id":ITEM_ID}
   in   {"event":"trigger","pid":N,"path":[menuIndex,itemIndex]}
+  in   {"event":"registrar","enabled":BOOL}
 A fresh connection is sent the current snapshot, one "menus" line per PID.
+
+"registrar" is the global-menu switch: false releases the well-known name, so
+apps go back to drawing their own menu bars, and true takes it again. The
+daemon starts owning it; the shell sends its setting once it has read it.
 
 Requires python-dbus and python-gobject (both in the Arch repos, both already
 installed here). Logs to stderr only; stdout carries --dump output.
@@ -172,8 +177,11 @@ class Daemon:
         self.pending = {}  # pid -> GLib source id, refresh debounce
         self.gen = {}  # pid -> refresh generation; fences overlapping fetches
         self.shown = set()  # (sender, path, menu id) already sent AboutToShow
+        self.owned = False  # do we hold REGISTRAR right now?
+        self.object = None  # the exported RegistrarObject, while we do
 
         import dbus
+        import dbus.bus
 
         self.dbus = dbus
         self.fdo = dbus.Interface(
@@ -207,6 +215,66 @@ class Daemon:
             arg2="",
         )
 
+    # -- registrar ownership -------------------------------------------------
+    # The name IS the feature switch. A toolkit that finds REGISTRAR on the bus
+    # hands its menu bar over and draws none of its own, so a shell that merely
+    # stopped rendering the export would leave the user with no menus anywhere
+    # (dolphin's whole settings menu, the case in issue #17). Turning the global
+    # menu off therefore drops the name; turning it back on takes it again.
+    #
+    # dbus.service.BusName is deliberately not used: it is cached per (bus,
+    # name) behind a weakref and releases only when the last reference is
+    # collected, which makes "release now, request again later" depend on GC
+    # timing. request_name/release_name on the connection is the same two bus
+    # calls with none of that.
+
+    def acquire(self):
+        """Own REGISTRAR and export the object on it. False if someone else does."""
+        if self.owned:
+            return True
+        reply = self.bus.request_name(REGISTRAR, self.dbus.bus.NAME_FLAG_DO_NOT_QUEUE)
+        if reply not in (
+            self.dbus.bus.REQUEST_NAME_REPLY_PRIMARY_OWNER,
+            self.dbus.bus.REQUEST_NAME_REPLY_ALREADY_OWNER,
+        ):
+            log("%s is already owned -- another registrar is running" % REGISTRAR)
+            return False
+        self.owned = True
+        if self.object is None:
+            self.object = make_object(self, self.bus)
+        log("owning %s (pid %d)" % (REGISTRAR, os.getpid()))
+        # Apps that exported to a previous owner are still exporting; the ones
+        # that started while nobody owned the name never will, until they open
+        # another window. See scan().
+        self.scan()
+        return True
+
+    def release(self):
+        """Drop REGISTRAR, and every menu that came with it."""
+        if not self.owned:
+            return
+        self.owned = False
+        if self.object is not None:
+            self.object.remove_from_connection()
+            self.object = None
+        self.bus.release_name(REGISTRAR)
+        # The shell must not keep rendering a bar it no longer owns the source
+        # of, so tell it every PID is gone rather than leaving stale menus up.
+        for pid in list(self.menus):
+            self.drop(pid)
+        self.windows.clear()
+        self.by_pid.clear()
+        self.gen.clear()
+        self.shown.clear()
+        log("released %s" % REGISTRAR)
+
+    def set_registrar(self, enabled):
+        """The shell's answer to "global menu on?". Idempotent either way."""
+        if enabled:
+            self.acquire()
+        else:
+            self.release()
+
     # -- registrar interface ------------------------------------------------
 
     def adopt(self, sender, path, why):
@@ -214,7 +282,14 @@ class Daemon:
 
         Idempotent: re-adopting the pair already held for that PID is a no-op,
         which is what keeps the LayoutUpdated discovery path below cheap.
+
+        Nothing is adopted while the registrar is released: the dbusmenu signals
+        this listens on are broadcast whether or not we own the name, and an app
+        that kept exporting to nobody would otherwise walk straight back into
+        the shell through the discovery path.
         """
+        if not self.owned:
+            return 0
         try:
             pid = int(self.fdo.GetConnectionUnixProcessID(sender))
         except self.dbus.DBusException as e:
@@ -526,7 +601,11 @@ class Daemon:
             return None
 
     def on_message(self, msg):
-        if msg.get("event") != "trigger":
+        event = msg.get("event")
+        if event == "registrar":
+            self.set_registrar(bool(msg.get("enabled", True)))
+            return
+        if event != "trigger":
             return
         pid = int(msg.get("pid", 0))
         item_id = msg.get("id")
@@ -630,7 +709,9 @@ class Daemon:
         return True
 
 
-def make_object(daemon, bus_name):
+def make_object(daemon, conn):
+    """Export the registrar interface on `conn` (a connection, not a BusName --
+    see Daemon.acquire)."""
     import dbus.service
 
     class RegistrarObject(dbus.service.Object):
@@ -664,26 +745,22 @@ def make_object(daemon, bus_name):
         def WindowUnregistered(self, windowId):
             pass
 
-    return RegistrarObject(bus_name, REGISTRAR_PATH)
+    return RegistrarObject(conn, REGISTRAR_PATH)
 
 
 def run(dump_seconds=None, sock_path=SOCK_PATH):
     import dbus
-    import dbus.service
     from dbus.mainloop.glib import DBusGMainLoop
     from gi.repository import GLib
 
     DBusGMainLoop(set_as_default=True)
     bus = dbus.SessionBus()
-    try:
-        name = dbus.service.BusName(REGISTRAR, bus, do_not_queue=True)
-    except dbus.exceptions.NameExistsException:
-        log("%s is already owned -- another registrar is running" % REGISTRAR)
-        return 1
 
     loop = GLib.MainLoop()
     daemon = Daemon(bus)
-    make_object(daemon, name)
+    # scan() inside acquire() is queued here and answered once the loop runs.
+    if not daemon.acquire():
+        return 1
 
     def quit_loop():
         loop.quit()
@@ -697,8 +774,6 @@ def run(dump_seconds=None, sock_path=SOCK_PATH):
         log("collecting registrations for %ds" % dump_seconds)
         GLib.timeout_add_seconds(dump_seconds, lambda: (loop.quit(), False)[1])
 
-    daemon.scan()  # queued here, answered once the loop below is running
-    log("owning %s (pid %d)" % (REGISTRAR, os.getpid()))
     try:
         loop.run()
     except KeyboardInterrupt:
@@ -806,6 +881,24 @@ def selftest():
     assert d.apply_props(42, [], [(11, ["enabled"])]) is False  # a removal
     assert d.apply_props(7, [(11, {"enabled": True})], []) is False  # unknown pid
     assert d.apply_props(42, ["nonsense"], []) is False
+
+    # -- the global-menu switch, dispatched off the same socket ---------------
+    # Ownership itself needs a bus; what is checkable offline is that the line
+    # reaches set_registrar with the right answer, and that a malformed one
+    # defaults to on rather than silently killing the menus.
+    switched = []
+    d.set_registrar = switched.append
+    for line, want in [
+        (b'{"event":"registrar","enabled":false}', False),
+        (b'{"event":"registrar","enabled":true}', True),
+        (b'{"event":"registrar"}', True),
+    ]:
+        d.handle_line(line)
+        assert switched[-1] is want, (line, switched)
+    assert len(switched) == 3
+    d.handle_line(b'{"event":"menus","pid":42}')
+    assert len(switched) == 3  # only "registrar" flips it
+    del d.set_registrar
 
     # -- malformed socket lines must not escape the GLib io watch -------------
     # handle_line() IS the guard the io watch runs, so this is the real check:

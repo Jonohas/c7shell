@@ -92,6 +92,7 @@ Scope {
         case "bluetooth": return bluetoothPage
         case "audio": return audioPage
         case "displays": return displaysPage
+        case "topbar": return topbarPage
         }
         return soonPage
       }
@@ -102,6 +103,7 @@ Scope {
     Component { id: bluetoothPage; BluetoothPage {} }
     Component { id: audioPage; AudioPage {} }
     Component { id: displaysPage; DisplaysPage {} }
+    Component { id: topbarPage; TopbarPage {} }
 
     Component {
       id: soonPage
