@@ -13,7 +13,7 @@ Singleton {
   readonly property var device: Networking.devices.values.find(d => d.type === DeviceType.Wifi) ?? null
   // 1i: the wire wins when both links are up; "none" drives the ✕ state.
   readonly property var ethDevice: Networking.devices.values.find(
-    d => d.type === DeviceType.Ethernet && d.connected) ?? null
+    d => d.type === DeviceType.Wired && d.connected) ?? null
   readonly property string primary: root.ethDevice ? "ethernet"
     : root.connected ? "wifi" : "none"
   readonly property string primaryInterface: root.ethDevice?.name ?? root.device?.name ?? ""
