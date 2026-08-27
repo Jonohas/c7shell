@@ -37,6 +37,10 @@ depends=(
   'xdg-desktop-portal-gtk'
 )
 optdepends=(
+  # Not a depends=: the greeter is system state that c7shell-bootstrap sets up,
+  # and a machine running gdm or greetd installs this package just as happily.
+  # The theme under /usr/share/sddm/themes is inert without it.
+  'sddm: the greeter the c7shell theme styles'
   'kitty: terminal bound to SUPER+Q'
   'dolphin: file manager bound to SUPER+E'
   # QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua) only means something
@@ -100,6 +104,16 @@ package() {
   install -Dm755 bin/c7shell-upgrade "$pkgdir/usr/bin/c7shell-upgrade"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
+
+  # The sddm greeter theme. It cannot travel with the configs above: sddm runs
+  # the greeter as its own user before any session exists, so the QML has to sit
+  # in /usr/share where that user can read it -- c7shell-setup copies nothing
+  # here. Selecting the theme is a line in /etc/sddm.conf.d, which a package must
+  # not write; c7shell-bootstrap does it on a fresh machine and c7shell-upgrade
+  # on an existing one.
+  install -dm755 "$pkgdir/usr/share/sddm/themes"
+  cp -a sddm/themes/c7shell "$pkgdir/usr/share/sddm/themes/"
+  chmod -R u=rwX,go=rX "$pkgdir/usr/share/sddm/themes/c7shell"
 
   # The settings window is a launchable app, so its entry and icon go where
   # every launcher already looks. They also travel inside the shipped config

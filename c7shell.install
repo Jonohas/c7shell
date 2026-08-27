@@ -8,6 +8,13 @@ own user (not root):
 
 Then log out and pick the "c7shell" session in your display manager.
 
+The sddm greeter theme is installed to /usr/share/sddm/themes/c7shell, but
+selecting it is a write to /etc that a package must not make. c7shell-bootstrap
+does it (see below), or by hand:
+
+    sudo mkdir -p /etc/sddm.conf.d
+    printf '[Theme]\nCurrent=c7shell\n' | sudo tee /etc/sddm.conf.d/10-c7shell.conf
+
 If the session does not come up, run:
 
     c7shell-doctor
@@ -39,6 +46,10 @@ in ~/.config did not. To take the new version:
 or, to replace your copies outright:
 
     c7shell-setup --force           # backs up ~/.config/{hypr,quickshell} first
+
+c7shell-upgrade also selects the c7shell greeter theme in sddm if nothing else
+has claimed it -- an install from before the theme existed has the files but not
+the selection.
 
 MSG
 }

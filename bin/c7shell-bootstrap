@@ -15,6 +15,7 @@ assume_yes=0
 want_aur=1
 want_drivers=1
 want_greeter=1
+want_greeter_theme=1
 want_extras=1
 want_upgrade=1
 
@@ -34,6 +35,9 @@ system services, and the optional programs the keybinds expect.
       --no-upgrade   skip the full system upgrade
       --no-drivers   don't touch GPU drivers
       --no-greeter   don't install or enable SDDM
+      --no-greeter-theme
+                   install SDDM but leave its theme alone (keep whatever
+                   theme the machine already uses)
       --no-aur       don't install paru or any AUR package
       --no-extras    skip kitty, dolphin, ddcutil, brightnessctl, playerctl
   -h, --help       this text
@@ -52,6 +56,7 @@ while (($#)); do
     --no-upgrade) want_upgrade=0 ;;
     --no-drivers) want_drivers=0 ;;
     --no-greeter) want_greeter=0 ;;
+    --no-greeter-theme) want_greeter_theme=0 ;;
     --no-aur) want_aur=0 ;;
     --no-extras) want_extras=0 ;;
     -h|--help) usage; exit 0 ;;
@@ -99,6 +104,29 @@ write_root() {
     return 0
   fi
   printf '%s\n' "$body" | run_root tee "$path" >/dev/null
+}
+
+# The greeter theme selection, written to /etc by the two steps below. 10- so a
+# higher-numbered drop-in of your own still wins, and named after the package so
+# it is obvious who to blame for it.
+# Prefix for the /etc paths below. Empty in normal use; the test suite points
+# it at a fake tree, the same hook c7shell-doctor takes as C7SHELL_ROOT.
+etc_root=${C7SHELL_ROOT:-}
+SDDM_DROPIN=$etc_root/etc/sddm.conf.d/10-c7shell.conf
+sddm_dropin_body() {
+  cat <<'CONF'
+# Written by c7shell-bootstrap. Delete this file (or add a drop-in that sorts
+# after it) to go back to another greeter theme.
+[Theme]
+Current=c7shell
+
+[General]
+# The greeter's hostname line reads the kernel version out of /proc/version and
+# the battery out of /sys, both through QML's XMLHttpRequest -- which refuses
+# file:// reads unless this is set. Without it the greeter still comes up; the
+# line just loses everything but the session name.
+GreeterEnvironment=QML_XHR_ALLOW_FILE_READ=1
+CONF
 }
 
 step() { printf '\n== %s\n' "$1"; }
@@ -212,6 +240,37 @@ if ((want_greeter)); then
     add_note "to switch: sudo systemctl disable $other_dm.service && sudo systemctl enable sddm.service"
   else
     units_system+=(sddm.service)
+  fi
+fi
+
+# The greeter theme. sddm reads its config from /etc/sddm.conf and the drop-ins
+# in /etc/sddm.conf.d, so selecting a theme is a write to /etc -- which a
+# package must not do, and which is why it lives here next to the unit enables.
+# The theme itself is shipped by the package, under /usr/share/sddm/themes.
+sddm_theme_current() {
+  # Last [Theme] Current= wins: sddm reads sddm.conf first, then the drop-ins in
+  # name order. Parsed in bash rather than with sed and tail, because this runs
+  # before anything is installed and only pacman is guaranteed to be there.
+  local f line value=''
+  for f in "$etc_root"/etc/sddm.conf "$etc_root"/etc/sddm.conf.d/*.conf; do
+    [[ -f $f ]] || continue
+    while IFS= read -r line; do
+      line=${line%%$'\r'}
+      [[ $line =~ ^[[:space:]]*Current[[:space:]]*=[[:space:]]*(.*)$ ]] || continue
+      value=${BASH_REMATCH[1]}
+      value=${value%"${value##*[![:space:]]}"}
+    done < "$f"
+  done
+  printf '%s' "$value"
+}
+greeter_theme_todo=0
+greeter_theme_replaces=''
+if ((want_greeter && want_greeter_theme)); then
+  current_theme=$(sddm_theme_current)
+  if [[ ! -f $SDDM_DROPIN ]] || ! grep -q '^Current=c7shell$' "$SDDM_DROPIN" \
+     || [[ $current_theme != c7shell ]]; then
+    greeter_theme_todo=1
+    [[ -n $current_theme && $current_theme != c7shell ]] && greeter_theme_replaces=$current_theme
   fi
 fi
 
@@ -330,7 +389,12 @@ nvidia_conf=0
 for vendor in ${gpu_vendors[@]+"${gpu_vendors[@]}"}; do [[ $vendor == nvidia ]] && nvidia_conf=1; done
 ((nvidia_conf)) && info '/etc/modprobe.d/c7shell-nvidia.conf  (nvidia_drm modeset, needed for wayland)'
 ((want_extras)) && info '/etc/modules-load.d/c7shell-i2c.conf  (i2c-dev, for ddcutil backlight)'
-((nvidia_conf || want_extras)) || info 'none'
+if ((greeter_theme_todo)); then
+  info "$SDDM_DROPIN  (select the c7shell greeter theme)"
+  [[ -n $greeter_theme_replaces ]] \
+    && warn "the sddm theme is currently \"$greeter_theme_replaces\"; this replaces it (--no-greeter-theme keeps it)"
+fi
+((nvidia_conf || want_extras || greeter_theme_todo)) || info 'none'
 
 if ((${#notes[@]})); then
   step 'notes'
@@ -368,6 +432,16 @@ if ((nvidia_conf)); then
   write_root /etc/modprobe.d/c7shell-nvidia.conf \
     'options nvidia_drm modeset=1 fbdev=1'
   add_note 'the nvidia module settings apply after a reboot'
+fi
+
+if ((greeter_theme_todo)); then
+  step 'selecting the c7shell greeter theme'
+  run_root mkdir -p "$etc_root/etc/sddm.conf.d"
+  write_root "$SDDM_DROPIN" "$(sddm_dropin_body)"
+  # The theme files themselves come with the package, which is installed after
+  # this script runs -- and sddm is not started until the next boot, so a
+  # selection that points at a theme not on disk yet is not a problem.
+  add_note 'the greeter theme applies at the next boot, once the c7shell package is installed'
 fi
 
 if ((want_extras)); then

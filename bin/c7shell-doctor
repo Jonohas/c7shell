@@ -322,6 +322,60 @@ if [[ -f $entry ]]; then
   esac
 fi
 
+section 'greeter'
+# The greeter is where a broken session shows up, and where the theme is easiest
+# to get half-installed: the QML ships with the package, the selection is a line
+# in /etc/sddm.conf.d that only c7shell-bootstrap or c7shell-upgrade writes. All
+# warnings, never failures -- a machine may deliberately run another display
+# manager, and the session works either way.
+sddm_theme_current() {
+  local f line value=''
+  for f in "$root"/etc/sddm.conf "$root"/etc/sddm.conf.d/*.conf; do
+    [[ -f $f ]] || continue
+    while IFS= read -r line; do
+      [[ $line =~ ^[[:space:]]*Current[[:space:]]*=[[:space:]]*(.*)$ ]] || continue
+      value=${BASH_REMATCH[1]}
+      value=${value%"${value##*[![:space:]]}"}
+    done < "$f"
+  done
+  printf '%s' "$value"
+}
+
+sddm_theme=$root/usr/share/sddm/themes/c7shell
+if [[ -d $sddm_theme ]]; then
+  ok '/usr/share/sddm/themes/c7shell'
+  current=$(sddm_theme_current)
+  case $current in
+    c7shell) ok 'sddm uses the c7shell greeter theme' ;;
+    '')
+      warn 'no sddm theme is selected, so the greeter comes up unstyled'
+      note 'select it:  c7shell-upgrade   (or c7shell-bootstrap on a fresh machine)'
+      ;;
+    *)
+      warn "sddm is set to the \"$current\" theme, not c7shell"
+      note 'that may well be deliberate; to switch, run: c7shell-bootstrap'
+      ;;
+  esac
+  # Without this the greeter still comes up, but its top-left line loses the
+  # kernel version and the bottom bar loses the battery: QML refuses file://
+  # reads unless the greeter's environment allows them.
+  if [[ $current == c7shell ]]; then
+    if grep -rqs 'QML_XHR_ALLOW_FILE_READ' "$root"/etc/sddm.conf "$root"/etc/sddm.conf.d/; then
+      ok 'the greeter may read /proc and /sys (kernel and battery readout)'
+    else
+      warn 'GreeterEnvironment does not set QML_XHR_ALLOW_FILE_READ=1, so the'
+      note 'greeter shows no kernel version and no battery level'
+      note 'fix it:  c7shell-upgrade   (it rewrites the sddm drop-in)'
+    fi
+  fi
+elif command -v sddm-greeter-qt6 >/dev/null || command -v sddm >/dev/null; then
+  warn 'sddm is installed but /usr/share/sddm/themes/c7shell is not -- the'
+  note 'greeter theme ships with the package, so rebuild it: c7shell-upgrade'
+else
+  warn 'sddm is not installed, so the c7shell greeter theme is unused'
+  note 'install it:  c7shell-bootstrap'
+fi
+
 section 'user config'
 # This is the one that produces the classic "black screen, back to the
 # greeter": the package deliberately installs to /usr/share, and neither

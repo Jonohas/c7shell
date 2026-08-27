@@ -179,6 +179,41 @@ printf '[Desktop Entry]\nName=c7shell\nExec=start-hyprland\n' \
 out=$(run --quiet 2>&1 || true)
 grep -q 'execs Hyprland directly' <<<"$out" && fail "a current session entry still warned:\n$out"
 
+# --- the greeter theme -----------------------------------------------------
+# The theme QML comes with the package; the selection is a drop-in in
+# /etc/sddm.conf.d that c7shell-bootstrap or c7shell-upgrade writes. Every
+# state here is a warning: a machine may run another display manager and the
+# session works regardless.
+out=$(run 2>&1) || fail "an sddm-less machine should not fail:\n$out"
+grep -q 'sddm is not installed' <<<"$out" || fail "no note about the unused theme:\n$out"
+
+stub sddm   # sddm here, theme not: the package needs rebuilding
+out=$(run 2>&1) || fail "a missing theme should not fail:\n$out"
+grep -q 'themes/c7shell is not' <<<"$out" || fail "the missing theme was not reported:\n$out"
+grep -q 'c7shell-upgrade' <<<"$out" || fail "no repair command for the missing theme:\n$out"
+
+mkdir -p "$root/usr/share/sddm/themes/c7shell" "$root/etc/sddm.conf.d"
+: > "$root/usr/share/sddm/themes/c7shell/Main.qml"
+out=$(run 2>&1) || fail "an unselected theme should not fail:\n$out"
+grep -q 'no sddm theme is selected' <<<"$out" || fail "the unselected theme was not reported:\n$out"
+
+printf '[Theme]\nCurrent=breeze\n' > "$root/etc/sddm.conf"
+out=$(run 2>&1) || fail "another theme should not fail:\n$out"
+grep -q 'set to the "breeze" theme' <<<"$out" || fail "another theme was not reported:\n$out"
+
+# Selected, but without the greeter environment the kernel and battery readouts
+# are silently empty -- worth saying, since nothing else shows it.
+printf '[Theme]\nCurrent=c7shell\n' > "$root/etc/sddm.conf.d/10-c7shell.conf"
+rm -f "$root/etc/sddm.conf"
+out=$(run 2>&1) || fail "a selected theme should not fail:\n$out"
+grep -q 'uses the c7shell greeter theme' <<<"$out" || fail "the selection was not recognised:\n$out"
+grep -q 'QML_XHR_ALLOW_FILE_READ' <<<"$out" || fail "the missing greeter env was not reported:\n$out"
+
+printf '[Theme]\nCurrent=c7shell\n\n[General]\nGreeterEnvironment=QML_XHR_ALLOW_FILE_READ=1\n' \
+  > "$root/etc/sddm.conf.d/10-c7shell.conf"
+out=$(run 2>&1) || fail "a fully configured greeter should not fail:\n$out"
+grep -q 'may read /proc' <<<"$out" || fail "the greeter env was not recognised:\n$out"
+
 # --- the optional-package picker -------------------------------------------
 # It needs a terminal to prompt on, so drive it through a pty with `script`.
 # pacman is a stub that records what it was asked to install.

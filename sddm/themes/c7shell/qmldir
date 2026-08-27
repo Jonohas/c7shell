@@ -1,0 +1,5 @@
+# Implicit directory import: sddm loads Main.qml out of this directory, so the
+# files beside it are types without an import statement. Only the singleton
+# needs declaring -- QML has no other way to find one.
+module c7shell
+singleton Theme 1.0 Theme.qml

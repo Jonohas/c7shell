@@ -15,6 +15,8 @@ trap 'rm -rf -- "$tmp"' EXIT
 export C7SHELL_SHARE=$tmp/share
 export XDG_CONFIG_HOME=$tmp/conf
 export C7SHELL_STATE=$tmp/state
+export C7SHELL_ROOT=$tmp/root
+export C7SHELL_SDDM_THEMES=$tmp/root/usr/share/sddm/themes
 
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 ship() { mkdir -p -- "$(dirname -- "$C7SHELL_SHARE/$1")"; printf '%s\n' "$2" > "$C7SHELL_SHARE/$1"; }
@@ -101,5 +103,60 @@ grep -q 'no manifest' <<<"$out" || fail "no note about the missing manifest:\n$o
 ((rc == 4)) || fail "without a manifest every difference should be kept, got $rc:\n$out"
 local_is hypr/hyprland.lua 'v3 entry'
 local_is hypr/hyprland.lua.new 'v4 entry'
+
+# --- the greeter theme ----------------------------------------------------
+# The theme QML rides along with the package, but the selection is a line in
+# /etc/sddm.conf.d that no package may write -- so an install from before the
+# theme existed has the files and not the selection. Closing that gap is what
+# this step is for.
+dropin=$tmp/root/etc/sddm.conf.d/10-c7shell.conf
+
+# A machine with no sddm gets no drop-in at all
+out=$("$upgrade" --config-only --no-doctor 2>&1) || true
+grep -q 'sddm is not installed' <<<"$out" || fail "an sddm-less machine was not reported:\n$out"
+[[ -e $dropin ]] && fail 'wrote a drop-in on a machine without sddm'
+
+# From here on sddm is present but the theme is not
+mkdir -p "$tmp/root/usr/bin" "$tmp/bin"
+printf '#!/bin/sh\nexit 0\n' > "$tmp/root/usr/bin/sddm"; chmod +x "$tmp/root/usr/bin/sddm"
+
+# Nothing to select while the theme is not installed
+out=$("$upgrade" --config-only --no-doctor 2>&1) || true
+grep -q 'nothing to select' <<<"$out" || fail "an absent theme was not reported:\n$out"
+[[ -e $dropin ]] && fail 'wrote a drop-in for a theme that is not installed'
+
+# With the theme installed and no selection anywhere, it gets selected
+mkdir -p "$C7SHELL_SDDM_THEMES/c7shell"
+touch "$C7SHELL_SDDM_THEMES/c7shell/Main.qml"
+out=$("$upgrade" --config-only --no-doctor --dry-run 2>&1)
+grep -q "would write $dropin" <<<"$out" || fail "--dry-run did not plan the drop-in:\n$out"
+[[ -e $dropin ]] && fail '--dry-run wrote the drop-in'
+
+# For real, with a stub in front of the real sudo: a test must never reach for
+# root, and must never sit on a password prompt either.
+printf '#!/bin/sh\nexec "$@"\n' > "$tmp/bin/sudo"; chmod +x "$tmp/bin/sudo"
+export PATH="$tmp/bin:$PATH"
+out=$("$upgrade" --config-only --no-doctor 2>&1) || true
+grep -q 'selecting the c7shell theme' <<<"$out" || fail "the selection was not attempted:\n$out"
+[[ -f $dropin ]] || fail "the drop-in was not written:\n$out"
+grep -q '^Current=c7shell$' "$dropin" || fail "the drop-in does not select c7shell:\n$(cat "$dropin")"
+grep -q 'GreeterEnvironment=QML_XHR_ALLOW_FILE_READ=1' "$dropin" \
+  || fail "the drop-in does not let the greeter read /proc:\n$(cat "$dropin")"
+
+# Somebody else's theme is left alone: an upgrade does not overrule a choice
+mkdir -p "$tmp/root/etc/sddm.conf.d"
+rm -f "$dropin"
+printf '[Theme]\nCurrent=breeze\n' > "$tmp/root/etc/sddm.conf"
+out=$("$upgrade" --config-only --no-doctor 2>&1) || true
+grep -q 'leaving it alone' <<<"$out" || fail "another theme was not respected:\n$out"
+[[ -e $dropin ]] && fail "overwrote somebody else's theme selection"
+
+# Once ours is in place there is nothing to do, and --no-greeter says nothing
+printf '[Theme]\nCurrent=c7shell\n' > "$dropin"
+rm -f "$tmp/root/etc/sddm.conf"
+out=$("$upgrade" --config-only --no-doctor 2>&1) || true
+grep -q 'already uses the c7shell theme' <<<"$out" || fail "an applied theme was not recognised:\n$out"
+out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
+grep -q 'greeter theme' <<<"$out" && fail "--no-greeter still touched the greeter:\n$out"
 
 echo 'PASS: c7shell-upgrade'
