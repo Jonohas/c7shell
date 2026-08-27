@@ -49,8 +49,11 @@ printf '%s\n' "$STUB_LSPCI"
 STUB
 
 for s in pacman systemctl lspci; do chmod +x "$bin/$s"; done
-# Present, so the bootstrap never tries to build an AUR helper in a test.
-printf '#!/bin/sh\necho "paru $*" >> "$STUB_LOG"\n' > "$bin/paru"; chmod +x "$bin/paru"
+# Present and working, so the bootstrap never tries to build an AUR helper in
+# a test. --version is how the bootstrap decides that, so it must not log:
+# every "--dry-run changed nothing" check reads that same log.
+working_paru() { printf '#!/bin/sh\ncase $1 in --version) echo "paru v2.1.0"; exit 0 ;; esac\necho "paru $*" >> "$STUB_LOG"\n' > "$bin/paru"; chmod +x "$bin/paru"; }
+working_paru
 # root wrapper, so run_root has something to find in a non-dry run
 printf '#!/bin/sh\necho "sudo $*" >> "$STUB_LOG"\n' > "$bin/sudo"; chmod +x "$bin/sudo"
 
@@ -196,5 +199,20 @@ env -i PATH="$bin" HOME="$tmp" USER=tester STUB_LOG="$log" STUB_LSPCI="$AMD" \
   /usr/bin/bash "$bootstrap" --yes --no-aur </dev/null >/dev/null 2>&1 || true
 grep -q 'pacman -Syu' "$log" || fail "--yes did not upgrade:\n$(cat "$log")"
 grep -q 'systemctl enable' "$log" || fail "--yes did not enable the system units:\n$(cat "$log")"
+
+# --- a helper that is installed but cannot run counts as no helper ---------
+# paru links libalpm while asking only for `libalpm.so>=14`, so pacman leaves
+# a paru in place that a pacman soname bump has already broken. Trusting the
+# name alone would hand every AUR package to a binary that cannot start.
+printf '#!/bin/sh\necho "paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory" >&2\nexit 127\n' > "$bin/paru"
+chmod +x "$bin/paru"
+out=$(plan "$AMD")
+grep -q 'paru will be built' <<<"$out" || fail "a broken paru was treated as usable:\n$out"
+grep -q 'does not run' <<<"$out" || fail "a broken paru was not reported:\n$out"
+grep -q 'aur.archlinux.org/paru.git' <<<"$out" || fail "the source package is not what gets built:\n$out"
+grep -q 'paru-bin' <<<"$out" && fail "paru-bin is prebuilt against one libalpm, it must not be used:\n$out"
+working_paru
+out=$(plan "$AMD")
+grep -q 'already installed' <<<"$out" || fail "a working paru was rebuilt anyway:\n$out"
 
 echo 'PASS: c7shell-bootstrap'

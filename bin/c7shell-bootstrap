@@ -246,9 +246,21 @@ else
 fi
 
 # --- AUR -------------------------------------------------------------------
+# A helper that is installed but does not run is worse than none: pacman keeps
+# it (the AUR packages only ask for `libalpm.so>=14`) while a pacman soname
+# bump has already made the binary unloadable, so every AUR update fails with
+# a missing-library error that never mentions the upgrade behind it.
+helper_works() { have "$1" && "$1" --version >/dev/null 2>&1; }
 install_paru=0
 if ((want_aur)); then
-  if ! have paru && ! have yay; then install_paru=1; fi
+  if helper_works paru || helper_works yay; then
+    :
+  else
+    install_paru=1
+    if have paru || have yay; then
+      add_note 'the AUR helper already here does not run (usually libalpm changed soname under it), so paru is rebuilt from source'
+    fi
+  fi
   # Theme.fontDisplay is "Space Grotesk", which is not in the official repos.
   # Without it fontconfig substitutes another sans and page titles still work.
   add_aur ttf-space-grotesk
@@ -298,7 +310,7 @@ else
 fi
 if ((${#aur_pkgs[@]})); then
   if ((install_paru)); then
-    info 'AUR helper: paru-bin will be built from the AUR'
+    info 'AUR helper: paru will be built from the AUR source package (pulls a rust toolchain)'
   else
     info "AUR helper: $(have paru && echo paru || echo yay), already installed"
   fi
@@ -390,14 +402,18 @@ run systemctl --user start "${units_user[@]}" || warn 'could not start the pipew
 
 if ((install_paru)); then
   step 'installing paru from the AUR'
-  # paru-bin, not paru: the source package pulls a rust toolchain in to build
-  # an AUR helper, which is a lot of machine for one font.
+  # paru, not paru-bin: the -bin package unpacks an upstream binary that was
+  # linked against whatever libalpm existed on release day, while declaring
+  # only `libalpm.so>=14`. Install it after pacman bumps the soname and it
+  # dies on first run -- and rebuilding it cannot help, because there is
+  # nothing to relink. The source package costs a rust toolchain once and
+  # links against the libalpm actually installed here.
   if ((dry)); then
-    info 'would clone https://aur.archlinux.org/paru-bin.git and run makepkg -si in it'
+    info 'would clone https://aur.archlinux.org/paru.git and run makepkg -si in it'
   else
     tmp=$(mktemp -d)
-    if git clone --depth 1 https://aur.archlinux.org/paru-bin.git "$tmp/paru-bin" \
-       && (cd "$tmp/paru-bin" && makepkg -si ${pacman_flags[@]+"${pacman_flags[@]}"}); then
+    if git clone --depth 1 https://aur.archlinux.org/paru.git "$tmp/paru" \
+       && (cd "$tmp/paru" && makepkg -si ${pacman_flags[@]+"${pacman_flags[@]}"}); then
       :
     else
       warn 'building paru failed; skipping the AUR packages'
@@ -408,7 +424,7 @@ if ((install_paru)); then
 fi
 
 if ((${#aur_pkgs[@]})); then
-  helper=$(have paru && echo paru || { have yay && echo yay; } || true)
+  helper=$(helper_works paru && echo paru || { helper_works yay && echo yay; } || true)
   if [[ -n $helper ]]; then
     step "installing AUR packages with $helper"
     # An AUR build failing is not fatal: everything here is cosmetic.

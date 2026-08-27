@@ -245,4 +245,21 @@ grep -q 'no terminal to ask on' <<<"$out" || fail "no tty: expected a note, got:
 run --quiet >/dev/null 2>&1 || true
 [[ ! -s $log ]] || fail "the picker ran without --optional: $(cat "$log")"
 
+# --- a broken AUR helper is named, with the reason -------------------------
+# `paru: libalpm.so.15 missing` names a library, never the pacman upgrade that
+# removed it, so the fix (rebuild the source package) is not guessable from the
+# error. An unusable helper is a warning, not a failure: the session runs fine.
+printf '#!/bin/sh\necho "paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory" >&2\nexit 127\n' > "$bin/paru"
+chmod +x "$bin/paru"
+out=$(run 2>&1 || true)
+grep -q 'paru is broken' <<<"$out" || fail "a broken paru was not reported:\n$out"
+grep -q 'libalpm.so.15' <<<"$out" || fail "the reported error lost the library name:\n$out"
+grep -q 'aur.archlinux.org/paru.git' <<<"$out" || fail "no fix was given for a broken paru:\n$out"
+run >/dev/null 2>&1 || fail 'a broken AUR helper failed the doctor instead of warning'
+
+printf '#!/bin/sh\ncase $1 in --version) echo "paru v2.1.0"; exit 0 ;; esac\n' > "$bin/paru"
+out=$(run 2>&1 || true)
+grep -q 'paru runs' <<<"$out" || fail "a working paru was not reported ok:\n$out"
+rm -f "$bin/paru"
+
 echo 'PASS: c7shell-doctor'

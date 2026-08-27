@@ -47,7 +47,7 @@ What the bootstrap decides for you, and how to override it:
 | Network | `NetworkManager` and `bluetooth` enabled — unless `systemd-networkd` or `iwd` is already driving the network, in which case it warns instead of stacking two managers on one link. |
 | Fonts, icons | `ttf-jetbrains-mono` (`Theme.fontMono`), `noto-fonts`, `noto-fonts-emoji`, `hicolor`/`adwaita`/`breeze` icon themes for the launcher's real app icons. |
 | Qt app theming | `plasma-integration` + `breeze` + `breeze-icons`, but **only** alongside `dolphin` — installed with it, added if the machine already has it, skipped otherwise. Nothing in the shell needs them; only QWidget-based Qt/KDE apps do. |
-| AUR | `paru-bin` if no AUR helper is present, for `ttf-space-grotesk` (`Theme.fontDisplay`, not in the official repos; fontconfig falls back without it). `--no-aur` opts out. |
+| AUR | `paru` (the source package, so it links the libalpm actually installed -- `paru-bin` ships a binary built against one specific `libalpm.so` while declaring `libalpm.so>=14`, so pacman lets it outlive the soname it needs) if no *working* AUR helper is present, for `ttf-space-grotesk` (`Theme.fontDisplay`, not in the official repos; fontconfig falls back without it). `--no-aur` opts out. |
 | Extras | `kitty`, `dolphin` (the SUPER+Q / SUPER+E binds), `ddcutil`, `brightnessctl`, `playerctl`, plus `i2c-dev` and the `i2c` group so `ddcutil` can reach external monitors. `--no-extras` opts out. |
 
 It also runs a full `pacman -Syu` first: a partial upgrade is unsupported on

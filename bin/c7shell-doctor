@@ -329,6 +329,28 @@ else
   warn '/dev/dri/renderD128 missing -- no render node, expect software rendering at best'
 fi
 
+section 'aur helper'
+# An AUR helper links libalpm, but the AUR packages only declare
+# `libalpm.so>=14` -- so pacman happily keeps one installed across a soname
+# bump (pacman 7.0 shipped libalpm.so.15, 7.1 ships .16) that the binary
+# cannot survive. Nothing in c7shell needs a helper at runtime, but a dead one
+# silently blocks every later AUR update, and the failure names a missing
+# library rather than the upgrade that caused it.
+for helper in paru yay; do
+  command -v "$helper" >/dev/null || continue
+  if err=$("$helper" --version 2>&1 >/dev/null); then
+    ok "$helper runs"
+  elif [[ $err == *libalpm.so* ]]; then
+    warn "$helper is broken: ${err%%$'\n'*}"
+    note "pacman's libalpm changed soname under it. Rebuild the *source*"
+    note "package -- a -bin package just unpacks the same prebuilt binary:"
+    note "  git clone https://aur.archlinux.org/$helper.git"
+    note "  cd $helper && makepkg -si"
+  else
+    warn "$helper does not run: ${err%%$'\n'*}"
+  fi
+done
+
 section 'optional programs'
 # One table, used twice: to report what is absent, and to offer it under
 # --optional. kind is `cmd` (found on PATH) or `file` (an absolute path, since
