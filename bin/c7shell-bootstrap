@@ -456,6 +456,17 @@ if ((want_extras)); then
   fi
 fi
 
+step 'enabling airplane mode'
+# The shell throws airplane mode through rfkill, which needs write access to
+# /dev/rfkill. logind grants that to whoever holds the active seat by ACL, so on
+# a graphical login it already works -- the group is what makes it survive a
+# session logind does not call active, and what makes the failure diagnosable
+# instead of an rfkill exit 1 in the shell's log.
+if getent group rfkill >/dev/null && ! id -nG | grep -qw rfkill; then
+  run_root gpasswd -a "$USER" rfkill
+  add_note 'you were added to the rfkill group; log out and back in for airplane mode'
+fi
+
 if ((${#units_todo[@]})); then
   step 'enabling system services'
   run_root systemctl enable "${units_todo[@]}"

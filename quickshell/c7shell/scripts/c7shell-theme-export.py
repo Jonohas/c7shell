@@ -37,6 +37,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from configparser import RawConfigParser
 
 HOME = os.path.expanduser("~")
@@ -45,9 +46,20 @@ DATA = os.environ.get("XDG_DATA_HOME") or f"{HOME}/.local/share"
 
 APPEARANCE = f"{CONFIG}/hypr/appearance.json"
 KDEGLOBALS = f"{CONFIG}/kdeglobals"
+KCMINPUTRC = f"{CONFIG}/kcminputrc"
 GTK_SETTINGS = (f"{CONFIG}/gtk-3.0/settings.ini", f"{CONFIG}/gtk-4.0/settings.ini")
 SCHEME_FILE = f"{DATA}/color-schemes/C7Shell.colors"
 SCHEME_NAME = "C7Shell"
+
+# Cursor defaults, and they must stay identical to the ones in
+# hypr/conf/appearance.lua and Services/AppearanceStore.qml -- appearance.json
+# owns the value, these are only what a missing or corrupt file falls back to.
+CURSOR_THEME = "Adwaita"
+CURSOR_SIZE = 24
+
+# KGlobalSettings::ChangeType, the argument notifyChange takes.
+PALETTE_CHANGED = 0
+CURSOR_CHANGED = 4
 
 # Theme.qml surfaces, the same two variants it renders. `bg` is the deepest
 # layer (item views), `canvas` the window behind them, `glass` the popover base.
@@ -209,18 +221,25 @@ def reader():
     return cp
 
 
-def write_kdeglobals(groups):
+def merge_ini(path, groups):
+    """Set `groups` in a KConfig file, leaving every other key in it alone.
+
+    kdeglobals and kcminputrc are both shared files this script is one writer
+    of: kdeglobals carries the user's fonts and icon theme, kcminputrc carries a
+    per-device [Libinput][vid][pid][name] section for every pointer they own.
+    Read, set, atomic replace -- never truncate and rewrite.
+    """
     cp = reader()
-    cp.read(KDEGLOBALS, encoding="utf-8")
+    cp.read(path, encoding="utf-8")
     for group, keys in groups.items():
         if not cp.has_section(group):
             cp.add_section(group)
         for k, v in keys.items():
             cp.set(group, k, v)
-    tmp = KDEGLOBALS + ".c7tmp"
+    tmp = path + ".c7tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         cp.write(fh, space_around_delimiters=False)
-    os.replace(tmp, KDEGLOBALS)
+    os.replace(tmp, path)
 
 
 def write_scheme(groups):
@@ -280,11 +299,35 @@ def write_gsettings(scheme):
         check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def notify():
-    """KGlobalSettings::PaletteChanged. The part that repaints running apps."""
+def write_cursor(theme, size):
+    """One cursor theme, every consumer that has its own opinion of it.
+
+    Three toolkits, three files, and nothing kept them in step: the compositor
+    read XCURSOR_THEME (unset, so it fell through to Adwaita via
+    default-cursors), plasma-integration read cursorTheme from kcminputrc
+    (unset, so the same fallback), and GTK read gtk-cursor-theme-name from its
+    own settings.ini (breeze_cursors) -- two different cursors on one screen.
+
+    hypr/conf/environment.lua sets the compositor's env from the same
+    appearance.json key at config load, so the only thing left to reach here is
+    the session already running.
+    """
+    merge_ini(KCMINPUTRC, {"Mouse": {"cursorTheme": theme, "cursorSize": str(size)}})
+    for path in GTK_SETTINGS:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        merge_ini(path, {"Settings": {"gtk-cursor-theme-name": theme,
+                                      "gtk-cursor-theme-size": str(size)}})
+    # Hyprland took XCURSOR_THEME at config load; this is what moves the cursor
+    # already on screen. Silent when there is no compositor to talk to.
+    subprocess.run(["hyprctl", "setcursor", theme, str(size)],
+                   check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def notify(change=PALETTE_CHANGED):
+    """The half that reaches running apps: a plain file write moves no pixels."""
     subprocess.run(
         ["gdbus", "emit", "--session", "--object-path", "/KGlobalSettings",
-         "--signal", "org.kde.KGlobalSettings.notifyChange", "0", "0"],
+         "--signal", "org.kde.KGlobalSettings.notifyChange", str(change), "0"],
         check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -293,12 +336,37 @@ def notify():
 # AppearanceStore's clamped reads do: a stray value falls back, never reaches
 # a colour computation.
 
-def read_appearance():
+def load_appearance():
+    """appearance.json as a dict, or empty when it is missing or malformed."""
     try:
         with open(APPEARANCE, encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError):
         data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def cursor_from(data):
+    """Validated (theme, size). Pure, so the selftest can reach it.
+
+    The name becomes a directory lookup, a config value and an argv element, so
+    it is held to a plain theme name -- a hand-edited "../something" must not
+    reach any of the three.
+    """
+    theme = data.get("cursorTheme")
+    if not (isinstance(theme, str) and re.fullmatch(r"[A-Za-z0-9._-]+", theme)):
+        theme = CURSOR_THEME
+    try:
+        size = int(data.get("cursorSize", CURSOR_SIZE))
+    except (TypeError, ValueError):
+        size = CURSOR_SIZE
+    if isinstance(data.get("cursorSize"), bool) or not 8 <= size <= 128:
+        size = CURSOR_SIZE
+    return theme, size
+
+
+def read_appearance():
+    data = load_appearance()
     accent = data.get("accent", "")
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(accent)):
         accent = DEFAULT_ACCENT
@@ -356,6 +424,49 @@ def selftest():
     # and picking light must not quietly turn the shell's own palette light.
     assert SCHEMES["dark"] == ("prefer-dark", "1")
     assert SCHEMES["light"] == ("prefer-light", "0")
+    # sections in kcminputrc are the ones that would hurt to lose, and their
+    # A hand-edited cursor name reaches a directory lookup, two config files and
+    # an argv element, so it is the one appearance.json value worth fuzzing.
+    assert cursor_from({}) == (CURSOR_THEME, CURSOR_SIZE)
+    assert cursor_from({"cursorTheme": "Sweet-cursors", "cursorSize": 32}) \
+        == ("Sweet-cursors", 32)
+    for bad in ("", "../Adwaita", "a b", "x/y", "$(id)", None, 5, True, ["A"]):
+        assert cursor_from({"cursorTheme": bad})[0] == CURSOR_THEME, repr(bad)
+    for bad in ("huge", None, 0, 7, 129, True, False, [24], 1e9):
+        assert cursor_from({"cursorSize": bad})[1] == CURSOR_SIZE, repr(bad)
+    assert cursor_from({"cursorSize": "32"})[1] == 32  # JSON strings are common
+
+    # merge_ini writes into files it does not own. kcminputrc's per-device
+    # libinput sections are the ones that would hurt to lose -- their bracketed
+    # names are exactly what a careless rewrite mangles -- and settings.ini
+    # carries a dozen GTK keys this script has no business touching.
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "kcminputrc")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("[Libinput][2362][628][PIXA3854:00 093A:0274 Touchpad]\n"
+                     "NaturalScroll=true\n\n[Mouse]\ncursorSize=48\n")
+        merge_ini(f, {"Mouse": {"cursorTheme": CURSOR_THEME,
+                                "cursorSize": str(CURSOR_SIZE)}})
+        text = open(f, encoding="utf-8").read()
+        assert "[Libinput][2362][628][PIXA3854:00 093A:0274 Touchpad]" in text, text
+        assert "NaturalScroll=true" in text, text
+        assert f"cursorTheme={CURSOR_THEME}" in text, text
+        assert f"cursorSize={CURSOR_SIZE}" in text, text
+        assert "cursorSize=48" not in text, text
+
+        g = os.path.join(d, "settings.ini")
+        with open(g, "w", encoding="utf-8") as fh:
+            fh.write("[Settings]\ngtk-theme-name=Breeze\n"
+                     "gtk-font-name=Noto Sans,  10\n"
+                     "gtk-cursor-theme-name=breeze_cursors\n")
+        merge_ini(g, {"Settings": {"gtk-cursor-theme-name": CURSOR_THEME,
+                                   "gtk-cursor-theme-size": str(CURSOR_SIZE)}})
+        text = open(g, encoding="utf-8").read()
+        assert "gtk-theme-name=Breeze" in text, text
+        assert "gtk-font-name=Noto Sans,  10" in text, text   # commas, spaces
+        assert f"gtk-cursor-theme-name={CURSOR_THEME}" in text, text
+        assert "breeze_cursors" not in text, text
+
     print("selftest ok")
 
 
@@ -365,11 +476,13 @@ def main():
         return
     accent, variant, scheme = read_appearance()
     groups = palette(accent, variant)
-    write_kdeglobals(groups)
+    merge_ini(KDEGLOBALS, groups)
     write_scheme(groups)
     write_gtk_settings(scheme)
     write_gsettings(scheme)
+    write_cursor(*cursor_from(load_appearance()))
     notify()
+    notify(CURSOR_CHANGED)
 
 
 if __name__ == "__main__":

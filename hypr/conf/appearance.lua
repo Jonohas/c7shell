@@ -17,6 +17,7 @@ local defaults = {
     -- Bar insets. Nothing here reads them -- the shell owns the bar -- but the
     -- table is the documented mirror of the JsonAdapter, so they stay listed.
     barMarginTop = 10, barMarginSide = 12,
+    cursorTheme = "Adwaita", cursorSize = 24,
 }
 
 local a = json.decode_flat(json.read_file(os.getenv("HOME") .. "/.config/hypr/appearance.json"))

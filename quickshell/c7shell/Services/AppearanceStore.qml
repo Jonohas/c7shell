@@ -50,6 +50,11 @@ Singleton {
   readonly property bool animationsEnabled: root.values.animationsEnabled
   readonly property real animationSpeed: root.clamp(root.values.animationSpeed, 0.25, 4)
   readonly property string wallpaper: root.values.wallpaper
+  // The cursor name reaches a directory lookup, two config files and an argv
+  // element in the exporter, so it is held to a plain theme name here too.
+  readonly property string cursorTheme: /^[A-Za-z0-9._-]+$/.test(root.values.cursorTheme)
+    ? root.values.cursorTheme : "Adwaita"
+  readonly property int cursorSize: root.clamp(root.values.cursorSize, 8, 128)
 
   function clamp(v, lo, hi) {
     const n = Number(v)
@@ -101,6 +106,10 @@ Singleton {
       property bool animationsEnabled: true
       property real animationSpeed: 1.0
       property string wallpaper: ""
+      // Not exposed in the settings app yet; they live here so a hand-edit
+      // survives the next write instead of being dropped from the JSON.
+      property string cursorTheme: "Adwaita"
+      property int cursorSize: 24
     }
   }
 
@@ -124,6 +133,11 @@ Singleton {
   onAccentChanged: { apply.restart(); desktopExport.restart() }
   onThemeChanged: desktopExport.restart()
   onColorSchemeChanged: desktopExport.restart()
+  // The exporter is what carries a cursor change to kcminputrc, both GTK
+  // settings.ini files and `hyprctl setcursor`; the compositor's own env is
+  // read by conf/environment.lua at config load.
+  onCursorThemeChanged: desktopExport.restart()
+  onCursorSizeChanged: desktopExport.restart()
   onWallpaperChanged: wallpaperApply.restart()
 
   // The rest of the desktop does not read appearance.json: Qt and KDE apps take

@@ -1,11 +1,11 @@
 # Maintainer: Jonohas <https://github.com/Jonohas>
 pkgname=c7shell
-pkgver=0.1.0
+pkgver=0.1.0.r27.ga9d7ea2
 pkgrel=1
 pkgdesc='c7shell desktop environment: Hyprland (lua config) with the c7shell Quickshell shell'
 arch=('any')
 url='https://github.com/Jonohas/c7shell'
-license=('custom')
+license=('MIT')
 # Hyprland 0.56+ is required: the config is hyprland.lua, not hyprland.conf.
 depends=(
   'hyprland>=0.56'
@@ -59,7 +59,8 @@ optdepends=(
   'jq: helper scripting'
   'kwallet: secret storage unlocked at login by conf/autostart.lua'
 )
-makedepends=('git')
+# lua: tests/test-monitors.lua loads conf/monitors.lua against a stubbed hl.
+makedepends=('git' 'lua')
 # makepkg builds the branch cloned here, NOT the working tree you run it from:
 # a local commit or a pulled feature branch has no effect until it is pushed and
 # named here. Override for testing a branch before it lands:
@@ -72,6 +73,22 @@ install="$pkgname.install"
 pkgver() {
   cd "$srcdir/$pkgname"
   printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+check() {
+  cd "$srcdir/$pkgname"
+  # Every one of these stubs the machine it tests (pacman, lspci, systemctl,
+  # $HOME), so they are safe to run mid-build and mean the package cannot be
+  # built out of a tree whose scripts are broken. The two exceptions still are:
+  # test-greeter.sh renders the sddm theme with qml6 offscreen, and
+  # test-lockscreen.sh has hyprlock validate its own config against a Wayland
+  # display that does not exist -- neither can touch a running session, and both
+  # skip themselves when the tool is not installed (in a clean chroot, neither
+  # is).
+  for t in tests/*.sh; do "$t"; done
+  # From hypr/, because monitors.lua resolves its own require("conf/...")
+  # relative to the working directory.
+  cd hypr && lua ../tests/test-monitors.lua
 }
 
 package() {
@@ -134,4 +151,7 @@ package() {
   install -Dm644 quickshell/c7shell/Assets/applications/c7shell-settings.svg \
     "$pkgdir/usr/share/icons/hicolor/scalable/apps/c7shell-settings.svg"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  # MIT is not one of the licences pacman ships in /usr/share/licenses/common,
+  # so the text has to travel with the package.
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
