@@ -25,6 +25,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from configparser import RawConfigParser
 
 HOME = os.path.expanduser("~")
@@ -33,8 +34,20 @@ DATA = os.environ.get("XDG_DATA_HOME") or f"{HOME}/.local/share"
 
 APPEARANCE = f"{CONFIG}/hypr/appearance.json"
 KDEGLOBALS = f"{CONFIG}/kdeglobals"
+KCMINPUTRC = f"{CONFIG}/kcminputrc"
 SCHEME_FILE = f"{DATA}/color-schemes/C7Shell.colors"
 SCHEME_NAME = "C7Shell"
+
+# plasma-integration reads these two out of kcminputrc and hands them to
+# libXcursor. Unset, it leaves Qt apps on the "default" theme -- fine only for
+# as long as that keeps inheriting the same theme the compositor uses. Keep both
+# in step with XCURSOR_THEME/XCURSOR_SIZE in hypr/conf/environment.lua.
+CURSOR_THEME = "Adwaita"
+CURSOR_SIZE = "24"
+
+# KGlobalSettings::ChangeType, the argument notifyChange takes.
+PALETTE_CHANGED = 0
+CURSOR_CHANGED = 4
 
 # Theme.qml surfaces, the same two variants it renders. `bg` is the deepest
 # layer (item views), `canvas` the window behind them, `glass` the popover base.
@@ -186,18 +199,25 @@ def reader():
     return cp
 
 
-def write_kdeglobals(groups):
+def merge_ini(path, groups):
+    """Set `groups` in a KConfig file, leaving every other key in it alone.
+
+    kdeglobals and kcminputrc are both shared files this script is one writer
+    of: kdeglobals carries the user's fonts and icon theme, kcminputrc carries a
+    per-device [Libinput][vid][pid][name] section for every pointer they own.
+    Read, set, atomic replace -- never truncate and rewrite.
+    """
     cp = reader()
-    cp.read(KDEGLOBALS, encoding="utf-8")
+    cp.read(path, encoding="utf-8")
     for group, keys in groups.items():
         if not cp.has_section(group):
             cp.add_section(group)
         for k, v in keys.items():
             cp.set(group, k, v)
-    tmp = KDEGLOBALS + ".c7tmp"
+    tmp = path + ".c7tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         cp.write(fh, space_around_delimiters=False)
-    os.replace(tmp, KDEGLOBALS)
+    os.replace(tmp, path)
 
 
 def write_scheme(groups):
@@ -220,11 +240,11 @@ def write_scheme(groups):
         cp.write(fh, space_around_delimiters=False)
 
 
-def notify():
-    """KGlobalSettings::PaletteChanged. The half that repaints running apps."""
+def notify(change=PALETTE_CHANGED):
+    """The half that reaches running apps: a plain file write moves no pixels."""
     subprocess.run(
         ["gdbus", "emit", "--session", "--object-path", "/KGlobalSettings",
-         "--signal", "org.kde.KGlobalSettings.notifyChange", "0", "0"],
+         "--signal", "org.kde.KGlobalSettings.notifyChange", str(change), "0"],
         check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -285,6 +305,24 @@ def selftest():
 
     # Junk in appearance.json must not reach a colour.
     assert re.fullmatch(r"#[0-9a-f]{6}", read_appearance()[0])
+
+    # merge_ini writes into files it does not own. The per-device libinput
+    # sections in kcminputrc are the ones that would hurt to lose, and their
+    # bracketed names are exactly what a careless rewrite mangles.
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "kcminputrc")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("[Libinput][2362][628][PIXA3854:00 093A:0274 Touchpad]\n"
+                     "NaturalScroll=true\n\n[Mouse]\ncursorSize=48\n")
+        merge_ini(f, {"Mouse": {"cursorTheme": CURSOR_THEME,
+                                "cursorSize": CURSOR_SIZE}})
+        text = open(f, encoding="utf-8").read()
+        assert "[Libinput][2362][628][PIXA3854:00 093A:0274 Touchpad]" in text, text
+        assert "NaturalScroll=true" in text, text
+        assert f"cursorTheme={CURSOR_THEME}" in text, text
+        assert f"cursorSize={CURSOR_SIZE}" in text, text
+        assert "cursorSize=48" not in text, text
+
     print("selftest ok")
 
 
@@ -294,9 +332,12 @@ def main():
         return
     accent, variant = read_appearance()
     groups = palette(accent, variant)
-    write_kdeglobals(groups)
+    merge_ini(KDEGLOBALS, groups)
     write_scheme(groups)
+    merge_ini(KCMINPUTRC, {"Mouse": {"cursorTheme": CURSOR_THEME,
+                                     "cursorSize": CURSOR_SIZE}})
     notify()
+    notify(CURSOR_CHANGED)
 
 
 if __name__ == "__main__":
