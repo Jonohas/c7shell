@@ -222,6 +222,19 @@ out=$(pick 'nope')
 [[ -z $out ]] || fail "a non-numeric answer installed something: $out"
 grep -q 'not a number' "$tmp/pick.out" || fail "no complaint about garbage input:\n$(cat "$tmp/pick.out")"
 
+# A plugin missing while the app that needs it is installed has to be offered on
+# its own: the companion route through the dolphin entry can never fire, because
+# dolphin is not in the offer list at all. Kept last -- an extra entry here would
+# renumber the picks asserted above.
+mv "$root/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so" "$tmp/theme-gone2"
+out=$(pick a)
+[[ $out == *plasma-integration* ]] \
+  || fail "a missing plugin was not offered where the app is already installed: $out"
+grep -q 'plasma-integration' "$tmp/pick.out" \
+  || fail "the offer did not list plasma-integration:\n$(cat "$tmp/pick.out")"
+mv "$tmp/theme-gone2" "$root/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so"
+: > "$log"   # the cases below assert on an empty log
+
 # without a terminal the picker says so instead of hanging on a read
 out=$(run --optional 2>&1 </dev/null || true)
 grep -q 'no terminal to ask on' <<<"$out" || fail "no tty: expected a note, got:\n$out"

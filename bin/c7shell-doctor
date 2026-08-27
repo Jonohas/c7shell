@@ -74,6 +74,23 @@ as_root() {
   fi
 }
 
+# Optional packages this run found absent, offered by --optional. Declared up
+# here because both the qt theming checks and the optional section fill it.
+offer_pkgs=()
+offer_desc=()
+offer() {
+  local p
+  for p in ${offer_pkgs[@]+"${offer_pkgs[@]}"}; do [[ $p == "$1" ]] && return 0; done
+  offer_pkgs+=("$1"); offer_desc+=("$2")
+}
+
+# Packages that are only useful together with another one: offered and installed
+# as part of it, not as entries of their own. plasma-integration and breeze do
+# nothing on a machine with no QWidget-based Qt/KDE app to theme.
+declare -A companions=(
+  [dolphin]='plasma-integration breeze breeze-icons'
+)
+
 ok()   { ((quiet)) || printf '  ok    %s\n' "$*"; }
 bad()  { printf '  FAIL  %s\n' "$*" >&2; fail=1; }
 warn() { printf '  warn  %s\n' "$*" >&2; warned=1; }
@@ -227,6 +244,7 @@ qt_plugin() {
     [[ -e ${dir%/qml}/plugins/$rel ]] && { ok "qt plugin $rel"; return; }
   done < <(qml_roots)
   warn "qt plugin $rel missing -- $what (package: $pkg)"
+  offer "$pkg" "$what"
 }
 qt_plugin platformthemes/KDEPlasmaPlatformTheme6.so plasma-integration \
   'QT_QPA_PLATFORMTHEME=kde does nothing without it: KDE apps ignore the c7shell palette'
@@ -328,15 +346,6 @@ optional_entries=(
   "file:/usr/lib/pam_kwallet_init:kwallet:secret storage unlocked at login, or kwallet prompts"
 )
 
-# Packages that are only useful together with another one, so they are offered
-# and installed as part of it rather than as separate entries. plasma-integration
-# and breeze do nothing on a machine with no QWidget-based Qt/KDE app.
-declare -A companions=(
-  [dolphin]='plasma-integration breeze breeze-icons'
-)
-
-offer_pkgs=()
-offer_desc=()
 
 for entry in "${optional_entries[@]}"; do
   IFS=: read -r kind target pkg desc <<<"$entry"
@@ -349,8 +358,7 @@ for entry in "${optional_entries[@]}"; do
     ok "$target (optional)"
   else
     warn "$target not found -- $desc (package: $pkg, optional)"
-    offer_pkgs+=("$pkg")
-    offer_desc+=("$desc")
+    offer "$pkg" "$desc"
   fi
 done
 
