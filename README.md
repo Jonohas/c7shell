@@ -16,9 +16,16 @@ PKGBUILD              the package
 ```bash
 git clone https://github.com/Jonohas/c7shell.git
 cd c7shell
-makepkg -si          # builds and installs the c7shell package + dependencies
-c7shell-setup     # copies the configs into ~/.config (run as your user)
+./install.sh         # builds and installs the c7shell package + dependencies
+c7shell-setup        # copies the configs into ~/.config (run as your user)
 ```
+
+`install.sh` is a thin wrapper around `makepkg -si`. On a fresh machine
+`makepkg` aborts before it reads the PKGBUILD if the Arch build tools are not
+there ("Cannot find the fakeroot binary", "Cannot find the debugedit binary"),
+so the wrapper installs `base-devel` first and then hands every argument you
+gave it to `makepkg`. If you already have `base-devel`, `makepkg -si` on its
+own still works exactly as before.
 
 Then log out and pick the **c7shell** session, or run `Hyprland` from a TTY.
 
