@@ -82,8 +82,11 @@ Singleton {
   readonly property int pillHeight: 26
   readonly property int pillRadius: 13
   readonly property int barHeight: 38
-  readonly property int barMarginTop: 10
-  readonly property int barMarginSide: 12
+  // The island's inset from the screen edges, owned by appearance.json like the
+  // theme and the accent are: the bar, its shadow gutter, the popover gutter and
+  // the toast column all measure off these, so a change moves the lot together.
+  readonly property int barMarginTop: AppearanceStore.barMarginTop
+  readonly property int barMarginSide: AppearanceStore.barMarginSide
 
   // -- type --
   readonly property string fontMono: "JetBrains Mono"
