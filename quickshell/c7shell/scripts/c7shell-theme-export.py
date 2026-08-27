@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+"""Export the c7shell palette to ~/.config/kdeglobals so Qt/KDE apps match.
+
+appearance.json owns the accent and the variant, but Qt and KDE apps read their
+colours from kdeglobals -- two files nothing kept in step, which is why the
+shell went green and dolphin stayed crimson.
+
+Two halves, and the second is the one that is easy to miss:
+
+  1. Rewrite the C7Shell colour groups in kdeglobals (and the standalone
+     .colors file, so re-picking the scheme in systemsettings does not undo
+     this) from the same accent + variant Theme.qml derives its own colours
+     from. Every other key in kdeglobals is left alone.
+  2. Emit org.kde.KGlobalSettings.notifyChange, which plasma-integration
+     listens for. Measured on this machine: a plain file write, and
+     `kwriteconfig6 --notify` too, change nothing in a running app -- zero
+     pixels moved. The signal repaints them live.
+
+Needs QT_QPA_PLATFORMTHEME=kde (see hypr/conf/environment.lua): under qt6ct
+none of this is read.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+from configparser import RawConfigParser
+
+HOME = os.path.expanduser("~")
+CONFIG = os.environ.get("XDG_CONFIG_HOME") or f"{HOME}/.config"
+DATA = os.environ.get("XDG_DATA_HOME") or f"{HOME}/.local/share"
+
+APPEARANCE = f"{CONFIG}/hypr/appearance.json"
+KDEGLOBALS = f"{CONFIG}/kdeglobals"
+SCHEME_FILE = f"{DATA}/color-schemes/C7Shell.colors"
+SCHEME_NAME = "C7Shell"
+
+# Theme.qml surfaces, the same two variants it renders. `bg` is the deepest
+# layer (item views), `canvas` the window behind them, `glass` the popover base.
+VARIANTS = {
+    "dark": {"bg": "#0a0a0c", "canvas": "#0f0e10", "glass": "#0f0f13"},
+    "oled": {"bg": "#000000", "canvas": "#050506", "glass": "#000000"},
+}
+TEXT = "#f0eff1"          # Theme.text
+POSITIVE = "#4ade80"      # Theme.success
+NEGATIVE = "#ff7a6b"
+NEUTRAL = "#f0a44a"
+DEFAULT_ACCENT = "#e53a44"
+
+# The groups a KDE app resolves a colour set from: (surface, surface the
+# alternate row shades off). Everything else in a group is shared, and derived
+# once below. `button` is a raised surface, not the window it sits on.
+BACKGROUNDS = {
+    "Colors:Window": ("canvas", "canvas"),
+    "Colors:View": ("bg", "bg"),
+    "Colors:Button": ("button", "canvas"),
+    "Colors:Tooltip": ("glass", "canvas"),
+    "Colors:Header": ("canvas", "canvas"),
+    "Colors:Complementary": ("bg", "bg"),
+}
+ALT_ALPHA = 0.04  # white overlay behind an alternating row (Theme.surface04)
+
+
+# -- colour helpers ---------------------------------------------------------
+# sRGB, no gamma correction: these reproduce the hand-tuned scheme they replace
+# (asserted in selftest) and match what Qt does when it flattens Theme's
+# rgba(255,255,255,0.04) overlays onto a surface.
+
+def parse(c):
+    c = c.lstrip("#")
+    return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def fmt(rgb):
+    return ",".join(str(max(0, min(255, round(v)))) for v in rgb)
+
+
+def mix(a, b, t):
+    """t of a over (1-t) of b."""
+    a, b = parse(a) if isinstance(a, str) else a, parse(b) if isinstance(b, str) else b
+    return tuple(x * t + y * (1 - t) for x, y in zip(a, b))
+
+
+def over(base, t, top=(255, 255, 255)):
+    """`top` at alpha t composited on opaque `base` -- Theme's surfaceNN."""
+    return mix(top, base, t)
+
+
+def lighten(c, dl=0.108, sat=0.90):
+    """Theme.accentSoft: lift lightness, ease saturation, keep the hue."""
+    r, g, b = (v / 255 for v in parse(c))
+    mx, mn = max(r, g, b), min(r, g, b)
+    l = (mx + mn) / 2
+    d = mx - mn
+    s = 0 if d == 0 else d / (1 - abs(2 * l - 1))
+    if d == 0:
+        h = 0.0
+    elif mx == r:
+        h = ((g - b) / d) % 6
+    elif mx == g:
+        h = (b - r) / d + 2
+    else:
+        h = (r - g) / d + 4
+    l, s = min(1.0, l + dl), s * sat
+    cc = (1 - abs(2 * l - 1)) * s
+    x = cc * (1 - abs(h % 2 - 1))
+    m = l - cc / 2
+    rgb = [(cc, x, 0), (x, cc, 0), (0, cc, x), (0, x, cc), (x, 0, cc), (cc, 0, x)][int(h) % 6]
+    return tuple((v + m) * 255 for v in rgb)
+
+
+def ink_on(c):
+    """White or black, whichever reads on `c`. WCAG relative luminance."""
+    def lin(v):
+        v /= 255
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = parse(c)
+    lum = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    return (0, 0, 0) if lum > 0.45 else (255, 255, 255)
+
+
+# -- palette ----------------------------------------------------------------
+
+def palette(accent, variant):
+    """kdeglobals group -> {key: "r,g,b"} for one accent and variant."""
+    v = dict(VARIANTS[variant])
+    canvas, bg = v["canvas"], v["bg"]
+    v["button"] = over(canvas, 0.07)  # Theme.surface07 over the window
+
+    # Theme.text at 0.40 over the window, i.e. Theme.text3 flattened.
+    dim = mix(TEXT, canvas, 0.40)
+    shared = {
+        "ForegroundNormal": TEXT,
+        "ForegroundInactive": dim,
+        "ForegroundActive": accent,
+        "ForegroundLink": lighten(accent),
+        "ForegroundVisited": mix(accent, "#000000", 0.72),
+        "ForegroundNegative": NEGATIVE,
+        "ForegroundNeutral": NEUTRAL,
+        "ForegroundPositive": POSITIVE,
+        "DecorationFocus": accent,
+        "DecorationHover": mix(accent, canvas, 0.28),
+    }
+
+    groups = {}
+    for group, (surface, alt_surface) in BACKGROUNDS.items():
+        groups[group] = dict(shared,
+                             BackgroundNormal=v[surface],
+                             BackgroundAlternate=over(v[alt_surface], ALT_ALPHA))
+
+    # Inactive window titlebars and headers: same scheme, quieter text. Without
+    # this the stale Breeze default (blue) shows through on an unfocused header.
+    groups["Colors:Header][Inactive"] = dict(groups["Colors:Header"],
+                                             ForegroundNormal=mix(TEXT, canvas, 0.60))
+
+    groups["Colors:Selection"] = dict(
+        shared,
+        BackgroundNormal=accent,
+        BackgroundAlternate=accent,
+        ForegroundNormal=ink_on(accent),
+        # Selected-but-inactive text: the accent washed out, not grey.
+        ForegroundInactive=mix(accent, "#ffffff", 0.40),
+    )
+
+    groups["General"] = {"AccentColor": accent}
+    groups["WM"] = {
+        "activeBackground": canvas,
+        "activeForeground": TEXT,
+        "inactiveBackground": bg,
+        "inactiveForeground": dim,
+    }
+    out = {g: {k: fmt(parse(x) if isinstance(x, str) else x) for k, x in keys.items()}
+           for g, keys in groups.items()}
+    # The one value that is a name rather than a colour.
+    out["General"]["ColorScheme"] = SCHEME_NAME
+    return out
+
+
+# -- writing ----------------------------------------------------------------
+
+def reader():
+    # optionxform=str: KConfig keys are case-sensitive (AccentColor, activeFont).
+    cp = RawConfigParser(strict=False)
+    cp.optionxform = str
+    return cp
+
+
+def write_kdeglobals(groups):
+    cp = reader()
+    cp.read(KDEGLOBALS, encoding="utf-8")
+    for group, keys in groups.items():
+        if not cp.has_section(group):
+            cp.add_section(group)
+        for k, v in keys.items():
+            cp.set(group, k, v)
+    tmp = KDEGLOBALS + ".c7tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        cp.write(fh, space_around_delimiters=False)
+    os.replace(tmp, KDEGLOBALS)
+
+
+def write_scheme(groups):
+    """The standalone scheme, so systemsettings hands back these same colours."""
+    cp = reader()
+    for group, keys in groups.items():
+        if group in ("General", "WM"):
+            continue
+        cp.add_section(group)
+        for k, v in keys.items():
+            cp.set(group, k, v)
+    cp.add_section("General")
+    cp.set("General", "Name", SCHEME_NAME)
+    cp.set("General", "ColorScheme", SCHEME_NAME)
+    cp.add_section("WM")
+    for k, v in groups["WM"].items():
+        cp.set("WM", k, v)
+    os.makedirs(os.path.dirname(SCHEME_FILE), exist_ok=True)
+    with open(SCHEME_FILE, "w", encoding="utf-8") as fh:
+        cp.write(fh, space_around_delimiters=False)
+
+
+def notify():
+    """KGlobalSettings::PaletteChanged. The half that repaints running apps."""
+    subprocess.run(
+        ["gdbus", "emit", "--session", "--object-path", "/KGlobalSettings",
+         "--signal", "org.kde.KGlobalSettings.notifyChange", "0", "0"],
+        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+# -- input ------------------------------------------------------------------
+# appearance.json is hand-editable, so treat it as untrusted the way
+# AppearanceStore's clamped reads do: a stray value falls back, never reaches
+# a colour computation.
+
+def read_appearance():
+    try:
+        with open(APPEARANCE, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        data = {}
+    accent = data.get("accent", "")
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(accent)):
+        accent = DEFAULT_ACCENT
+    variant = data.get("theme")
+    return accent.lower(), variant if variant in VARIANTS else "dark"
+
+
+def selftest():
+    """Anchored on the hand-tuned scheme this replaces (accent #e53a44, dark)."""
+    g = palette(DEFAULT_ACCENT, "dark")
+    exact = {
+        ("Colors:Button", "BackgroundNormal"): "32,31,33",
+        ("Colors:Window", "BackgroundNormal"): "15,14,16",
+        ("Colors:Window", "BackgroundAlternate"): "25,24,26",
+        ("Colors:View", "BackgroundNormal"): "10,10,12",
+        ("Colors:View", "BackgroundAlternate"): "20,20,22",
+        ("Colors:Tooltip", "BackgroundNormal"): "15,15,19",
+        ("Colors:Window", "ForegroundInactive"): "105,104,106",
+        ("Colors:Window", "DecorationHover"): "75,26,31",
+        ("Colors:Selection", "BackgroundNormal"): "229,58,68",
+        ("Colors:Selection", "ForegroundNormal"): "255,255,255",
+        ("Colors:Selection", "ForegroundInactive"): "245,176,180",
+        ("Colors:Window", "ForegroundPositive"): "74,222,128",
+        ("WM", "activeBackground"): "15,14,16",
+    }
+    for (group, key), want in exact.items():
+        got = g[group][key]
+        assert got == want, f"{group}/{key}: {got} != {want}"
+
+    # Link and visited are formula-derived where the old file was hand-picked;
+    # near is the contract, not equality.
+    def near(group, key, want, tol=8):
+        got = [int(x) for x in g[group][key].split(",")]
+        exp = [int(x) for x in want.split(",")]
+        assert all(abs(a - b) <= tol for a, b in zip(got, exp)), f"{group}/{key}: {got} vs {want}"
+
+    near("Colors:Window", "ForegroundLink", "236,107,115")
+    near("Colors:Window", "ForegroundVisited", "165,45,52")
+
+    # oled bottoms out at black, and a light accent takes dark ink.
+    assert palette(DEFAULT_ACCENT, "oled")["Colors:View"]["BackgroundNormal"] == "0,0,0"
+    assert palette("#f0e14a", "dark")["Colors:Selection"]["ForegroundNormal"] == "0,0,0"
+    assert palette("#00a149", "dark")["Colors:Selection"]["ForegroundNormal"] == "255,255,255"
+
+    # Junk in appearance.json must not reach a colour.
+    assert re.fullmatch(r"#[0-9a-f]{6}", read_appearance()[0])
+    print("selftest ok")
+
+
+def main():
+    if "--selftest" in sys.argv:
+        selftest()
+        return
+    accent, variant = read_appearance()
+    groups = palette(accent, variant)
+    write_kdeglobals(groups)
+    write_scheme(groups)
+    notify()
+
+
+if __name__ == "__main__":
+    main()

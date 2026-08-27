@@ -66,7 +66,7 @@ Singleton {
 
     onFileChanged: file.reload()
     onAdapterUpdated: file.writeAdapter()
-    onLoaded: apply.restart()
+    onLoaded: { apply.restart(); kdeExport.restart() }
     // Write the defaults out so hyprland has something to read on its next
     // config load, instead of both sides silently disagreeing.
     onLoadFailed: err => { if (err === FileViewError.FileNotFound) file.writeAdapter() }
@@ -108,8 +108,41 @@ Singleton {
   onBorderWidthChanged: apply.restart()
   onAnimationsEnabledChanged: apply.restart()
   onAnimationSpeedChanged: apply.restart()
-  onAccentChanged: apply.restart()
+  onAccentChanged: { apply.restart(); kdeExport.restart() }
+  onThemeChanged: kdeExport.restart()
   onWallpaperChanged: wallpaperApply.restart()
+
+  // Qt and KDE apps take their colours from ~/.config/kdeglobals, which nothing
+  // in this session kept in step with appearance.json -- so the shell went green
+  // and dolphin stayed crimson. scripts/c7shell-theme-export.py rewrites the
+  // C7Shell scheme from this store's own accent and variant, then emits the
+  // signal plasma-integration repaints on. Only accent and theme move it; the
+  // geometry sliders have nothing to export.
+  //
+  // Needs QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua): under qt6ct KDE
+  // apps read neither kdeglobals nor qt6ct's palette and come up stock light.
+  //
+  // Resolved off this file, not off $HOME: the packaged shell lives in
+  // /usr/share/c7shell, and a hardcoded ~/.config path would silently export
+  // nothing there.
+  readonly property string exporter:
+    Qt.resolvedUrl("../scripts/c7shell-theme-export.py").toString().replace(/^file:\/\//, "")
+
+  Timer {
+    id: kdeExport
+    interval: 250
+    onTriggered: {
+      if (kdeGlobals.running) { kdeExport.restart(); return }
+      kdeGlobals.exec(["python3", root.exporter])
+    }
+  }
+
+  Process {
+    id: kdeGlobals
+    // The script reads appearance.json itself rather than taking argv, so a
+    // hand-edit lands the same way a settings click does.
+    stderr: StdioCollector {}
+  }
 
   // Hyprland wants rgba(rrggbbaa); `accent` is already validated hex, and
   // going through Qt.color keeps the conversion honest either way.
