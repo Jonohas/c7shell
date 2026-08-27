@@ -14,6 +14,9 @@ local defaults = {
     blurSize = 8, blurPasses = 3, inactiveOpacity = 1.0,
     borderWidth = 2, animationsEnabled = true, animationSpeed = 1.0,
     wallpaper = "",
+    -- Bar insets. Nothing here reads them -- the shell owns the bar -- but the
+    -- table is the documented mirror of the JsonAdapter, so they stay listed.
+    barMarginTop = 10, barMarginSide = 12,
 }
 
 local a = json.decode_flat(json.read_file(os.getenv("HOME") .. "/.config/hypr/appearance.json"))

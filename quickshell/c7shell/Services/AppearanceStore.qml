@@ -37,6 +37,11 @@ Singleton {
   // Active border is the accent (spec §7); only the inactive one is a choice.
   readonly property color inactiveBorder: /^#[0-9a-fA-F]{6}$/.test(root.values.inactiveBorder)
     ? root.values.inactiveBorder : "#595959"
+  // Bar geometry is shell-side only -- no hyprctl, no lua. Top is capped below
+  // the bar's own 36px shadow gutter so the island never outruns the window it
+  // is drawn in; sides are capped at a quarter of a narrow 1366px screen.
+  readonly property int barMarginTop: root.clamp(root.values.barMarginTop, 0, 32)
+  readonly property int barMarginSide: root.clamp(root.values.barMarginSide, 0, 80)
   readonly property bool animationsEnabled: root.values.animationsEnabled
   readonly property real animationSpeed: root.clamp(root.values.animationSpeed, 0.25, 4)
   readonly property string wallpaper: root.values.wallpaper
@@ -84,6 +89,8 @@ Singleton {
       property int blurPasses: 3
       property real inactiveOpacity: 1.0
       property int borderWidth: 2
+      property int barMarginTop: 10
+      property int barMarginSide: 12
       property string inactiveBorder: "#595959"
       property bool animationsEnabled: true
       property real animationSpeed: 1.0
