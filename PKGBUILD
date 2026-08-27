@@ -1,9 +1,15 @@
 # Maintainer: Jonohas <https://github.com/Jonohas>
-pkgname=c7shell
+# The AUR name carries the -git suffix because source= tracks a branch and
+# pkgver() counts commits. _name is the installed name: bin/c7shell-setup
+# reads /usr/share/c7shell, so the payload paths must not follow pkgname.
+pkgname=c7shell-git
+_name=c7shell
 pkgver=0.1.0
 pkgrel=1
 pkgdesc='c7shell desktop environment: Hyprland (lua config) with the c7shell Quickshell shell'
 arch=('any')
+provides=('c7shell')
+conflicts=('c7shell')
 url='https://github.com/Jonohas/c7shell'
 # MIT is this repository; OFL-1.1 is the Space Grotesk font vendored below.
 license=('MIT' 'OFL-1.1')
@@ -79,22 +85,22 @@ makedepends=('git' 'lua')
 # but the author's -- where it happens to be installed by hand.
 _sgver=2.0.0
 source=(
-  "$pkgname::git+$url.git#branch=main"
+  "$_name::git+$url.git#branch=main"
   "space-grotesk-$_sgver.tar.gz::https://github.com/floriankarsten/space-grotesk/archive/refs/tags/$_sgver.tar.gz"
 )
 sha256sums=(
   'SKIP'
   '366da4ddec4f637f6d2d342251c2e5e8b8af67d10653f347a9d9d603cc64547a'
 )
-install="$pkgname.install"
+install="$_name.install"
 
 pkgver() {
-  cd "$srcdir/$pkgname"
+  cd "$srcdir/$_name"
   printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 check() {
-  cd "$srcdir/$pkgname"
+  cd "$srcdir/$_name"
   tests/test-setup.sh
   # From hypr/, because monitors.lua resolves its own require("conf/...")
   # relative to the working directory.
@@ -102,7 +108,7 @@ check() {
 }
 
 package() {
-  cd "$srcdir/$pkgname"
+  cd "$srcdir/$_name"
 
   # The configs are shipped read-only under /usr/share and copied into the
   # user's ~/.config by c7shell-setup: hyprland and quickshell both read
@@ -110,14 +116,14 @@ package() {
   # what lands there. The shell ships as the named quickshell config
   # `quickshell/c7shell`, so it lands in ~/.config/quickshell/c7shell and
   # leaves any other config in ~/.config/quickshell alone (`qs -c c7shell`).
-  install -dm755 "$pkgdir/usr/share/$pkgname"
-  cp -a hypr quickshell "$pkgdir/usr/share/$pkgname/"
+  install -dm755 "$pkgdir/usr/share/$_name"
+  cp -a hypr quickshell "$pkgdir/usr/share/$_name/"
   # Dev-facing only, and setup copies whatever is here into the user's config.
-  rm -rf "$pkgdir/usr/share/$pkgname/quickshell/c7shell/docs"
-  chmod -R u=rwX,go=rX "$pkgdir/usr/share/$pkgname"
-  chmod 755 "$pkgdir/usr/share/$pkgname/quickshell/c7shell/scripts/c7shell-appmenud.py" \
-            "$pkgdir/usr/share/$pkgname/quickshell/c7shell/scripts/c7shell-theme-export.py" \
-            "$pkgdir/usr/share/$pkgname/quickshell/c7shell/bin/screenshare-picker.sh"
+  rm -rf "$pkgdir/usr/share/$_name/quickshell/c7shell/docs"
+  chmod -R u=rwX,go=rX "$pkgdir/usr/share/$_name"
+  chmod 755 "$pkgdir/usr/share/$_name/quickshell/c7shell/scripts/c7shell-appmenud.py" \
+            "$pkgdir/usr/share/$_name/quickshell/c7shell/scripts/c7shell-theme-export.py" \
+            "$pkgdir/usr/share/$_name/quickshell/c7shell/bin/screenshare-picker.sh"
 
   install -Dm755 bin/c7shell-setup "$pkgdir/usr/bin/c7shell-setup"
   install -Dm644 share/c7shell.desktop \
@@ -138,9 +144,9 @@ package() {
   # does. Shipping the variable TTF alongside them leaves fontconfig choosing
   # between two families with the same name.
   local sg="$srcdir/space-grotesk-$_sgver"
-  install -dm755 "$pkgdir/usr/share/fonts/$pkgname"
+  install -dm755 "$pkgdir/usr/share/fonts/$_name"
   install -m644 "$sg"/fonts/ttf/static/SpaceGrotesk-*.ttf \
-    "$pkgdir/usr/share/fonts/$pkgname/"
+    "$pkgdir/usr/share/fonts/$_name/"
   install -Dm644 "$sg/OFL.txt" \
     "$pkgdir/usr/share/licenses/$pkgname/OFL-1.1-space-grotesk.txt"
 

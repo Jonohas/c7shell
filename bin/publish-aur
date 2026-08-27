@@ -1,0 +1,26 @@
+#!/bin/sh
+# Push the packaging files to the AUR. The PKGBUILD is authored here, in the
+# source repo; the AUR repo holds only what pacman needs, because an AUR repo
+# is for packaging files and not for a copy of the tree they build.
+set -e
+
+src=${C7SHELL_SRC:-$HOME/git/c7shell}
+aur=${C7SHELL_AUR:-$HOME/git/aur/c7shell-git}
+
+[ -d "$aur/.git" ] || {
+  echo "publish-aur: no AUR clone at $aur" >&2
+  echo "  git clone ssh://aur@aur.archlinux.org/c7shell-git.git $aur" >&2
+  exit 1
+}
+
+cd "$src"
+# .SRCINFO is what the AUR reads for deps and version; a stale one is a
+# package that resolves against the wrong dependencies.
+makepkg --printsrcinfo > .SRCINFO
+cp PKGBUILD .SRCINFO c7shell.install "$aur/"
+
+cd "$aur"
+git add PKGBUILD .SRCINFO c7shell.install
+git diff --cached --quiet && { echo "publish-aur: nothing changed"; exit 0; }
+git commit -m "${1:-Update to $(git -C "$src" rev-parse --short HEAD)}"
+git push

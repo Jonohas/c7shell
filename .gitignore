@@ -3,10 +3,16 @@ src/
 pkg/
 *.pkg.tar.*
 *.src.tar.*
+# source tarballs makepkg downloads next to the PKGBUILD (the vendored font)
+*.tar.gz
 /c7shell/
 
 # written at runtime by the settings app, regenerated from conf/appearance.lua
 hypr/appearance.json
+
+# written by the settings app; carries monitor descriptions and serial numbers,
+# so it is machine state and not something to publish
+hypr/displays.json
 
 # local agent/tooling state, never part of a release
 .claude/
