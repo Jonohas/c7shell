@@ -77,6 +77,21 @@ if [[ -f $xdph ]] && grep -q '\$HOME/\.config/quickshell' "$xdph"; then
   run sed -i "s#\$HOME/.config/quickshell#$conf/quickshell#" "$xdph"
 fi
 
+# The palette lives in appearance.json; Qt and KDE apps read kdeglobals. The
+# settings app exports one to the other, but only when something changes -- so
+# on a fresh install nothing has exported yet and dolphin comes up stock. Seed
+# it once here. Non-fatal: it is cosmetic, and it needs python3 plus the copy
+# that was just made.
+exporter=$conf/quickshell/c7shell/scripts/c7shell-theme-export.py
+if [[ -f $exporter ]] && command -v python3 >/dev/null; then
+  if ((dry)); then
+    printf '  would: python3 %s   (seed ~/.config/kdeglobals)\n' "$exporter"
+  else
+    printf 'exporting the palette to %s/kdeglobals\n' "$conf"
+    python3 "$exporter" || printf 'c7shell-setup: the palette export failed; Qt apps keep their own colours\n' >&2
+  fi
+fi
+
 if ((installed == 0 && skipped)); then
   exit 3
 fi

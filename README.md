@@ -46,6 +46,7 @@ What the bootstrap decides for you, and how to override it:
 | Audio | `pipewire`, `pipewire-pulse`, `pipewire-alsa`, `wireplumber` + the user units. `wireplumber` is a session manager, not a sound server: without the daemons under it the volume keys do nothing. |
 | Network | `NetworkManager` and `bluetooth` enabled — unless `systemd-networkd` or `iwd` is already driving the network, in which case it warns instead of stacking two managers on one link. |
 | Fonts, icons | `ttf-jetbrains-mono` (`Theme.fontMono`), `noto-fonts`, `noto-fonts-emoji`, `hicolor`/`adwaita`/`breeze` icon themes for the launcher's real app icons. |
+| Qt app theming | `plasma-integration` (the `kde` platform theme `QT_QPA_PLATFORMTHEME` names) and `breeze` (the Qt6 widget style). Without the first, that variable is inert and KDE apps like dolphin ignore the c7shell palette entirely. |
 | AUR | `paru-bin` if no AUR helper is present, for `ttf-space-grotesk` (`Theme.fontDisplay`, not in the official repos; fontconfig falls back without it). `--no-aur` opts out. |
 | Extras | `kitty`, `dolphin` (the SUPER+Q / SUPER+E binds), `ddcutil`, `brightnessctl`, `playerctl`, plus `i2c-dev` and the `i2c` group so `ddcutil` can reach external monitors. `--no-extras` opts out. |
 
@@ -109,6 +110,31 @@ you already have. It runs as `qs -c c7shell`, and every `qs ipc call` in
 `hypr/conf/binds.lua` carries the same `-c c7shell`.
 
 Everything comes from the Arch `extra` repository — no AUR helper needed.
+
+## Qt and KDE app colours
+
+The shell's palette lives in `~/.config/hypr/appearance.json`; Qt and KDE apps
+read `~/.config/kdeglobals`. `quickshell/c7shell/scripts/c7shell-theme-export.py`
+writes the second from the first and emits the signal that repaints running
+apps — the settings app runs it whenever the accent or variant changes, and
+`c7shell-setup` seeds it once at install time so a fresh session is not a
+themed shell beside a stock-looking dolphin.
+
+Three things have to be in place, and `c7shell-doctor` checks all three:
+
+- `QT_QPA_PLATFORMTHEME=kde` — set in `hypr/conf/environment.lua`. Not `qt6ct`:
+  KDE apps ignore qt6ct's palette and come up stock light while their
+  KColorScheme parts stay dark, which is the mixed look.
+- **`plasma-integration`** — provides the `kde` platform theme plugin
+  (`/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so`). Without
+  it the variable above does nothing at all.
+- **`breeze`** — the Qt6 widget style that platform theme draws with.
+
+To export by hand at any time:
+
+```bash
+python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py
+```
 
 ## Updating
 

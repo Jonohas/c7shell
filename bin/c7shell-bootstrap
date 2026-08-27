@@ -196,6 +196,9 @@ units_user+=(pipewire.socket pipewire-pulse.socket wireplumber.service)
 # every .desktop icon lands in; breeze matches QT_QPA_PLATFORMTHEME=kde, which
 # conf/environment.lua sets and the settings app writes kdeglobals for.
 add hicolor-icon-theme adwaita-icon-theme breeze-icons breeze
+# plasma-integration provides the "kde" platform theme QT_QPA_PLATFORMTHEME
+# names. Without it that variable does nothing and dolphin ignores the palette.
+add plasma-integration
 # JetBrains Mono is Theme.fontMono; noto covers everything else, emoji included.
 add ttf-jetbrains-mono noto-fonts noto-fonts-emoji
 

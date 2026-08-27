@@ -45,6 +45,11 @@ printf '[Desktop Entry]\nName=c7shell\nExec=start-hyprland\n' \
 : > "$root/dev/dri/card0"
 : > "$root/dev/dri/renderD128"
 
+mkdir -p "$root/usr/lib/qt6/plugins/platformthemes" "$root/usr/lib/qt6/plugins/styles"
+: > "$root/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so"
+: > "$root/usr/lib/qt6/plugins/styles/breeze6.so"
+printf '[General]\nColorScheme=C7Shell\n' > "$conf/kdeglobals"
+
 for mod in Quickshell Quickshell/Hyprland Quickshell/Io Quickshell/Wayland \
            Quickshell/Bluetooth Quickshell/Networking \
            Quickshell/Services/Pipewire Quickshell/Services/UPower \
@@ -115,8 +120,25 @@ out=$(run --quiet 2>&1 || true)
 grep -q 'FAIL  grim' <<<"$out" || fail "--quiet dropped the failure:\n$out"
 ! grep -q '  ok    ' <<<"$out" || fail "--quiet printed passing checks:\n$out"
 
+stub grim   # the --quiet case above removed it; these cases want a clean pass
+# no platform theme plugin: QT_QPA_PLATFORMTHEME=kde is inert and Qt apps look
+# stock, which is a warning (the shell itself still runs) naming the package
+mv "$root/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so" "$tmp/theme-gone"
+out=$(run 2>&1) || fail "a missing platform theme plugin should not be fatal:\n$out"
+grep -q 'KDEPlasmaPlatformTheme6.so missing' <<<"$out" || fail "the missing plugin was not reported:\n$out"
+grep -q 'plasma-integration' <<<"$out" || fail "plasma-integration was not named:\n$out"
+mv "$tmp/theme-gone" "$root/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so"
+
+# kdeglobals without the exported scheme is reported with the command to seed it
+mv "$conf/kdeglobals" "$tmp/kdeglobals-gone"
+mkdir -p "$conf/quickshell/c7shell/scripts"
+: > "$conf/quickshell/c7shell/scripts/c7shell-theme-export.py"
+out=$(run 2>&1) || fail "an unexported palette should not be fatal:\n$out"
+grep -q 'no C7Shell scheme yet' <<<"$out" || fail "the unexported palette was not reported:\n$out"
+grep -q 'c7shell-theme-export.py' <<<"$out" || fail "no seed command given:\n$out"
+mv "$tmp/kdeglobals-gone" "$conf/kdeglobals"
+
 # an install from before the launcher fix is spotted, and names the repair
-stub grim   # the --quiet case above removed it; this case wants a clean pass
 printf '[Desktop Entry]\nName=c7shell\nExec=Hyprland\n' \
   > "$root/usr/share/wayland-sessions/c7shell.desktop"
 out=$(run 2>&1) || fail "an old session entry should warn, not fail:\n$out"

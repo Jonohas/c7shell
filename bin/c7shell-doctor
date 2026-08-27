@@ -205,6 +205,29 @@ need_cmd bluetoothctl bluez-utils 'the bluetooth applet'
 need_cmd nmcli       networkmanager 'the network applet'
 need_cmd systemctl   systemd      'the power menu (suspend, reboot, poweroff)'
 
+section 'qt app theming'
+# conf/environment.lua sets QT_QPA_PLATFORMTHEME=kde and the settings app
+# exports the palette to kdeglobals. Both are inert without the plugin that
+# implements that platform theme -- the symptom is a correctly themed shell
+# next to a stock-looking dolphin.
+qt_plugin() {
+  local rel=$1 pkg=$2 what=$3 dir
+  while read -r dir; do
+    [[ -e ${dir%/qml}/plugins/$rel ]] && { ok "qt plugin $rel"; return; }
+  done < <(qml_roots)
+  warn "qt plugin $rel missing -- $what (package: $pkg)"
+}
+qt_plugin platformthemes/KDEPlasmaPlatformTheme6.so plasma-integration \
+  'QT_QPA_PLATFORMTHEME=kde does nothing without it: KDE apps ignore the c7shell palette'
+qt_plugin styles/breeze6.so breeze \
+  'the widget style that platform theme draws with'
+if [[ -f $conf/kdeglobals ]] && grep -q '^ColorScheme=C7Shell' "$conf/kdeglobals"; then
+  ok "$conf/kdeglobals exports the C7Shell scheme"
+elif [[ -f $conf/quickshell/c7shell/scripts/c7shell-theme-export.py ]]; then
+  warn "$conf/kdeglobals has no C7Shell scheme yet, so Qt apps use their own colours"
+  note 'seed it:  python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py'
+fi
+
 section 'appmenu daemon'
 need_cmd python3 python 'the global menu daemon, autostarted first'
 need_py dbus python-dbus 'the daemon owns com.canonical.AppMenu.Registrar on the bus'

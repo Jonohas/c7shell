@@ -16,6 +16,14 @@ depends=(
   'hyprpicker'
   'hyprpolkitagent'
   'qt6-declarative'
+  # QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua) is only meaningful with
+  # plasma-integration's platform theme plugin; without it Qt ignores the
+  # variable and KDE apps come up stock instead of following kdeglobals, which
+  # is what scripts/c7shell-theme-export.py writes. breeze is the Qt6 widget
+  # style that theme then draws with.
+  'plasma-integration'
+  'breeze'
+  'breeze-icons'
   'wireplumber'
   'networkmanager'
   'bluez'
