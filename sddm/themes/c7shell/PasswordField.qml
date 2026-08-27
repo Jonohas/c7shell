@@ -16,7 +16,11 @@ FocusScope {
   property int attempt: 0            // failures so far
   property int maxAttempts: 3
   property int cooldown: 0           // seconds left of the lockout, 0 = none
-  readonly property alias text: input.text
+  // Not readonly: clear() is the normal way to empty it, but a settable alias
+  // is what lets tests/greeter-preview.qml render the dot row with characters
+  // in it -- the dots are drawn from text.length, so an empty field proves
+  // nothing about how they sit.
+  property alias text: input.text
   readonly property bool locked: root.cooldown > 0
 
   signal accepted
@@ -90,6 +94,10 @@ FocusScope {
             model: Math.min(input.text.length,
                             Math.max(1, Math.floor((echoArea.width - Theme.px(8)) / Theme.px(9))))
             Rectangle {
+              // The row is as tall as the caret, so a 5px dot left to itself
+              // sits at the top of it -- the mockup centers both on the
+              // field's middle line (align-items:center).
+              anchors.verticalCenter: parent.verticalCenter
               width: Theme.px(5); height: Theme.px(5)
               radius: width / 2
               color: Theme.ink(0.7)

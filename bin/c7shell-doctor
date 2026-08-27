@@ -387,6 +387,24 @@ if [[ -d $sddm_theme ]]; then
     fi
   fi
 
+  # The network pill's only source of truth. Nothing breaks without it -- the
+  # pill just never appears -- but "my greeter shows no wifi" has no other
+  # explanation, and a dispatcher script is easy to lose to a manual /usr edit.
+  if [[ $current == c7shell ]] && command -v nmcli >/dev/null; then
+    dispatcher=''
+    for d in "$root"/usr/lib/NetworkManager/dispatcher.d "$root"/etc/NetworkManager/dispatcher.d; do
+      [[ -x $d/50-c7shell-greeter ]] && dispatcher=$d/50-c7shell-greeter
+    done
+    if [[ -n $dispatcher ]]; then
+      ok "greeter network readout (${dispatcher#"$root"})"
+    else
+      warn 'the greeter shows no network: 50-c7shell-greeter is not in'
+      note 'NetworkManager'"'"'s dispatcher.d, so nothing publishes the connection'
+      note 'where the greeter (running as the sddm user, with no D-Bus) can read it.'
+      note 'It ships with the package, so a rebuild restores it: c7shell-upgrade'
+    fi
+  fi
+
   # Without this the greeter still comes up, but its top-left line loses the
   # kernel version and the bottom bar loses the battery: QML refuses file://
   # reads unless the greeter's environment allows them.

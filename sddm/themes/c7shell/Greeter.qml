@@ -27,12 +27,19 @@ FocusScope {
   property bool allowManualLogin: false
   // "auto" shows the user panel when there is more than one account.
   property string userList: "auto"
+  // Where the NetworkManager dispatcher script publishes the current
+  // connection. A property so the preview can substitute a file of its own.
+  property string networkFile: "/run/c7shell/network"
   property int maxAttempts: 3
   property int cooldownSeconds: 30
   // Everything but the backdrop is drawn on the primary screen only: a second
   // monitor gets the same ground, so the pair looks deliberate rather than
   // duplicated.
   property bool primary: true
+
+  // The field's contents. Only the preview harness writes this -- sddm's
+  // greeter has a keyboard.
+  property alias password: field.text
 
   signal loginRequested(string user, string password, int sessionIndex)
   signal suspendRequested
@@ -191,7 +198,7 @@ FocusScope {
     onTriggered: now = new Date()
   }
 
-  SysInfo { id: sys }
+  SysInfo { id: sys; networkFile: root.networkFile }
 
   Backdrop {
     anchors.fill: parent
@@ -484,6 +491,8 @@ FocusScope {
     capsLock: root.capsLock
     batteryLevel: sys.batteryLevel
     batteryCharging: sys.batteryCharging
+    networkName: sys.networkName
+    networkWireless: sys.networkWireless
     canSuspend: root.canSuspend
     canReboot: root.canReboot
     canPowerOff: root.canPowerOff

@@ -14,6 +14,19 @@ QtObject {
   property int batteryLevel: -1
   property bool batteryCharging: false
 
+  // The current network, published by the NetworkManager dispatcher script the
+  // package installs (/usr/lib/NetworkManager/dispatcher.d/50-c7shell-greeter).
+  // NetworkManager is only reachable over D-Bus, which QML cannot speak and the
+  // sddm user would not be allowed to write to anyway -- so the dispatcher
+  // writes what it knows to a file, as root, on every connection change. No
+  // file means no pill: an empty name is the signal to hide it.
+  // Overridable so the preview harness can point at a file it wrote; sddm
+  // itself always gets the real one.
+  property string networkFile: "/run/c7shell/network"
+  property string networkName: ""
+  property bool networkWireless: true
+  property bool networkUp: false
+
   function read(path, ok) {
     const xhr = new XMLHttpRequest()
     xhr.onreadystatechange = function () {
@@ -29,6 +42,37 @@ QtObject {
     } catch (e) {
       // An unreadable path is not worth a warning: the line just stays empty.
     }
+  }
+
+  // Re-read on a timer as well as at startup: someone can walk into wifi range
+  // while the greeter is sitting there, and a 4-line file every few seconds
+  // costs nothing.
+  property Timer networkPoll: Timer {
+    interval: 4000
+    running: true
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.readNetwork()
+  }
+
+  function readNetwork() {
+    if (root.networkFile === "") return
+    root.read(root.networkFile, function (text) {
+      let name = "", kind = "wireless", state = "down"
+      for (const line of text.split("\n")) {
+        const eq = line.indexOf("=")
+        if (eq < 1) continue
+        const key = line.slice(0, eq), value = line.slice(eq + 1)
+        if (key === "name") name = value
+        else if (key === "kind") kind = value
+        else if (key === "state") state = value
+      }
+      root.networkWireless = kind === "wireless"
+      root.networkUp = state === "up"
+      // A connection that is down is not a network the machine is "on", and the
+      // greeter says nothing rather than something stale.
+      root.networkName = root.networkUp ? name : ""
+    })
   }
 
   Component.onCompleted: {

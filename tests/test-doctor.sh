@@ -221,6 +221,17 @@ out=$(run 2>&1) || fail "a fully configured greeter should not fail:\n$out"
 grep -q 'may read /proc' <<<"$out" || fail "the greeter env was not recognised:\n$out"
 grep -q 'greeter binary sddm-greeter-qt6 runs' <<<"$out" || fail "the greeter binary was not checked:\n$out"
 
+# The network pill's only source: nothing publishes the connection without it,
+# and "my greeter shows no wifi" has no other explanation.
+stub nmcli
+out=$(run 2>&1) || fail "a missing dispatcher should not fail:\n$out"
+grep -q 'greeter shows no network' <<<"$out" || fail "the missing dispatcher was not reported:\n$out"
+mkdir -p "$root/usr/lib/NetworkManager/dispatcher.d"
+: > "$root/usr/lib/NetworkManager/dispatcher.d/50-c7shell-greeter"
+chmod +x "$root/usr/lib/NetworkManager/dispatcher.d/50-c7shell-greeter"
+out=$(run 2>&1) || fail "a present dispatcher should not fail:\n$out"
+grep -q 'greeter network readout' <<<"$out" || fail "the dispatcher was not recognised:\n$out"
+
 # The black-screen case, and the reason this is checked at all: sddm builds the
 # greeter path as sddm-greeter + (QtVersion ? "-qt<n>" : ""), so a theme that
 # declares nothing gets handed to the Qt5 greeter -- present on Arch, but its

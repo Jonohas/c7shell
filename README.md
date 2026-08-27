@@ -198,11 +198,23 @@ The login screen is an SDDM Qt/QML theme in `sddm/themes/c7shell`, drawn from
 the same tokens as the shell: near-black ground with two crimson glows and a
 56px grid, one glass card with the avatar, the password field and a caps-lock
 line, a user list and a session picker as side panels, and the shell's pill bar
-along the bottom (session · layout · battery · sleep / reboot / shutdown).
+along the bottom (session · layout · network · battery · sleep / reboot /
+shutdown).
 Reboot and shutdown are hold-to-confirm, the same 600 ms as the shell's power
 menu. `Up`/`Down` moves through the users, `F1` cycles the session, `F2` the
 keyboard layout, `Esc` clears the field. Three failed attempts add a 30-second
 cooldown.
+
+The network pill needs a hand: the greeter is QML with no D-Bus binding,
+running as the `sddm` user before any session exists, so it cannot ask
+NetworkManager what it is connected to. The package installs
+`/usr/lib/NetworkManager/dispatcher.d/50-c7shell-greeter`, which NetworkManager
+runs as root on every connection change — including before login — to publish
+the connection name to `/run/c7shell/network` (mode 644). The greeter polls that
+file. Delete the script and the pill simply never appears; nothing else changes,
+and nothing is exposed that `nmcli dev` would not already tell any local user.
+The name is NetworkManager's profile name, which for a wifi network added the
+usual way is its SSID.
 
 It is installed to `/usr/share/sddm/themes/c7shell` by the package — not copied
 into `~/.config`, because the greeter runs as the `sddm` user before any session
@@ -211,6 +223,14 @@ exists and cannot read your home directory. Selecting it is a line in
 `c7shell-upgrade` on an existing one. `c7shell-upgrade` leaves another theme
 alone if one is already configured and says so; `c7shell-doctor` reports which
 theme is selected either way.
+
+One trap worth knowing if you fork the theme: `metadata.desktop` must declare
+`QtVersion=6`. sddm builds the greeter path as `/usr/bin/sddm-greeter` +
+`-qt<n>` from that key, so without it the theme is handed to the *Qt5* greeter —
+which Arch ships, but whose Qt5 libraries are only an optdepend of sddm. It
+exits 127 and the login screen is a black rectangle, with the reason only in
+`journalctl -u sddm`. `tests/test-greeter.sh` asserts the key, and
+`c7shell-doctor` checks the binary the selected theme implies can actually load.
 
 Per-machine settings live in `theme.conf` (or any `[Theme]`-adjacent drop-in in
 `/etc/sddm.conf.d`):
@@ -228,6 +248,7 @@ To see it without logging out:
 ```bash
 qml6 tests/greeter-preview.qml                       # the resting state
 qml6 tests/greeter-preview.qml -- --failed --sessions # failed auth, picker open
+qml6 tests/greeter-preview.qml -- --typed 7            # the dot row and caret
 ```
 
 The theme keeps SDDM's context objects out of everything but `Main.qml`, so
@@ -285,6 +306,7 @@ eat local edits by accident.
 | `~/.config/hypr/shell.json` | shell preferences the settings app writes (global menu) |
 | `sddm/themes/c7shell/` | the greeter theme; `Main.qml` wires SDDM's models into `Greeter.qml` |
 | `sddm/themes/c7shell/theme.conf` | greeter settings (wallpaper, user list, lockout) |
+| `share/c7shell-network-dispatcher` | NetworkManager dispatcher script; publishes the connection for the greeter's network pill |
 | `/etc/sddm.conf.d/10-c7shell.conf` | selects the theme; written by bootstrap/upgrade, not by the package |
 
 ## Optional pieces

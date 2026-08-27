@@ -14,6 +14,11 @@ import "../sddm/themes/c7shell" as C7
 Window {
   id: window
 
+  // --typed <n>: put n characters in the password field, since nothing here can
+  // type. The dot row and the caret are drawn from the length, and their
+  // alignment is the whole point of looking.
+  readonly property int typed: window.argAfter("--typed", 0)
+
   // --size WxH for a real panel size; the mockup's own frame by default.
   width: window.argSize(0, 1120)
   height: window.argSize(1, 630)
@@ -71,6 +76,8 @@ Window {
     currentLayout: 0
     capsLock: window.caps
     allowManualLogin: window.manual
+    // --network-file <path> stands in for the dispatcher script's output.
+    networkFile: window.argString("--network-file")
 
     onLoginRequested: function (user, password, sessionIndex) {
       console.log("login:", user, "session", sessionIndex, "password length", password.length)
@@ -87,6 +94,7 @@ Window {
     Component.onCompleted: {
       if (window.manual) greeter.userIndex = greeter.userCount
       if (window.sessionsOpen) greeter.sessionsOpen = true
+      if (window.typed > 0) greeter.password = "x".repeat(window.typed)
       if (window.failed) {
         greeter.loginFailed("")
         greeter.loginFailed("")

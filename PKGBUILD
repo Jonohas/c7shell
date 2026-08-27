@@ -115,6 +115,15 @@ package() {
   cp -a sddm/themes/c7shell "$pkgdir/usr/share/sddm/themes/"
   chmod -R u=rwX,go=rX "$pkgdir/usr/share/sddm/themes/c7shell"
 
+  # What the greeter's network pill reads. The greeter is QML with no D-Bus
+  # binding, running as the sddm user before any session exists, so it cannot
+  # ask NetworkManager what it is connected to -- this runs as root on every
+  # connection change and writes the answer where the greeter can read it.
+  # /usr/lib, not /etc/NetworkManager/dispatcher.d: it is a program, and
+  # NetworkManager has read both directories since 1.36.
+  install -Dm755 share/c7shell-network-dispatcher \
+    "$pkgdir/usr/lib/NetworkManager/dispatcher.d/50-c7shell-greeter"
+
   # The settings window is a launchable app, so its entry and icon go where
   # every launcher already looks. They also travel inside the shipped config
   # above (the shell reads its own Assets), but a copy under ~/.config is not

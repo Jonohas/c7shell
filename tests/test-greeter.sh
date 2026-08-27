@@ -51,6 +51,50 @@ while read -r key; do
   grep -q "^$key=" "$theme/theme.conf" || fail "Main.qml reads config key '$key', theme.conf does not define it"
 done < <(grep -o 'stringValue("[a-zA-Z]*")' "$theme/Main.qml" | sed 's/.*("\(.*\)")/\1/' | sort -u)
 
+# --- the network dispatcher ------------------------------------------------
+# The greeter cannot ask NetworkManager anything (QML, no D-Bus, running as the
+# sddm user), so this script publishes the connection to a file it can read.
+# Exercised for real: it is a few lines of bash, and every one of them decides
+# whether the pill appears or lies.
+dispatcher=$here/../share/c7shell-network-dispatcher
+[[ -x $dispatcher ]] || fail 'share/c7shell-network-dispatcher is missing or not executable'
+bash -n "$dispatcher" || fail 'the dispatcher script does not parse'
+
+export C7SHELL_NETWORK_FILE=$tmp/network
+field() { grep "^$1=" "$C7SHELL_NETWORK_FILE" | cut -d= -f2-; }
+
+# A wireless interface really present on the machine running the test, so the
+# /sys probe for wireless-vs-wired is exercised rather than mocked. Falls back
+# to asserting only what does not depend on one.
+wifi_iface=''
+for i in /sys/class/net/*; do [[ -d $i/wireless ]] && wifi_iface=${i##*/}; done
+
+CONNECTION_ID='c7-office' "$dispatcher" "${wifi_iface:-eth0}" up
+[[ -f $C7SHELL_NETWORK_FILE ]] || fail 'the dispatcher wrote nothing on "up"'
+[[ $(field name) == c7-office ]] || fail "the connection name is '$(field name)', not c7-office"
+[[ $(field state) == up ]] || fail "state is '$(field state)', not up"
+if [[ -n $wifi_iface ]]; then
+  [[ $(field kind) == wireless ]] || fail "a wireless interface was reported as '$(field kind)'"
+fi
+# World-readable, or the sddm user cannot read it and the pill never appears.
+perms=$(stat -c '%a' "$C7SHELL_NETWORK_FILE")
+[[ $perms == 644 ]] || fail "the published file is mode $perms, and the greeter runs as another user"
+
+# "down" must not leave a stale network named in the greeter
+CONNECTION_ID='c7-office' "$dispatcher" "${wifi_iface:-eth0}" down
+[[ $(field state) == down ]] || fail 'a disconnect did not update the file'
+
+# Loopback and virtual interfaces are not networks anyone is "on"
+printf 'state=up\nkind=wireless\niface=x\nname=sentinel\n' > "$C7SHELL_NETWORK_FILE"
+CONNECTION_ID='lo' "$dispatcher" lo up
+[[ $(field name) == sentinel ]] || fail 'the dispatcher published loopback as a network'
+CONNECTION_ID='docker' "$dispatcher" docker0 up
+[[ $(field name) == sentinel ]] || fail 'the dispatcher published a docker bridge as a network'
+# ...and neither are the phases that say nothing new about a settled connection
+CONNECTION_ID='other' "$dispatcher" "${wifi_iface:-eth0}" pre-up
+[[ $(field name) == sentinel ]] || fail 'the dispatcher acted on pre-up'
+unset C7SHELL_NETWORK_FILE
+
 command -v qml6 >/dev/null || {
   echo 'SKIP: qml6 not installed (package: qt6-declarative), only the metadata was checked'
   exit 0
@@ -77,7 +121,16 @@ render() {
   [[ -s $tmp/$name.png ]] || fail "$name: nothing was rendered"
 }
 
+# The network file the dispatcher above would have written, so the pill has
+# something to draw, and a password with characters in it, so the dot row and
+# the caret are rendered rather than assumed.
+printf 'state=up\nkind=wireless\niface=wlan0\nname=c7-office\n' > "$tmp/network"
+printf 'state=up\nkind=wired\niface=enp0s1\nname=Wired connection 1\n' > "$tmp/network-wired"
+
 render resting
+render typed --typed 7
+render network --network-file "$tmp/network"
+render network-wired --network-file "$tmp/network-wired"
 render failed --failed
 render sessions --sessions
 render caps --caps

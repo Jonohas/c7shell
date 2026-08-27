@@ -16,6 +16,8 @@ Item {
   property bool capsLock: false
   property int batteryLevel: -1
   property bool batteryCharging: false
+  property string networkName: ""
+  property bool networkWireless: true
   property bool canSuspend: true
   property bool canReboot: true
   property bool canPowerOff: true
@@ -127,6 +129,36 @@ Item {
           font.family: Theme.fontMono
           font.pixelSize: Theme.fs(10)
           font.weight: 500
+        }
+      }
+
+      // -- network ---------------------------------------------------------
+      // The mockup's "c7-office" pill. Empty name = nothing published (no
+      // dispatcher script) or nothing connected, and the pill stays away
+      // rather than claiming an offline machine is online.
+      PillButton {
+        anchors.verticalCenter: parent.verticalCenter
+        interactive: false
+        visible: root.networkName !== ""
+        padding: Theme.px(11)
+
+        VectorIcon {
+          anchors.verticalCenter: parent.verticalCenter
+          icon: root.networkWireless ? Icons.wifi : Icons.ethernet
+          size: Theme.px(12)
+          color: Theme.ink(0.55)
+        }
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.networkName
+          color: Theme.ink(0.55)
+          font.family: Theme.fontMono
+          font.pixelSize: Theme.fs(10)
+          font.weight: 500
+          elide: Text.ElideRight
+          // A guest network called something enormous must not push the power
+          // buttons off the bar.
+          width: Math.min(implicitWidth, Theme.px(140))
         }
       }
 
