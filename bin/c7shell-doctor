@@ -205,11 +205,22 @@ need_cmd bluetoothctl bluez-utils 'the bluetooth applet'
 need_cmd nmcli       networkmanager 'the network applet'
 need_cmd systemctl   systemd      'the power menu (suspend, reboot, poweroff)'
 
+# Only checked when a QWidget-based Qt/KDE app is actually installed. The shell
+# is QML and takes none of this; on a machine with no such apps the platform
+# theme has nothing to theme, and warning about it would be noise.
+kde_apps=()
+for app in dolphin kate kwrite gwenview okular ark kcalc konsole systemsettings; do
+  command -v "$app" >/dev/null && kde_apps+=("$app")
+done
+
+if ((${#kde_apps[@]})); then
 section 'qt app theming'
 # conf/environment.lua sets QT_QPA_PLATFORMTHEME=kde and the settings app
 # exports the palette to kdeglobals. Both are inert without the plugin that
 # implements that platform theme -- the symptom is a correctly themed shell
 # next to a stock-looking dolphin.
+info_apps=${kde_apps[*]}
+((quiet)) || printf '  ok    Qt/KDE apps present: %s\n' "$info_apps"
 qt_plugin() {
   local rel=$1 pkg=$2 what=$3 dir
   while read -r dir; do
@@ -226,6 +237,7 @@ if [[ -f $conf/kdeglobals ]] && grep -q '^ColorScheme=C7Shell' "$conf/kdeglobals
 elif [[ -f $conf/quickshell/c7shell/scripts/c7shell-theme-export.py ]]; then
   warn "$conf/kdeglobals has no C7Shell scheme yet, so Qt apps use their own colours"
   note 'seed it:  python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py'
+fi
 fi
 
 section 'appmenu daemon'
@@ -316,6 +328,13 @@ optional_entries=(
   "file:/usr/lib/pam_kwallet_init:kwallet:secret storage unlocked at login, or kwallet prompts"
 )
 
+# Packages that are only useful together with another one, so they are offered
+# and installed as part of it rather than as separate entries. plasma-integration
+# and breeze do nothing on a machine with no QWidget-based Qt/KDE app.
+declare -A companions=(
+  [dolphin]='plasma-integration breeze breeze-icons'
+)
+
 offer_pkgs=()
 offer_desc=()
 
@@ -348,6 +367,8 @@ offer_optional() {
   local i
   for i in "${!offer_pkgs[@]}"; do
     printf '  %2d) %-14s %s\n' "$((i + 1))" "${offer_pkgs[i]}" "${offer_desc[i]}"
+    [[ -n ${companions[${offer_pkgs[i]}]:-} ]] \
+      && printf '      %-14s + %s\n' '' "${companions[${offer_pkgs[i]}]}"
   done
   printf '\nPick which to install: numbers (1 3 5), ranges (1-4), a = all,\n'
   printf 'or press enter to install none: '
@@ -380,6 +401,13 @@ offer_optional() {
       done
       ;;
   esac
+
+  # Whatever was picked, bring its companions along: dolphin without
+  # plasma-integration is dolphin that ignores the palette.
+  local pick
+  for pick in "${chosen[@]}"; do
+    [[ -n ${companions[$pick]:-} ]] && chosen+=(${companions[$pick]})
+  done
 
   # A number typed twice, or covered by a range as well, is not an error.
   local uniq=() c seen

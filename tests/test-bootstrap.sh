@@ -86,6 +86,30 @@ grep -q 'enable: .*bluetooth.service' <<<"$out" || fail "bluetooth is not enable
 # --dry-run really does nothing: no stub was asked to change anything
 [[ ! -s $log ]] || fail "--dry-run ran something:\n$(cat "$log")"
 
+# --- the Qt/KDE theming packages ride with dolphin, not on their own -------
+# plasma-integration is useless without a QWidget app to theme, so it must not
+# land on a machine that has none.
+# grep the pacman line, not the whole plan: the note explaining the skip names
+# the package too.
+installs() { grep -E 'pacman -S --needed' <<<"$1"; }
+
+out=$(plan "$AMD")
+installs "$out" | grep -q '\bplasma-integration\b' \
+  || fail "the extras include dolphin, so plasma-integration should come too:\n$out"
+
+out=$(plan "$AMD" --no-extras)
+installs "$out" | grep -q '\bplasma-integration\b' \
+  && fail "--no-extras (no dolphin) still installed plasma-integration:\n$out"
+installs "$out" | grep -q '\bbreeze\b' && fail "--no-extras still installed breeze:\n$out"
+grep -q 'no Qt/KDE apps here' <<<"$out" || fail "skipping the theming packages was not explained:\n$out"
+
+# a machine that already has dolphin gets them even with --no-extras
+printf '#!/bin/sh\nexit 0\n' > "$bin/dolphin"; chmod +x "$bin/dolphin"
+out=$(plan "$AMD" --no-extras)
+installs "$out" | grep -q '\bplasma-integration\b' \
+  || fail "an existing dolphin should pull in plasma-integration:\n$out"
+rm "$bin/dolphin"
+
 # --- per-vendor drivers ----------------------------------------------------
 out=$(plan "$AMD")
 grep -q 'GPU: amd' <<<"$out" || fail "amd not detected:\n$out"

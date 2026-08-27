@@ -120,7 +120,13 @@ out=$(run --quiet 2>&1 || true)
 grep -q 'FAIL  grim' <<<"$out" || fail "--quiet dropped the failure:\n$out"
 ! grep -q '  ok    ' <<<"$out" || fail "--quiet printed passing checks:\n$out"
 
-stub grim   # the --quiet case above removed it; these cases want a clean pass
+stub grim     # the --quiet case above removed it; these cases want a clean pass
+stub dolphin  # an app that benefits, which is what turns the theming checks on
+
+# now that a Qt/KDE app is installed, the theming section reports
+out=$(run 2>&1) || fail "the theming section should not be fatal:\n$out"
+grep -q 'Qt/KDE apps present: dolphin' <<<"$out" || fail "dolphin did not turn the checks on:\n$out"
+
 # no platform theme plugin: QT_QPA_PLATFORMTHEME=kde is inert and Qt apps look
 # stock, which is a warning (the shell itself still runs) naming the package
 mv "$root/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so" "$tmp/theme-gone"
@@ -190,6 +196,20 @@ out=$(pick '1-3')
 # a number covered twice is not an error and is not installed twice
 out=$(pick '1 1-2')
 [[ $out == '-S --needed -- kitty hyprlauncher' ]] || fail "duplicate selection installed: $out"
+
+# dolphin alone would ignore the palette, so its companions come with it
+rm "$bin/dolphin"
+: > "$log"
+out=$(pick 2)   # 1 = kitty, 2 = dolphin now that it is absent again
+[[ $out == *dolphin* ]] || fail "picking dolphin did not install it: $out"
+[[ $out == *plasma-integration*breeze*breeze-icons* ]] \
+  || fail "dolphin's companions were not installed with it: $out"
+grep -q 'plasma-integration breeze breeze-icons' "$tmp/pick.out" \
+  || fail "the offer did not mention the companions:\n$(cat "$tmp/pick.out")"
+# and they are not offered as entries of their own
+grep -qE '^ +[0-9]+\) plasma-integration' "$tmp/pick.out" \
+  && fail "plasma-integration was offered as its own entry:\n$(cat "$tmp/pick.out")"
+stub dolphin
 
 out=$(pick a)
 [[ $out == *kitty*kwallet* ]] || fail "'a' should install every offered package, got: $out"

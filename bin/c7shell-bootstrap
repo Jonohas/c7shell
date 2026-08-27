@@ -195,10 +195,7 @@ units_user+=(pipewire.socket pipewire-pulse.socket wireplumber.service)
 # the icon theme spec resolve from an installed theme. hicolor is the fallback
 # every .desktop icon lands in; breeze matches QT_QPA_PLATFORMTHEME=kde, which
 # conf/environment.lua sets and the settings app writes kdeglobals for.
-add hicolor-icon-theme adwaita-icon-theme breeze-icons breeze
-# plasma-integration provides the "kde" platform theme QT_QPA_PLATFORMTHEME
-# names. Without it that variable does nothing and dolphin ignores the palette.
-add plasma-integration
+add hicolor-icon-theme adwaita-icon-theme
 # JetBrains Mono is Theme.fontMono; noto covers everything else, emoji included.
 add ttf-jetbrains-mono noto-fonts noto-fonts-emoji
 
@@ -235,6 +232,17 @@ if ((want_extras)); then
   # conf/programs.lua: SUPER+Q and SUPER+E. ddcutil/brightnessctl back the
   # brightness binds, playerctl the media keys.
   add kitty dolphin ddcutil brightnessctl playerctl
+fi
+
+# plasma-integration provides the "kde" platform theme QT_QPA_PLATFORMTHEME
+# names, and breeze the style it draws with -- but only a QWidget-based Qt/KDE
+# app has any use for them. The shell is QML and does not. So they follow
+# dolphin: installed with it, or added for a machine that already has it,
+# and skipped entirely otherwise.
+if ((want_extras)) || have dolphin; then
+  add plasma-integration breeze breeze-icons
+else
+  add_note 'no Qt/KDE apps here, so plasma-integration was skipped; if you install dolphin or another KDE app later, c7shell-doctor --optional offers it'
 fi
 
 # --- AUR -------------------------------------------------------------------

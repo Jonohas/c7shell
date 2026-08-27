@@ -16,14 +16,6 @@ depends=(
   'hyprpicker'
   'hyprpolkitagent'
   'qt6-declarative'
-  # QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua) is only meaningful with
-  # plasma-integration's platform theme plugin; without it Qt ignores the
-  # variable and KDE apps come up stock instead of following kdeglobals, which
-  # is what scripts/c7shell-theme-export.py writes. breeze is the Qt6 widget
-  # style that theme then draws with.
-  'plasma-integration'
-  'breeze'
-  'breeze-icons'
   'wireplumber'
   'networkmanager'
   'bluez'
@@ -40,6 +32,13 @@ depends=(
 optdepends=(
   'kitty: terminal bound to SUPER+Q'
   'dolphin: file manager bound to SUPER+E'
+  # QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua) only means something
+  # with plasma-integration's platform theme plugin, and it only matters if a
+  # QWidget-based Qt/KDE app is installed to be themed. The shell itself is
+  # QML, so a machine without such apps gains nothing from these three.
+  'plasma-integration: makes Qt/KDE apps (dolphin) follow the c7shell palette'
+  'breeze: Qt6 widget style that platform theme draws with'
+  'breeze-icons: icon theme Qt/KDE apps expect'
   'hyprlauncher: fallback launcher (the shell provides its own)'
   'ddcutil: DDC/CI backlight control for external monitors'
   'brightnessctl: backlight control for internal panels'

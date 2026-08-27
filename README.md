@@ -46,7 +46,7 @@ What the bootstrap decides for you, and how to override it:
 | Audio | `pipewire`, `pipewire-pulse`, `pipewire-alsa`, `wireplumber` + the user units. `wireplumber` is a session manager, not a sound server: without the daemons under it the volume keys do nothing. |
 | Network | `NetworkManager` and `bluetooth` enabled — unless `systemd-networkd` or `iwd` is already driving the network, in which case it warns instead of stacking two managers on one link. |
 | Fonts, icons | `ttf-jetbrains-mono` (`Theme.fontMono`), `noto-fonts`, `noto-fonts-emoji`, `hicolor`/`adwaita`/`breeze` icon themes for the launcher's real app icons. |
-| Qt app theming | `plasma-integration` (the `kde` platform theme `QT_QPA_PLATFORMTHEME` names) and `breeze` (the Qt6 widget style). Without the first, that variable is inert and KDE apps like dolphin ignore the c7shell palette entirely. |
+| Qt app theming | `plasma-integration` + `breeze` + `breeze-icons`, but **only** alongside `dolphin` — installed with it, added if the machine already has it, skipped otherwise. Nothing in the shell needs them; only QWidget-based Qt/KDE apps do. |
 | AUR | `paru-bin` if no AUR helper is present, for `ttf-space-grotesk` (`Theme.fontDisplay`, not in the official repos; fontconfig falls back without it). `--no-aur` opts out. |
 | Extras | `kitty`, `dolphin` (the SUPER+Q / SUPER+E binds), `ddcutil`, `brightnessctl`, `playerctl`, plus `i2c-dev` and the `i2c` group so `ddcutil` can reach external monitors. `--no-extras` opts out. |
 
@@ -120,7 +120,16 @@ apps — the settings app runs it whenever the accent or variant changes, and
 `c7shell-setup` seeds it once at install time so a fresh session is not a
 themed shell beside a stock-looking dolphin.
 
-Three things have to be in place, and `c7shell-doctor` checks all three:
+This only applies if you actually run a QWidget-based Qt/KDE app. The shell
+itself is QML — the bar, launcher and settings window take none of this — so
+the packages below are `optdepends`, the bootstrap installs them only together
+with `dolphin`, and `c7shell-doctor` skips the whole section on a machine with
+no such app rather than warning about something it has no use for. Picking
+`dolphin` in `c7shell-doctor --optional` brings them along, since dolphin
+without them is dolphin that ignores the palette.
+
+When one is installed, three things have to be in place, and `c7shell-doctor`
+checks all three:
 
 - `QT_QPA_PLATFORMTHEME=kde` — set in `hypr/conf/environment.lua`. Not `qt6ct`:
   KDE apps ignore qt6ct's palette and come up stock light while their
