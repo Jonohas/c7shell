@@ -51,12 +51,11 @@ GTK_SETTINGS = (f"{CONFIG}/gtk-3.0/settings.ini", f"{CONFIG}/gtk-4.0/settings.in
 SCHEME_FILE = f"{DATA}/color-schemes/C7Shell.colors"
 SCHEME_NAME = "C7Shell"
 
-# plasma-integration reads these two out of kcminputrc and hands them to
-# libXcursor. Unset, it leaves Qt apps on the "default" theme -- fine only for
-# as long as that keeps inheriting the same theme the compositor uses. Keep both
-# in step with XCURSOR_THEME/XCURSOR_SIZE in hypr/conf/environment.lua.
+# Cursor defaults, and they must stay identical to the ones in
+# hypr/conf/appearance.lua and Services/AppearanceStore.qml -- appearance.json
+# owns the value, these are only what a missing or corrupt file falls back to.
 CURSOR_THEME = "Adwaita"
-CURSOR_SIZE = "24"
+CURSOR_SIZE = 24
 
 # KGlobalSettings::ChangeType, the argument notifyChange takes.
 PALETTE_CHANGED = 0
@@ -300,6 +299,30 @@ def write_gsettings(scheme):
         check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def write_cursor(theme, size):
+    """One cursor theme, every consumer that has its own opinion of it.
+
+    Three toolkits, three files, and nothing kept them in step: the compositor
+    read XCURSOR_THEME (unset, so it fell through to Adwaita via
+    default-cursors), plasma-integration read cursorTheme from kcminputrc
+    (unset, so the same fallback), and GTK read gtk-cursor-theme-name from its
+    own settings.ini (breeze_cursors) -- two different cursors on one screen.
+
+    hypr/conf/environment.lua sets the compositor's env from the same
+    appearance.json key at config load, so the only thing left to reach here is
+    the session already running.
+    """
+    merge_ini(KCMINPUTRC, {"Mouse": {"cursorTheme": theme, "cursorSize": str(size)}})
+    for path in GTK_SETTINGS:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        merge_ini(path, {"Settings": {"gtk-cursor-theme-name": theme,
+                                      "gtk-cursor-theme-size": str(size)}})
+    # Hyprland took XCURSOR_THEME at config load; this is what moves the cursor
+    # already on screen. Silent when there is no compositor to talk to.
+    subprocess.run(["hyprctl", "setcursor", theme, str(size)],
+                   check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def notify(change=PALETTE_CHANGED):
     """The half that reaches running apps: a plain file write moves no pixels."""
     subprocess.run(
@@ -313,12 +336,37 @@ def notify(change=PALETTE_CHANGED):
 # AppearanceStore's clamped reads do: a stray value falls back, never reaches
 # a colour computation.
 
-def read_appearance():
+def load_appearance():
+    """appearance.json as a dict, or empty when it is missing or malformed."""
     try:
         with open(APPEARANCE, encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError):
         data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def cursor_from(data):
+    """Validated (theme, size). Pure, so the selftest can reach it.
+
+    The name becomes a directory lookup, a config value and an argv element, so
+    it is held to a plain theme name -- a hand-edited "../something" must not
+    reach any of the three.
+    """
+    theme = data.get("cursorTheme")
+    if not (isinstance(theme, str) and re.fullmatch(r"[A-Za-z0-9._-]+", theme)):
+        theme = CURSOR_THEME
+    try:
+        size = int(data.get("cursorSize", CURSOR_SIZE))
+    except (TypeError, ValueError):
+        size = CURSOR_SIZE
+    if isinstance(data.get("cursorSize"), bool) or not 8 <= size <= 128:
+        size = CURSOR_SIZE
+    return theme, size
+
+
+def read_appearance():
+    data = load_appearance()
     accent = data.get("accent", "")
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(accent)):
         accent = DEFAULT_ACCENT
@@ -376,22 +424,48 @@ def selftest():
     # and picking light must not quietly turn the shell's own palette light.
     assert SCHEMES["dark"] == ("prefer-dark", "1")
     assert SCHEMES["light"] == ("prefer-light", "0")
-    # merge_ini writes into files it does not own. The per-device libinput
     # sections in kcminputrc are the ones that would hurt to lose, and their
-    # bracketed names are exactly what a careless rewrite mangles.
+    # A hand-edited cursor name reaches a directory lookup, two config files and
+    # an argv element, so it is the one appearance.json value worth fuzzing.
+    assert cursor_from({}) == (CURSOR_THEME, CURSOR_SIZE)
+    assert cursor_from({"cursorTheme": "Sweet-cursors", "cursorSize": 32}) \
+        == ("Sweet-cursors", 32)
+    for bad in ("", "../Adwaita", "a b", "x/y", "$(id)", None, 5, True, ["A"]):
+        assert cursor_from({"cursorTheme": bad})[0] == CURSOR_THEME, repr(bad)
+    for bad in ("huge", None, 0, 7, 129, True, False, [24], 1e9):
+        assert cursor_from({"cursorSize": bad})[1] == CURSOR_SIZE, repr(bad)
+    assert cursor_from({"cursorSize": "32"})[1] == 32  # JSON strings are common
+
+    # merge_ini writes into files it does not own. kcminputrc's per-device
+    # libinput sections are the ones that would hurt to lose -- their bracketed
+    # names are exactly what a careless rewrite mangles -- and settings.ini
+    # carries a dozen GTK keys this script has no business touching.
     with tempfile.TemporaryDirectory() as d:
         f = os.path.join(d, "kcminputrc")
         with open(f, "w", encoding="utf-8") as fh:
             fh.write("[Libinput][2362][628][PIXA3854:00 093A:0274 Touchpad]\n"
                      "NaturalScroll=true\n\n[Mouse]\ncursorSize=48\n")
         merge_ini(f, {"Mouse": {"cursorTheme": CURSOR_THEME,
-                                "cursorSize": CURSOR_SIZE}})
+                                "cursorSize": str(CURSOR_SIZE)}})
         text = open(f, encoding="utf-8").read()
         assert "[Libinput][2362][628][PIXA3854:00 093A:0274 Touchpad]" in text, text
         assert "NaturalScroll=true" in text, text
         assert f"cursorTheme={CURSOR_THEME}" in text, text
         assert f"cursorSize={CURSOR_SIZE}" in text, text
         assert "cursorSize=48" not in text, text
+
+        g = os.path.join(d, "settings.ini")
+        with open(g, "w", encoding="utf-8") as fh:
+            fh.write("[Settings]\ngtk-theme-name=Breeze\n"
+                     "gtk-font-name=Noto Sans,  10\n"
+                     "gtk-cursor-theme-name=breeze_cursors\n")
+        merge_ini(g, {"Settings": {"gtk-cursor-theme-name": CURSOR_THEME,
+                                   "gtk-cursor-theme-size": str(CURSOR_SIZE)}})
+        text = open(g, encoding="utf-8").read()
+        assert "gtk-theme-name=Breeze" in text, text
+        assert "gtk-font-name=Noto Sans,  10" in text, text   # commas, spaces
+        assert f"gtk-cursor-theme-name={CURSOR_THEME}" in text, text
+        assert "breeze_cursors" not in text, text
 
     print("selftest ok")
 
@@ -406,8 +480,7 @@ def main():
     write_scheme(groups)
     write_gtk_settings(scheme)
     write_gsettings(scheme)
-    merge_ini(KCMINPUTRC, {"Mouse": {"cursorTheme": CURSOR_THEME,
-                                     "cursorSize": CURSOR_SIZE}})
+    write_cursor(*cursor_from(load_appearance()))
     notify()
     notify(CURSOR_CHANGED)
 
