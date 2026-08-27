@@ -7,6 +7,24 @@ own user (not root):
     c7shell-setup
 
 Then log out and pick the "c7shell" session in your display manager.
+
+If the session does not come up, run:
+
+    c7shell-doctor
+
+It checks everything the session needs that pacman cannot check for you -- the
+Hyprland version, quickshell's QML modules, the GPU device, the appmenu
+daemon's python modules -- and names the package behind anything missing.
+To pick from the optional programs (terminal, file manager, brightness, media
+keys, ...) at any time:
+
+    c7shell-doctor --optional
+
+And to (re)configure the system side -- GPU driver, SDDM, pipewire, fonts,
+services -- on a machine that was never bootstrapped:
+
+    c7shell-bootstrap --dry-run     # show the plan
+    c7shell-bootstrap               # apply it
 MSG
 }
 
@@ -16,7 +34,11 @@ post_upgrade() {
 c7shell updated. The files under /usr/share/c7shell changed; your copies
 in ~/.config did not. To take the new version:
 
-    c7shell-setup --force     # backs up your current ~/.config/{hypr,quickshell}
+    c7shell-upgrade --config-only   # keeps your edits, parks new versions as .new
+
+or, to replace your copies outright:
+
+    c7shell-setup --force           # backs up ~/.config/{hypr,quickshell} first
 
 MSG
 }

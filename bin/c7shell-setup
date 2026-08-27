@@ -6,6 +6,7 @@ set -euo pipefail
 
 share=${C7SHELL_SHARE:-/usr/share/c7shell}
 conf=${XDG_CONFIG_HOME:-$HOME/.config}
+state=${C7SHELL_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/c7shell}
 parts=(hypr quickshell/c7shell)
 force=0
 dry=0
@@ -20,6 +21,7 @@ usage: c7shell-setup [--force] [--dry-run]
 
 env: C7SHELL_SHARE (default /usr/share/c7shell)
      XDG_CONFIG_HOME  (default \$HOME/.config)
+     C7SHELL_STATE    (default \$XDG_STATE_HOME/c7shell)
 
 exit: 0 all parts installed, 3 nothing done because a target already exists
 USAGE
@@ -75,14 +77,44 @@ if [[ -f $xdph ]] && grep -q '\$HOME/\.config/quickshell' "$xdph"; then
   run sed -i "s#\$HOME/.config/quickshell#$conf/quickshell#" "$xdph"
 fi
 
+# The palette lives in appearance.json; Qt and KDE apps read kdeglobals. The
+# settings app exports one to the other, but only when something changes -- so
+# on a fresh install nothing has exported yet and dolphin comes up stock. Seed
+# it once here. Non-fatal: it is cosmetic, and it needs python3 plus the copy
+# that was just made.
+exporter=$conf/quickshell/c7shell/scripts/c7shell-theme-export.py
+if [[ -f $exporter ]] && command -v python3 >/dev/null; then
+  if ((dry)); then
+    printf '  would: python3 %s   (seed ~/.config/kdeglobals)\n' "$exporter"
+  else
+    printf 'exporting the palette to %s/kdeglobals\n' "$conf"
+    python3 "$exporter" || printf 'c7shell-setup: the palette export failed; Qt apps keep their own colours\n' >&2
+  fi
+fi
+
 if ((installed == 0 && skipped)); then
   exit 3
+fi
+
+# Record the hash of every file as installed. c7shell-upgrade compares against
+# this to tell "you edited it" from "it is just an old copy" -- without it, a
+# later upgrade has to assume every difference is a local edit and can only
+# park new versions as .new files.
+if ((dry == 0)); then
+  mkdir -p -- "$state"
+  : > "$state/manifest"
+  for part in "${parts[@]}"; do
+    [[ -d $conf/$part ]] || continue
+    while read -r f; do
+      printf '%s\t%s\n' "${f#"$conf/"}" "$(sha256sum -- "$f" | cut -d' ' -f1)"
+    done < <(find "$conf/$part" -type f ! -name '*.new' | sort)
+  done >> "$state/manifest"
 fi
 
 cat <<'MSG'
 
 Done. Log out and pick the "c7shell" session in your display manager, or
-start it from a TTY with: Hyprland
+start it from a TTY with: start-hyprland
 
 Notes:
   - The shell is the named quickshell config "c7shell": it runs as

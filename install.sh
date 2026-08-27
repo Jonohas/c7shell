@@ -5,6 +5,15 @@
 # ("Cannot find the fakeroot binary", "Cannot find the debugedit binary"),
 # and it aborts before the PKGBUILD is ever read -- so the PKGBUILD itself
 # cannot pull them in. This wrapper installs them first, then runs makepkg.
+#
+# On a bare Arch install there is more missing than build tools -- no GPU
+# driver, no greeter, no pipewire, no fonts, no enabled services -- so it also
+# runs c7shell-bootstrap, which puts that in place before the package is built.
+#
+# Afterwards it runs c7shell-doctor, which checks the things pacman cannot:
+# the Hyprland version (the config is lua, 0.56+), the QML modules quickshell
+# was built with, the GPU device, the appmenu daemon's python modules and
+# whether the configs have reached ~/.config yet.
 set -euo pipefail
 
 # One representative command per base-devel package makepkg insists on.
@@ -22,16 +31,44 @@ declare -A tools=(
 
 usage() {
   cat <<USAGE
-usage: ./install.sh [makepkg options...]
+usage: ./install.sh [options] [makepkg options...]
 
-Installs the base-devel tools makepkg needs (fakeroot, debugedit, ...) if any
-are missing, then runs: makepkg -si <makepkg options>
+Takes a bare Arch install to a working c7shell session:
+  1. installs the base-devel tools makepkg needs (fakeroot, debugedit, ...)
+  2. runs c7shell-bootstrap: GPU driver, SDDM, pipewire, fonts, services
+  3. runs makepkg -si to build and install the package
+  4. runs c7shell-doctor to check the result and offer the optional programs
 
-env: C7SHELL_SKIP_DEPS=1  don't touch base-devel, just run makepkg
+options (everything else is passed straight to makepkg):
+  -n, --dry-run       show the bootstrap plan and stop, changing nothing
+  -y, --yes           don't ask before applying the bootstrap plan
+      --no-bootstrap  skip step 2 entirely (already-configured machine)
+  -h, --help          this text
+
+env: C7SHELL_SKIP_DEPS=1    don't touch base-devel, just run makepkg
+     C7SHELL_SKIP_DOCTOR=1  don't run the post-install c7shell-doctor check
+     C7SHELL_SKIP_OPTIONAL=1  don't offer the optional packages
+     C7SHELL_SKIP_BOOTSTRAP=1 same as --no-bootstrap
+     C7SHELL_BRANCH=<name>  build that branch instead of main (makepkg clones
+                            the branch, not the working tree you run this in)
 USAGE
 }
 
-case ${1:-} in -h|--help) usage; exit 0 ;; esac
+bootstrap_args=()
+makepkg_args=()
+skip_bootstrap=${C7SHELL_SKIP_BOOTSTRAP:+1}
+dry=0
+
+while (($#)); do
+  case $1 in
+    -h|--help) usage; exit 0 ;;
+    -n|--dry-run) dry=1; bootstrap_args+=(--dry-run) ;;
+    -y|--yes) bootstrap_args+=(--yes) ;;
+    --no-bootstrap) skip_bootstrap=1 ;;
+    *) makepkg_args+=("$1") ;;
+  esac
+  shift
+done
 
 command -v makepkg >/dev/null || {
   echo "install.sh: no makepkg found -- this package builds on Arch-based systems only" >&2
@@ -76,4 +113,44 @@ if [[ -z ${C7SHELL_SKIP_DEPS:-} ]]; then
   done
 fi
 
-exec makepkg -si "$@"
+if [[ -z ${skip_bootstrap:-} ]]; then
+  bootstrap=$(command -v c7shell-bootstrap || echo "$(dirname -- "$0")/bin/c7shell-bootstrap")
+  "$bootstrap" ${bootstrap_args[@]+"${bootstrap_args[@]}"}
+  if ((dry)); then
+    echo
+    echo '--dry-run: stopping before makepkg. Re-run without --dry-run to apply.'
+    exit 0
+  fi
+fi
+
+makepkg -si ${makepkg_args[@]+"${makepkg_args[@]}"}
+
+if [[ -z ${C7SHELL_SKIP_DOCTOR:-} ]]; then
+  # Prefer the copy that was just installed; fall back to the tree we are in
+  # so this still works when makepkg only built a package (e.g. with -f, no -i).
+  doctor=$(command -v c7shell-doctor || echo "$(dirname -- "$0")/bin/c7shell-doctor")
+  echo
+  echo 'checking the runtime requirements...'
+  # --optional lists the optional packages that are absent and lets you pick
+  # which to add; it installs nothing unless you choose it, and says so and
+  # moves on when there is no terminal to ask on.
+  offer=()
+  if [[ -z ${C7SHELL_SKIP_OPTIONAL:-} ]]; then offer=(--optional); fi
+  # A missing requirement is worth a non-zero exit, but the package did build
+  # and install -- say so rather than looking like the build failed.
+  "$doctor" --setup-pending ${offer[@]+"${offer[@]}"} || {
+    echo
+    echo 'install.sh: the package installed, but the checks above did not all pass.' >&2
+    exit 1
+  }
+fi
+
+cat <<'MSG'
+
+Next: copy the configs into your home directory (as your own user, not root):
+
+    c7shell-setup
+
+Then log out and pick the "c7shell" session, or run start-hyprland from a TTY.
+Re-run c7shell-doctor at any time to re-check the requirements.
+MSG

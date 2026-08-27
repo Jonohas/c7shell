@@ -32,6 +32,13 @@ depends=(
 optdepends=(
   'kitty: terminal bound to SUPER+Q'
   'dolphin: file manager bound to SUPER+E'
+  # QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua) only means something
+  # with plasma-integration's platform theme plugin, and it only matters if a
+  # QWidget-based Qt/KDE app is installed to be themed. The shell itself is
+  # QML, so a machine without such apps gains nothing from these three.
+  'plasma-integration: makes Qt/KDE apps (dolphin) follow the c7shell palette'
+  'breeze: Qt6 widget style that platform theme draws with'
+  'breeze-icons: icon theme Qt/KDE apps expect'
   'hyprlauncher: fallback launcher (the shell provides its own)'
   'ddcutil: DDC/CI backlight control for external monitors'
   'brightnessctl: backlight control for internal panels'
@@ -39,9 +46,15 @@ optdepends=(
   'playerctl: media keys (XF86Audio{Next,Prev,Play,Pause})'
   'solaar: Logitech device support, autostarted if present'
   'jq: helper scripting'
+  'kwallet: secret storage unlocked at login by conf/autostart.lua'
 )
 makedepends=('git')
-source=("$pkgname::git+$url.git#branch=main")
+# makepkg builds the branch cloned here, NOT the working tree you run it from:
+# a local commit or a pulled feature branch has no effect until it is pushed and
+# named here. Override for testing a branch before it lands:
+#   C7SHELL_BRANCH=my-branch ./install.sh
+_branch=${C7SHELL_BRANCH:-main}
+source=("$pkgname::git+$url.git#branch=$_branch")
 sha256sums=('SKIP')
 install="$pkgname.install"
 
@@ -68,6 +81,16 @@ package() {
             "$pkgdir/usr/share/$pkgname/quickshell/c7shell/bin/screenshare-picker.sh"
 
   install -Dm755 bin/c7shell-setup "$pkgdir/usr/bin/c7shell-setup"
+  # Checks what depends= cannot: the Hyprland version, the QML modules
+  # quickshell was built with, the DRM device, and whether the configs have
+  # been copied into ~/.config yet.
+  install -Dm755 bin/c7shell-doctor "$pkgdir/usr/bin/c7shell-doctor"
+  # Re-runnable after install: drivers, greeter, services and fonts are system
+  # state a package must not touch itself, so it stays a command you invoke.
+  install -Dm755 bin/c7shell-bootstrap "$pkgdir/usr/bin/c7shell-bootstrap"
+  # The only way an installed c7shell gets a newer version: pacman has no
+  # repository to upgrade a locally built package from.
+  install -Dm755 bin/c7shell-upgrade "$pkgdir/usr/bin/c7shell-upgrade"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
 

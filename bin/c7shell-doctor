@@ -1,0 +1,488 @@
+#!/usr/bin/env bash
+# Check that everything c7shell needs to actually run is present.
+#
+# The package's depends= list is only checked at install time, and half of what
+# the session needs is not a package at all: the configs have to be copied into
+# ~/.config, Hyprland has to be new enough to read a lua config, quickshell has
+# to have been built with the QML modules the shell imports, and the machine
+# needs a DRM device to open. When any of that is missing the symptom is a
+# black screen and a bounce straight back to the greeter, with the reason
+# buried in a log -- so check it up front instead.
+set -euo pipefail
+
+conf=${XDG_CONFIG_HOME:-$HOME/.config}
+# Prefix for the absolute paths checked below. Empty in normal use; the test
+# suite points it at a fake tree so the checks can be exercised without
+# installing anything.
+root=${C7SHELL_ROOT:-}
+share=${C7SHELL_SHARE:-/usr/share/c7shell}
+fix=0
+quiet=0
+pending=0
+optional=0
+fail=0
+warned=0
+
+usage() {
+  cat <<USAGE
+usage: c7shell-doctor [--fix] [--optional] [--quiet] [--setup-pending]
+
+Checks every runtime requirement of the c7shell session and reports what is
+missing. Nothing is installed or changed unless --fix is given.
+
+  --fix     pacman -S --needed the packages behind any missing requirement
+  --optional
+            offer the optional packages that are not installed and let you
+            pick which ones to add (needs a terminal; nothing is installed
+            unless you choose it)
+  --quiet   print only problems, not the things that are fine
+  --setup-pending
+            report an absent ~/.config copy as the next step to take rather
+            than as a failure (used right after installing the package, before
+            c7shell-setup has been run)
+
+env: C7SHELL_SHARE     (default /usr/share/c7shell)
+     XDG_CONFIG_HOME   (default \$HOME/.config)
+     C7SHELL_ROOT      prefix for the absolute paths checked (test hook)
+
+exit: 0 everything required is present (warnings may still be printed)
+      1 something required is missing
+USAGE
+}
+
+while (($#)); do
+  case $1 in
+    --fix) fix=1 ;;
+    --quiet|-q) quiet=1 ;;
+    --setup-pending) pending=1 ;;
+    --optional) optional=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'c7shell-doctor: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+# Packages behind failed required checks, collected for --fix.
+missing_pkgs=()
+
+as_root() {
+  if command -v sudo >/dev/null; then sudo "$@"
+  elif command -v doas >/dev/null; then doas "$@"
+  else
+    printf 'c7shell-doctor: need root to run: %s\n' "$*" >&2
+    return 1
+  fi
+}
+
+# Optional packages this run found absent, offered by --optional. Declared up
+# here because both the qt theming checks and the optional section fill it.
+offer_pkgs=()
+offer_desc=()
+offer() {
+  local p
+  for p in ${offer_pkgs[@]+"${offer_pkgs[@]}"}; do [[ $p == "$1" ]] && return 0; done
+  offer_pkgs+=("$1"); offer_desc+=("$2")
+}
+
+# Packages that are only useful together with another one: offered and installed
+# as part of it, not as entries of their own. plasma-integration and breeze do
+# nothing on a machine with no QWidget-based Qt/KDE app to theme.
+declare -A companions=(
+  [dolphin]='plasma-integration breeze breeze-icons'
+)
+
+ok()   { ((quiet)) || printf '  ok    %s\n' "$*"; }
+bad()  { printf '  FAIL  %s\n' "$*" >&2; fail=1; }
+warn() { printf '  warn  %s\n' "$*" >&2; warned=1; }
+note() { printf '        %s\n' "$*" >&2; }
+section() { ((quiet)) || printf '\n%s\n' "$*"; }
+
+want_pkg() {
+  local pkg=$1
+  [[ -z $pkg ]] && return 0
+  for p in ${missing_pkgs[@]+"${missing_pkgs[@]}"}; do
+    [[ $p == "$pkg" ]] && return 0
+  done
+  missing_pkgs+=("$pkg")
+}
+
+# need_cmd <command> <package> <what it is for>
+need_cmd() {
+  if command -v "$1" >/dev/null; then
+    ok "$1"
+  else
+    bad "$1 not found -- $3 (package: $2)"
+    want_pkg "$2"
+  fi
+}
+
+# opt_cmd <command> <package> <what it is for>
+opt_cmd() {
+  if command -v "$1" >/dev/null; then
+    ok "$1 (optional)"
+  else
+    warn "$1 not found -- $3 (package: $2, optional)"
+  fi
+}
+
+# need_file <path> <package> <what it is for>
+need_file() {
+  if [[ -e $root$1 ]]; then
+    ok "$1"
+  else
+    bad "$1 missing -- $3 (package: $2)"
+    want_pkg "$2"
+  fi
+}
+
+qml_roots() {
+  local dir
+  for dir in "$root"/usr/lib/qt6/qml "$root"/usr/lib64/qt6/qml "$root"/usr/lib/qt/qml; do
+    [[ -d $dir ]] && printf '%s\n' "$dir"
+  done
+}
+
+# need_qml <Dotted.Module> <package> <what it is for>
+need_qml() {
+  local path=${1//.//} dir
+  while read -r dir; do
+    [[ -d $dir/$path ]] && { ok "QML $1"; return; }
+  done < <(qml_roots)
+  bad "QML module $1 not available -- $3 (package: $2)"
+  want_pkg "$2"
+}
+
+# need_py <import> <package> <what it is for>
+need_py() {
+  if python3 -c "import $1" 2>/dev/null; then
+    ok "python: $1"
+  else
+    bad "python module $1 not importable -- $3 (package: $2)"
+    want_pkg "$2"
+  fi
+}
+
+section 'compositor'
+need_cmd Hyprland hyprland 'the compositor itself'
+# The session entry execs start-hyprland, not Hyprland: it is the launcher
+# Hyprland has expected since 0.53 (it exports the session and portal
+# environment and adds crash recovery), and Hyprland warns on screen when it
+# is bypassed. Shipped by the same package, so a missing one means it is old.
+need_cmd start-hyprland hyprland 'the launcher the c7shell session entry execs'
+need_cmd hyprctl  hyprland 'dispatching to the compositor from the shell'
+
+# The config is hyprland.lua, and lua config landed in Hyprland 0.56. An older
+# Hyprland silently ignores it, writes a default hyprland.conf and comes up as
+# a bare compositor -- or refuses the session outright.
+if command -v Hyprland >/dev/null; then
+  ver=$(Hyprland --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)
+  if [[ -z $ver ]]; then
+    warn "could not read the Hyprland version; this config needs 0.56 or newer (lua config)"
+  else
+    IFS=. read -r maj min _ <<<"$ver"
+    if ((maj > 0 || min >= 56)); then
+      ok "Hyprland $ver (>= 0.56, reads hyprland.lua)"
+    else
+      bad "Hyprland $ver is too old: hypr/hyprland.lua needs 0.56 or newer"
+      want_pkg hyprland
+    fi
+  fi
+fi
+
+section 'shell'
+need_cmd qs quickshell 'the shell itself (qs -c c7shell)'
+# Quickshell modules are compile-time options; a build without them starts and
+# then throws on the import, which takes the whole shell down.
+need_qml Quickshell                       quickshell 'the shell core'
+need_qml Quickshell.Hyprland              quickshell 'workspaces and window state in the bar'
+need_qml Quickshell.Io                    quickshell 'IPC handlers behind every qs ipc call bind'
+need_qml Quickshell.Wayland               quickshell 'layer-shell surfaces (bar, launcher, OSDs)'
+need_qml Quickshell.Bluetooth             quickshell 'the bluetooth applet'
+need_qml Quickshell.Networking            quickshell 'the network applet'
+need_qml Quickshell.Services.Pipewire     quickshell 'volume control and the audio OSD'
+need_qml Quickshell.Services.UPower       quickshell 'the battery indicator'
+need_qml Quickshell.Services.SystemTray   quickshell 'the system tray'
+need_qml Quickshell.Services.Notifications quickshell 'the notification daemon'
+need_qml QtQuick.Effects qt6-declarative 'shadows and blur across the shell'
+need_qml QtQuick.Shapes  qt6-declarative 'the ring and arc indicators'
+
+section 'session helpers'
+need_cmd hypridle  hypridle  'idle timeouts, autostarted'
+need_cmd hyprlock  hyprlock  'the lock screen (SUPER+L, hypridle)'
+need_cmd hyprpaper hyprpaper 'the wallpaper, autostarted'
+need_cmd hyprpicker hyprpicker 'the colour picker in the settings app'
+need_file /usr/lib/hyprpolkitagent/hyprpolkitagent hyprpolkitagent \
+  'the polkit agent, started by conf/autostart.lua by absolute path'
+need_cmd grim        grim         'screenshots'
+need_cmd wf-recorder wf-recorder  'screen recording'
+need_cmd wl-copy     wl-clipboard 'copying captures to the clipboard'
+need_cmd notify-send libnotify    'notifications from the shell scripts'
+need_cmd wpctl       wireplumber  'the volume and mute keybinds'
+need_cmd bluetoothctl bluez-utils 'the bluetooth applet'
+need_cmd nmcli       networkmanager 'the network applet'
+need_cmd systemctl   systemd      'the power menu (suspend, reboot, poweroff)'
+
+# Only checked when a QWidget-based Qt/KDE app is actually installed. The shell
+# is QML and takes none of this; on a machine with no such apps the platform
+# theme has nothing to theme, and warning about it would be noise.
+kde_apps=()
+for app in dolphin kate kwrite gwenview okular ark kcalc konsole systemsettings; do
+  command -v "$app" >/dev/null && kde_apps+=("$app")
+done
+
+if ((${#kde_apps[@]})); then
+section 'qt app theming'
+# conf/environment.lua sets QT_QPA_PLATFORMTHEME=kde and the settings app
+# exports the palette to kdeglobals. Both are inert without the plugin that
+# implements that platform theme -- the symptom is a correctly themed shell
+# next to a stock-looking dolphin.
+info_apps=${kde_apps[*]}
+((quiet)) || printf '  ok    Qt/KDE apps present: %s\n' "$info_apps"
+qt_plugin() {
+  local rel=$1 pkg=$2 what=$3 dir
+  while read -r dir; do
+    [[ -e ${dir%/qml}/plugins/$rel ]] && { ok "qt plugin $rel"; return; }
+  done < <(qml_roots)
+  warn "qt plugin $rel missing -- $what (package: $pkg)"
+  offer "$pkg" "$what"
+}
+qt_plugin platformthemes/KDEPlasmaPlatformTheme6.so plasma-integration \
+  'QT_QPA_PLATFORMTHEME=kde does nothing without it: KDE apps ignore the c7shell palette'
+qt_plugin styles/breeze6.so breeze \
+  'the widget style that platform theme draws with'
+if [[ -f $conf/kdeglobals ]] && grep -q '^ColorScheme=C7Shell' "$conf/kdeglobals"; then
+  ok "$conf/kdeglobals exports the C7Shell scheme"
+elif [[ -f $conf/quickshell/c7shell/scripts/c7shell-theme-export.py ]]; then
+  warn "$conf/kdeglobals has no C7Shell scheme yet, so Qt apps use their own colours"
+  note 'seed it:  python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py'
+fi
+fi
+
+section 'appmenu daemon'
+need_cmd python3 python 'the global menu daemon, autostarted first'
+need_py dbus python-dbus 'the daemon owns com.canonical.AppMenu.Registrar on the bus'
+need_py gi   python-gobject 'the daemon glib main loop'
+
+section 'portal'
+# Without the portal, screen sharing silently offers no sources.
+if compgen -G "$root/usr/lib*/xdg-desktop-portal-hyprland" >/dev/null \
+   || compgen -G "$root/usr/libexec/xdg-desktop-portal-hyprland" >/dev/null; then
+  ok 'xdg-desktop-portal-hyprland'
+else
+  bad 'xdg-desktop-portal-hyprland missing -- screen sharing (package: xdg-desktop-portal-hyprland)'
+  want_pkg xdg-desktop-portal-hyprland
+fi
+
+section 'session entry'
+need_file /usr/share/wayland-sessions/c7shell.desktop c7shell \
+  'the "c7shell" entry your greeter lists'
+
+# An install from before the launcher fix still has Exec=Hyprland here, which
+# makes Hyprland warn at every login that it was started without
+# start-hyprland. The file is package-owned, so the fix is a package rebuild.
+entry=$root/usr/share/wayland-sessions/c7shell.desktop
+if [[ -f $entry ]]; then
+  exec_line=$(grep -m1 '^Exec=' "$entry" || true)
+  case $exec_line in
+    'Exec=start-hyprland') ok 'session entry execs start-hyprland' ;;
+    'Exec=Hyprland')
+      warn 'the installed session entry execs Hyprland directly, so Hyprland warns'
+      note 'at login that it "was started without start-hyprland". Rebuild the'
+      note 'package to fix it:  c7shell-upgrade'
+      ;;
+    *) warn "unexpected launcher in $entry: ${exec_line:-none}" ;;
+  esac
+fi
+
+section 'user config'
+# This is the one that produces the classic "black screen, back to the
+# greeter": the package deliberately installs to /usr/share, and neither
+# hyprland nor quickshell reads config from there.
+for rel in hypr/hyprland.lua quickshell/c7shell/shell.qml; do
+  if [[ -f $conf/$rel ]]; then
+    ok "$conf/$rel"
+  elif ((pending)); then
+    printf '  next  %s is not there yet -- run: c7shell-setup\n' "$conf/$rel"
+  else
+    bad "$conf/$rel missing -- the configs were never copied out of $share"
+    note "run: c7shell-setup      (as your own user, not root)"
+  fi
+done
+if [[ -d $share ]]; then
+  ok "$share"
+else
+  warn "$share missing -- the c7shell package does not look installed"
+fi
+
+section 'hardware'
+# A session that cannot open a DRM device dies immediately at startup, which
+# looks exactly like a config error from the greeter's side.
+if compgen -G "$root/dev/dri/card*" >/dev/null; then
+  ok "$(echo "$root"/dev/dri/card*)"
+else
+  bad '/dev/dri/card* missing -- no GPU driver is loaded, the compositor cannot start'
+  note 'check: lspci -k | grep -A3 -E "VGA|3D"   and install the matching driver'
+fi
+if [[ -e $root/dev/dri/renderD128 ]]; then
+  ok '/dev/dri/renderD128'
+else
+  warn '/dev/dri/renderD128 missing -- no render node, expect software rendering at best'
+fi
+
+section 'aur helper'
+# An AUR helper links libalpm, but the AUR packages only declare
+# `libalpm.so>=14` -- so pacman happily keeps one installed across a soname
+# bump (pacman 7.0 shipped libalpm.so.15, 7.1 ships .16) that the binary
+# cannot survive. Nothing in c7shell needs a helper at runtime, but a dead one
+# silently blocks every later AUR update, and the failure names a missing
+# library rather than the upgrade that caused it.
+for helper in paru yay; do
+  command -v "$helper" >/dev/null || continue
+  if err=$("$helper" --version 2>&1 >/dev/null); then
+    ok "$helper runs"
+  elif [[ $err == *libalpm.so* ]]; then
+    warn "$helper is broken: ${err%%$'\n'*}"
+    note "pacman's libalpm changed soname under it. Rebuild the *source*"
+    note "package -- a -bin package just unpacks the same prebuilt binary:"
+    note "  git clone https://aur.archlinux.org/$helper.git"
+    note "  cd $helper && makepkg -si"
+  else
+    warn "$helper does not run: ${err%%$'\n'*}"
+  fi
+done
+
+section 'optional programs'
+# One table, used twice: to report what is absent, and to offer it under
+# --optional. kind is `cmd` (found on PATH) or `file` (an absolute path, since
+# the config calls it by one).
+optional_entries=(
+  "cmd:kitty:kitty:the terminal bound to SUPER+Q"
+  "cmd:dolphin:dolphin:the file manager bound to SUPER+E"
+  "cmd:hyprlauncher:hyprlauncher:fallback launcher (the shell has its own)"
+  "cmd:ddcutil:ddcutil:brightness on external monitors"
+  "cmd:brightnessctl:brightnessctl:brightness on internal panels"
+  "cmd:upower:upower:battery readout in the bar"
+  "cmd:playerctl:playerctl:the media keybinds"
+  "cmd:solaar:solaar:Logitech thumb-button gestures, autostarted if present"
+  "cmd:jq:jq:helper scripting"
+  "file:/usr/lib/pam_kwallet_init:kwallet:secret storage unlocked at login, or kwallet prompts"
+)
+
+
+for entry in "${optional_entries[@]}"; do
+  IFS=: read -r kind target pkg desc <<<"$entry"
+  if [[ $kind == cmd ]]; then
+    command -v "$target" >/dev/null && present=1 || present=0
+  else
+    [[ -e $root$target ]] && present=1 || present=0
+  fi
+  if ((present)); then
+    ok "$target (optional)"
+  else
+    warn "$target not found -- $desc (package: $pkg, optional)"
+    offer "$pkg" "$desc"
+  fi
+done
+
+# Let the user pick which of the absent optional packages to install. Only
+# ever runs with --optional, and only with a terminal to answer on.
+offer_optional() {
+  ((${#offer_pkgs[@]})) || return 0
+  if [[ ! -t 0 ]]; then
+    note 'no terminal to ask on; install the optional packages above by hand'
+    return 0
+  fi
+
+  printf '\nOptional packages that are not installed:\n\n'
+  local i
+  for i in "${!offer_pkgs[@]}"; do
+    printf '  %2d) %-14s %s\n' "$((i + 1))" "${offer_pkgs[i]}" "${offer_desc[i]}"
+    [[ -n ${companions[${offer_pkgs[i]}]:-} ]] \
+      && printf '      %-14s + %s\n' '' "${companions[${offer_pkgs[i]}]}"
+  done
+  printf '\nPick which to install: numbers (1 3 5), ranges (1-4), a = all,\n'
+  printf 'or press enter to install none: '
+
+  local reply
+  read -r reply || reply=
+  reply=${reply//,/ }
+  [[ -z ${reply// /} ]] && { echo 'nothing selected.'; return 0; }
+
+  local chosen=()
+  case ${reply,,} in
+    a|all) chosen=("${offer_pkgs[@]}") ;;
+    n|none) echo 'nothing selected.'; return 0 ;;
+    *)
+      local tok lo hi n
+      for tok in $reply; do
+        if [[ $tok =~ ^([0-9]+)-([0-9]+)$ ]]; then
+          lo=${BASH_REMATCH[1]}; hi=${BASH_REMATCH[2]}
+        elif [[ $tok =~ ^[0-9]+$ ]]; then
+          lo=$tok; hi=$tok
+        else
+          printf 'c7shell-doctor: not a number or range: %s\n' "$tok" >&2
+          return 0
+        fi
+        if ((lo < 1 || hi > ${#offer_pkgs[@]} || lo > hi)); then
+          printf 'c7shell-doctor: out of range: %s (there are %d)\n' "$tok" "${#offer_pkgs[@]}" >&2
+          return 0
+        fi
+        for ((n = lo; n <= hi; n++)); do chosen+=("${offer_pkgs[n - 1]}"); done
+      done
+      ;;
+  esac
+
+  # Whatever was picked, bring its companions along: dolphin without
+  # plasma-integration is dolphin that ignores the palette.
+  local pick
+  for pick in "${chosen[@]}"; do
+    [[ -n ${companions[$pick]:-} ]] && chosen+=(${companions[$pick]})
+  done
+
+  # A number typed twice, or covered by a range as well, is not an error.
+  local uniq=() c seen
+  for c in "${chosen[@]}"; do
+    seen=0
+    for n in ${uniq[@]+"${uniq[@]}"}; do [[ $n == "$c" ]] && seen=1; done
+    ((seen)) || uniq+=("$c")
+  done
+
+  printf '\ninstalling: %s\n' "${uniq[*]}"
+  if as_root pacman -S --needed -- "${uniq[@]}"; then
+    printf '\ninstalled. re-run c7shell-doctor to re-check.\n'
+  else
+    printf 'c7shell-doctor: installing the optional packages failed.\n' >&2
+  fi
+}
+
+if ((fail)) && ((fix)) && ((${#missing_pkgs[@]})); then
+  # c7shell itself is not a fix target: it is what is being installed.
+  fixable=()
+  for p in "${missing_pkgs[@]}"; do [[ $p == c7shell ]] || fixable+=("$p"); done
+  if ((${#fixable[@]})); then
+    printf '\ninstalling: %s\n' "${fixable[*]}"
+    as_root pacman -S --needed -- "${fixable[@]}" || {
+      printf 'c7shell-doctor: run as root: pacman -S --needed %s\n' "${fixable[*]}" >&2
+      exit 1
+    }
+    printf '\nre-checking...\n'
+    exec "$0" ${quiet:+--quiet} ${pending:+--setup-pending} ${optional:+--optional}
+  fi
+fi
+
+((optional)) && offer_optional
+
+printf '\n'
+if ((fail)); then
+  printf 'c7shell-doctor: required pieces are missing (see FAIL above).\n' >&2
+  if ((${#missing_pkgs[@]})); then
+    printf 'to install the packages behind them:  c7shell-doctor --fix\n' >&2
+  fi
+  exit 1
+fi
+if ((warned)); then
+  echo 'c7shell-doctor: everything required is present; optional pieces are missing (see warn above).'
+  ((optional)) || echo 'to pick from them:  c7shell-doctor --optional'
+else
+  echo 'c7shell-doctor: everything checks out.'
+fi

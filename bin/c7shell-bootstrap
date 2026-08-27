@@ -1,0 +1,452 @@
+#!/usr/bin/env bash
+# Turn a bare Arch install (a CLI and nothing else) into a machine that can log
+# into the c7shell session.
+#
+# The package's depends= covers what the session runs, not what a fresh Arch box
+# is missing underneath it: a GPU driver, a greeter, the pipewire daemons behind
+# wireplumber, fonts, an icon theme, xdg-utils, and the enabled system services.
+# None of that can live in a PKGBUILD -- installing a package must not enable
+# units or write to /etc -- so it lives here, in one auditable pass that prints
+# what it will do before it does anything.
+set -euo pipefail
+
+dry=0
+assume_yes=0
+want_aur=1
+want_drivers=1
+want_greeter=1
+want_extras=1
+want_upgrade=1
+
+usage() {
+  cat <<USAGE
+usage: c7shell-bootstrap [options]
+
+Installs and configures what a bare Arch install lacks before the c7shell
+session can start: GPU driver, SDDM, pipewire, fonts, icon theme, xdg-utils,
+system services, and the optional programs the keybinds expect.
+
+  -n, --dry-run    print the whole plan and change nothing
+  -y, --yes        don't ask for confirmation (pacman still asks its own
+                   questions unless you also pass --noconfirm-pacman)
+      --noconfirm-pacman
+                   add --noconfirm to the pacman calls (unattended installs)
+      --no-upgrade   skip the full system upgrade
+      --no-drivers   don't touch GPU drivers
+      --no-greeter   don't install or enable SDDM
+      --no-aur       don't install paru or any AUR package
+      --no-extras    skip kitty, dolphin, ddcutil, brightnessctl, playerctl
+  -h, --help       this text
+
+Nothing is installed, enabled or written until you confirm the plan.
+USAGE
+}
+
+pacman_flags=()
+
+while (($#)); do
+  case $1 in
+    -n|--dry-run) dry=1 ;;
+    -y|--yes) assume_yes=1 ;;
+    --noconfirm-pacman) pacman_flags+=(--noconfirm) ;;
+    --no-upgrade) want_upgrade=0 ;;
+    --no-drivers) want_drivers=0 ;;
+    --no-greeter) want_greeter=0 ;;
+    --no-aur) want_aur=0 ;;
+    --no-extras) want_extras=0 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'c7shell-bootstrap: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+command -v pacman >/dev/null || {
+  echo 'c7shell-bootstrap: no pacman -- this only bootstraps Arch-based systems' >&2
+  exit 1
+}
+
+if ((EUID == 0)); then
+  # The AUR build and the user units below have to run as the user who will log
+  # in, and makepkg refuses to run as root anyway.
+  echo 'c7shell-bootstrap: run this as your own user (it uses sudo where it needs root)' >&2
+  exit 2
+fi
+
+have() { command -v "$1" >/dev/null; }
+installed() { pacman -Qq "$1" &>/dev/null; }
+enabled() { [[ $(systemctl is-enabled "$1" 2>/dev/null) == enabled ]]; }
+
+# Everything that changes the system goes through these two, so --dry-run is
+# exhaustive by construction rather than by remembering to check a flag.
+run() {
+  if ((dry)); then printf '  would run: %s\n' "$*"; else "$@"; fi
+}
+run_root() {
+  if ((dry)); then printf '  would run (root): %s\n' "$*"; return 0; fi
+  if have sudo; then sudo "$@"
+  elif have doas; then doas "$@"
+  else
+    printf 'c7shell-bootstrap: need root to run: %s\n' "$*" >&2
+    return 1
+  fi
+}
+# Heredoc into a root-owned file, without a root shell interpreting anything.
+write_root() {
+  local path=$1 body=$2
+  if ((dry)); then
+    printf '  would write %s:\n' "$path"
+    printf '      %s\n' "$body"
+    return 0
+  fi
+  printf '%s\n' "$body" | run_root tee "$path" >/dev/null
+}
+
+step() { printf '\n== %s\n' "$1"; }
+info() { printf '   %s\n' "$1"; }
+warn() { printf '   warn: %s\n' "$1" >&2; }
+
+# ---------------------------------------------------------------------------
+# Work out the plan. Nothing is executed in this half.
+# ---------------------------------------------------------------------------
+
+printf 'c7shell-bootstrap: what a bare Arch install needs for the c7shell session\n'
+
+pkgs=()          # official repos
+aur_pkgs=()      # only if paru is allowed
+units_system=()  # systemctl enable --now
+units_user=()    # systemctl --user enable --now
+notes=()         # things to tell the user at the end
+add()      { local p; for p in "$@"; do pkgs+=("$p"); done; }
+add_aur()  { local p; for p in "$@"; do aur_pkgs+=("$p"); done; }
+add_note() { notes+=("$1"); }
+
+# --- GPU -------------------------------------------------------------------
+# A compositor that cannot open a DRM device exits immediately, which from the
+# greeter looks exactly like a broken config: black screen, back to the login
+# screen. This is the single most common cause on a fresh install.
+gpu_vendors=()
+nvidia_pre_turing=0
+if ((want_drivers)); then
+  if have lspci; then
+    gpu_lines=$(lspci -nn 2>/dev/null | grep -Ei 'VGA compatible controller|3D controller|Display controller' || true)
+  else
+    gpu_lines=''
+    # pciutils is in base on most installs, but archinstall's minimal profile
+    # can leave it out, and without it there is nothing to detect from.
+    add pciutils
+  fi
+  while read -r line; do
+    [[ -z $line ]] && continue
+    case ${line,,} in
+      *nvidia*)         gpu_vendors+=(nvidia) ;;
+      *intel*)          gpu_vendors+=(intel) ;;
+      *"advanced micro devices"*|*amd/ati*|*" ati "*) gpu_vendors+=(amd) ;;
+      *qemu*|*virtio*|*vmware*|*virtualbox*|*"red hat"*|*bochs*|*hyper-v*|*microsoft*) gpu_vendors+=(virtual) ;;
+      *) gpu_vendors+=(unknown) ;;
+    esac
+  done <<<"$gpu_lines"
+
+  # mesa is the userspace GL/Vulkan stack for everything except the proprietary
+  # NVIDIA driver, and it costs nothing to have alongside it.
+  add mesa
+
+  for vendor in ${gpu_vendors[@]+"${gpu_vendors[@]}"}; do
+    case $vendor in
+      intel)   add vulkan-intel intel-media-driver libva-utils ;;
+      amd)     add vulkan-radeon libva-mesa-driver ;;
+      nvidia)
+        # nvidia-open-dkms is the open kernel module: Turing (RTX 20xx) and
+        # newer only. DKMS rather than the prebuilt package so it does not
+        # break on a -lts or -zen kernel.
+        add nvidia-open-dkms nvidia-utils libva-nvidia-driver
+        # DKMS builds against the headers of every installed kernel; without
+        # them the module silently never gets built and the next boot has no
+        # driver at all.
+        while read -r kernel; do
+          [[ -n $kernel ]] && add "$kernel-headers"
+        done < <(pacman -Qq 2>/dev/null | grep -xE 'linux|linux-lts|linux-zen|linux-hardened' || true)
+        if grep -qiE 'nvidia.*(GTX (6|7|8|9)[0-9]{2}|GT[X]? 10[0-9]{2}|Kepler|Maxwell|Pascal)' <<<"$gpu_lines"; then
+          nvidia_pre_turing=1
+        fi
+        ;;
+    esac
+  done
+
+  case " ${gpu_vendors[*]-} " in
+    *unknown*) add_note 'an unrecognised GPU was found; if the session will not start, check "lspci -k | grep -A3 -E \"VGA|3D\"" and install its driver' ;;
+  esac
+  ((${#gpu_vendors[@]})) || add_note 'no GPU was detected at all -- c7shell-doctor checks /dev/dri, use it to confirm the driver loaded'
+fi
+
+# --- session infrastructure ------------------------------------------------
+# qt6-wayland: every Qt app, the shell included, needs the wayland platform
+# plugin or it falls back to xcb and finds no X server.
+# polkit: hyprpolkitagent is the agent, but the daemon it talks to is separate.
+# xdg-utils: the shell opens captures and launcher results with xdg-open.
+# xdg-user-dirs: the capture service writes into ~/Pictures and ~/Videos.
+add qt6-wayland polkit xdg-utils xdg-user-dirs
+
+# wireplumber is a session manager, not a sound server: without the pipewire
+# daemons under it, every volume keybind and the audio OSD do nothing.
+add pipewire pipewire-pulse pipewire-alsa wireplumber
+units_user+=(pipewire.socket pipewire-pulse.socket wireplumber.service)
+
+# The launcher and the tray draw real app icons by name, which fontconfig and
+# the icon theme spec resolve from an installed theme. hicolor is the fallback
+# every .desktop icon lands in; breeze matches QT_QPA_PLATFORMTHEME=kde, which
+# conf/environment.lua sets and the settings app writes kdeglobals for.
+add hicolor-icon-theme adwaita-icon-theme
+# JetBrains Mono is Theme.fontMono; noto covers everything else, emoji included.
+add ttf-jetbrains-mono noto-fonts noto-fonts-emoji
+
+# --- greeter ---------------------------------------------------------------
+if ((want_greeter)); then
+  add sddm
+  other_dm=''
+  for dm in gdm lightdm greetd lxdm; do
+    enabled "$dm.service" && other_dm=$dm
+  done
+  if [[ -n $other_dm ]]; then
+    # Two enabled display managers fight over the seat and neither comes up.
+    warn "$other_dm.service is already enabled; not enabling sddm as well"
+    add_note "to switch: sudo systemctl disable $other_dm.service && sudo systemctl enable sddm.service"
+  else
+    units_system+=(sddm.service)
+  fi
+fi
+
+# --- network / bluetooth ---------------------------------------------------
+add networkmanager bluez bluez-utils
+if enabled systemd-networkd.service || enabled iwd.service; then
+  # archinstall can leave either of these driving the network; NetworkManager
+  # on top of them means both manage the same link and connectivity flaps.
+  warn 'systemd-networkd or iwd is already enabled; not enabling NetworkManager'
+  add_note 'to switch: sudo systemctl disable --now systemd-networkd iwd && sudo systemctl enable --now NetworkManager'
+else
+  units_system+=(NetworkManager.service)
+fi
+units_system+=(bluetooth.service)
+
+# --- extras the keybinds expect -------------------------------------------
+if ((want_extras)); then
+  # conf/programs.lua: SUPER+Q and SUPER+E. ddcutil/brightnessctl back the
+  # brightness binds, playerctl the media keys.
+  add kitty dolphin ddcutil brightnessctl playerctl
+fi
+
+# plasma-integration provides the "kde" platform theme QT_QPA_PLATFORMTHEME
+# names, and breeze the style it draws with -- but only a QWidget-based Qt/KDE
+# app has any use for them. The shell is QML and does not. So they follow
+# dolphin: installed with it, or added for a machine that already has it,
+# and skipped entirely otherwise.
+if ((want_extras)) || have dolphin; then
+  add plasma-integration breeze breeze-icons
+else
+  add_note 'no Qt/KDE apps here, so plasma-integration was skipped; if you install dolphin or another KDE app later, c7shell-doctor --optional offers it'
+fi
+
+# --- AUR -------------------------------------------------------------------
+# A helper that is installed but does not run is worse than none: pacman keeps
+# it (the AUR packages only ask for `libalpm.so>=14`) while a pacman soname
+# bump has already made the binary unloadable, so every AUR update fails with
+# a missing-library error that never mentions the upgrade behind it.
+helper_works() { have "$1" && "$1" --version >/dev/null 2>&1; }
+install_paru=0
+if ((want_aur)); then
+  if helper_works paru || helper_works yay; then
+    :
+  else
+    install_paru=1
+    if have paru || have yay; then
+      add_note 'the AUR helper already here does not run (usually libalpm changed soname under it), so paru is rebuilt from source'
+    fi
+  fi
+  # Theme.fontDisplay is "Space Grotesk", which is not in the official repos.
+  # Without it fontconfig substitutes another sans and page titles still work.
+  add_aur ttf-space-grotesk
+fi
+
+# Drop what is already installed so the plan shows the real change.
+missing=()
+for p in "${pkgs[@]}"; do installed "$p" || missing+=("$p"); done
+# A package name that does not exist (a driver renamed upstream, say) would
+# abort the whole pacman call, so ask about them all in one go first.
+if ((${#missing[@]})); then
+  unknown=()
+  while read -r p; do [[ -n $p ]] && unknown+=("$p"); done < <(
+    for p in "${missing[@]}"; do
+      pacman -Si "$p" &>/dev/null || printf '%s\n' "$p"
+    done
+  )
+  if ((${#unknown[@]})); then
+    warn "not in the repos, skipping: ${unknown[*]}"
+    keep=()
+    for p in "${missing[@]}"; do
+      skip=0
+      for u in "${unknown[@]}"; do [[ $p == "$u" ]] && skip=1; done
+      ((skip)) || keep+=("$p")
+    done
+    missing=(${keep[@]+"${keep[@]}"})
+  fi
+fi
+
+units_todo=()
+for u in ${units_system[@]+"${units_system[@]}"}; do enabled "$u" || units_todo+=("$u"); done
+
+# ---------------------------------------------------------------------------
+# Show the plan, then do it.
+# ---------------------------------------------------------------------------
+
+step 'detected'
+info "GPU: ${gpu_vendors[*]-none detected}"
+((nvidia_pre_turing)) && warn 'that NVIDIA card looks pre-Turing (GTX 10xx or older): nvidia-open-dkms will not support it, use nvidia-dkms instead (--no-drivers, then install it yourself)'
+info "kernel: $(uname -r)"
+
+step 'packages'
+if ((${#missing[@]})); then
+  printf '   %s\n' "${missing[*]}"
+else
+  info 'nothing to install, all present'
+fi
+if ((${#aur_pkgs[@]})); then
+  if ((install_paru)); then
+    info 'AUR helper: paru will be built from the AUR source package (pulls a rust toolchain)'
+  else
+    info "AUR helper: $(have paru && echo paru || echo yay), already installed"
+  fi
+  info "from the AUR: ${aur_pkgs[*]}"
+fi
+
+step 'services'
+if ((${#units_todo[@]})); then
+  printf '   enable: %s\n' "${units_todo[*]}"
+else
+  info 'no system units to enable'
+fi
+printf '   enable (user): %s\n' "${units_user[*]}"
+
+step 'files'
+nvidia_conf=0
+for vendor in ${gpu_vendors[@]+"${gpu_vendors[@]}"}; do [[ $vendor == nvidia ]] && nvidia_conf=1; done
+((nvidia_conf)) && info '/etc/modprobe.d/c7shell-nvidia.conf  (nvidia_drm modeset, needed for wayland)'
+((want_extras)) && info '/etc/modules-load.d/c7shell-i2c.conf  (i2c-dev, for ddcutil backlight)'
+((nvidia_conf || want_extras)) || info 'none'
+
+if ((${#notes[@]})); then
+  step 'notes'
+  for n in "${notes[@]}"; do info "$n"; done
+fi
+
+if ((dry)); then
+  printf '\n--dry-run: nothing was changed. The commands that would run:\n'
+elif ((assume_yes == 0)); then
+  printf '\nProceed? [y/N]: '
+  read -r reply || reply=
+  case ${reply,,} in y|yes) ;; *) echo 'aborted, nothing changed.'; exit 0 ;; esac
+fi
+
+# A partial upgrade is unsupported on Arch, and a DKMS driver built against the
+# headers of a kernel you are not running is the same thing as no driver.
+if ((want_upgrade)); then
+  step 'system upgrade'
+  run_root pacman -Syu ${pacman_flags[@]+"${pacman_flags[@]}"}
+else
+  step 'refreshing the package databases'
+  run_root pacman -Sy ${pacman_flags[@]+"${pacman_flags[@]}"}
+fi
+
+if ((${#missing[@]})); then
+  step 'installing packages'
+  run_root pacman -S --needed ${pacman_flags[@]+"${pacman_flags[@]}"} -- "${missing[@]}"
+fi
+
+if ((nvidia_conf)); then
+  step 'configuring nvidia for wayland'
+  # Hyprland needs the DRM KMS interface; fbdev keeps the console usable.
+  # Set in modprobe.d rather than as a kernel parameter so this stays out of
+  # your bootloader config.
+  write_root /etc/modprobe.d/c7shell-nvidia.conf \
+    'options nvidia_drm modeset=1 fbdev=1'
+  add_note 'the nvidia module settings apply after a reboot'
+fi
+
+if ((want_extras)); then
+  step 'enabling i2c for ddcutil'
+  # ddcutil talks to monitors over i2c-dev, which is not autoloaded, and its
+  # udev rules grant the i2c group access to those devices.
+  write_root /etc/modules-load.d/c7shell-i2c.conf 'i2c-dev'
+  run_root modprobe i2c-dev || warn 'could not load i2c-dev now; it will load at the next boot'
+  if getent group i2c >/dev/null && ! id -nG | grep -qw i2c; then
+    run_root gpasswd -a "$USER" i2c
+    add_note 'you were added to the i2c group; log out and back in for ddcutil to work'
+  fi
+fi
+
+if ((${#units_todo[@]})); then
+  step 'enabling system services'
+  run_root systemctl enable "${units_todo[@]}"
+  # sddm is deliberately not started here: starting it would take over the
+  # console mid-install. It comes up at the next boot.
+  for u in "${units_todo[@]}"; do
+    [[ $u == sddm.service ]] && continue
+    run_root systemctl start "$u" || warn "could not start $u now; it is enabled for the next boot"
+  done
+  for u in "${units_todo[@]}"; do
+    [[ $u == sddm.service ]] && add_note 'sddm is enabled but not started; it takes over at the next boot'
+  done
+fi
+
+step 'enabling user services'
+run systemctl --user enable "${units_user[@]}"
+run systemctl --user start "${units_user[@]}" || warn 'could not start the pipewire units now; they start with your next session'
+
+if ((install_paru)); then
+  step 'installing paru from the AUR'
+  # paru, not paru-bin: the -bin package unpacks an upstream binary that was
+  # linked against whatever libalpm existed on release day, while declaring
+  # only `libalpm.so>=14`. Install it after pacman bumps the soname and it
+  # dies on first run -- and rebuilding it cannot help, because there is
+  # nothing to relink. The source package costs a rust toolchain once and
+  # links against the libalpm actually installed here.
+  if ((dry)); then
+    info 'would clone https://aur.archlinux.org/paru.git and run makepkg -si in it'
+  else
+    tmp=$(mktemp -d)
+    if git clone --depth 1 https://aur.archlinux.org/paru.git "$tmp/paru" \
+       && (cd "$tmp/paru" && makepkg -si ${pacman_flags[@]+"${pacman_flags[@]}"}); then
+      :
+    else
+      warn 'building paru failed; skipping the AUR packages'
+      aur_pkgs=()
+    fi
+    rm -rf -- "$tmp"
+  fi
+fi
+
+if ((${#aur_pkgs[@]})); then
+  helper=$(helper_works paru && echo paru || { helper_works yay && echo yay; } || true)
+  if [[ -n $helper ]]; then
+    step "installing AUR packages with $helper"
+    # An AUR build failing is not fatal: everything here is cosmetic.
+    run "$helper" -S --needed ${pacman_flags[@]+"${pacman_flags[@]}"} -- "${aur_pkgs[@]}" \
+      || warn "could not install: ${aur_pkgs[*]}"
+  elif ((dry == 0)); then
+    warn "no AUR helper, skipped: ${aur_pkgs[*]}"
+  fi
+fi
+
+step 'done'
+if ((dry)); then
+  echo '   --dry-run: nothing above was actually run.'
+  exit 0
+fi
+for n in ${notes[@]+"${notes[@]}"}; do info "note: $n"; done
+cat <<'MSG'
+
+The system side is ready. What is left is the c7shell package itself:
+
+    ./install.sh          # build and install it, then check the requirements
+    c7shell-setup         # copy the configs into ~/.config
+
+Then reboot and pick the "c7shell" session in SDDM.
+MSG
