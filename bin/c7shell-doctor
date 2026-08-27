@@ -258,6 +258,49 @@ elif [[ -f $conf/quickshell/c7shell/scripts/c7shell-theme-export.py ]]; then
 fi
 fi
 
+section 'lock screen'
+# hyprlock refuses to start without a config: "Could not find config. Searched
+# in order: XDG_CONFIG_HOME, HOME, XDG_CONFIG_DIRS, /etc/xdg". The copy the
+# hyprlock package leaves in /usr/share/hypr is not in that list, so it is never
+# found. From the desk this looks like SUPER+L doing nothing -- and, the part
+# nobody notices, hypridle's lock_cmd and before_sleep_cmd failing silently, so
+# the machine idles and suspends unlocked. A failure, not a warning: the session
+# ships a lock keybind, a lock row in the power menu and a 5-minute idle lock,
+# and all three are dead without this file.
+# Skipped entirely when ~/.config/hypr is not there yet: that is the "configs
+# were never copied" case, which the user config section below reports once, and
+# a second failure for a file inside the tree that is missing adds nothing.
+if command -v hyprlock >/dev/null && [[ -d $conf/hypr ]]; then
+  lock_conf=''
+  for candidate in "$conf/hypr/hyprlock.conf" \
+                   "$root/etc/xdg/hypr/hyprlock.conf"; do
+    [[ -f $candidate ]] && { lock_conf=$candidate; break; }
+  done
+  if [[ -n $lock_conf ]]; then
+    ok "${lock_conf/#$HOME/~}"
+    # A grace period on a before-sleep lock unlocks the screen on resume, and
+    # `grace` is not even a config key in hyprlock 0.9 -- it is a CLI flag, so
+    # writing it here is a config error that stops hyprlock starting at all.
+    if grep -qE '^[[:space:]]*grace[[:space:]]*=' "$lock_conf"; then
+      warn "$lock_conf sets grace, which is a CLI flag in hyprlock 0.9, not a"
+      note 'config key: hyprlock reports a config error and refuses to start.'
+    fi
+  elif ((pending)); then
+    printf '  next  the lock screen config lands with the rest -- run: c7shell-setup\n'
+  else
+    bad 'hyprlock has no config, so SUPER+L, the power menu lock row and the'
+    note "5-minute idle lock all do nothing -- and hypridle's before_sleep_cmd"
+    note 'fails too, which means this machine suspends unlocked.'
+    note "hyprlock only searches XDG_CONFIG_HOME, HOME, XDG_CONFIG_DIRS and"
+    note "/etc/xdg; the copy in /usr/share/hypr is never found."
+    if [[ -f $share/hypr/hyprlock.conf ]]; then
+      note 'the config ships with c7shell -- run: c7shell-upgrade   (adds it as a new file)'
+    else
+      note 'update the package first: c7shell-upgrade'
+    fi
+  fi
+fi
+
 section 'appmenu daemon'
 need_cmd python3 python 'the global menu daemon, autostarted first'
 need_py dbus python-dbus 'the daemon owns com.canonical.AppMenu.Registrar on the bus'

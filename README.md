@@ -192,6 +192,28 @@ A toolkit asks for the registrar once, when a window's menu bar is created, and
 caches the answer — so windows that are already open keep the menu bar they
 started with. Reopen them to see the change.
 
+## Lock screen
+
+`SUPER+L`, the power menu's lock row and hypridle's 5-minute idle timeout all
+run `hyprlock`, configured by `hypr/hyprlock.conf` — near-black, one centered
+field, crimson accent, the desktop blurred behind it, so it reads as the same
+surface as the greeter.
+
+That file is **not optional**. hyprlock refuses to start without a config
+(`Config path error: Could not find config`) and searches only
+`XDG_CONFIG_HOME`, `HOME`, `XDG_CONFIG_DIRS` and `/etc/xdg` — the copy the
+hyprlock package leaves in `/usr/share/hypr` is never found. Without it `SUPER+L`
+appears to do nothing, and less visibly, hypridle's `lock_cmd` and
+`before_sleep_cmd` fail too, so the machine idles and suspends **unlocked**.
+`c7shell-doctor` fails on that, naming the consequence, and
+`tests/test-lockscreen.sh` has hyprlock itself validate the file (against a
+Wayland display that does not exist, so it parses the config and dies on the
+connection instead of locking your screen) — which is what catches a key being
+renamed under it on a hyprlock upgrade.
+
+If a lock screen ever does come up wrong, `Ctrl+Alt+F2` to a TTY and
+`pkill hyprlock` is the way out.
+
 ## Greeter
 
 The login screen is an SDDM Qt/QML theme in `sddm/themes/c7shell`, drawn from
@@ -298,6 +320,7 @@ eat local edits by accident.
 | `hypr/hyprland.lua` | entry point; requires each `conf/*.lua` module |
 | `hypr/conf/binds.lua` | keybinds — media keys and brightness route through the shell's IPC |
 | `hypr/conf/autostart.lua` | starts the appmenu daemon, `qs`, hyprpaper, hypridle, solaar |
+| `hypr/hyprlock.conf` | the lock screen; mandatory, hyprlock will not start without it |
 | `hypr/xdph.conf` | points xdph's screencopy picker at the shell's own picker |
 | `quickshell/c7shell/shell.qml` | shell entry point |
 | `quickshell/c7shell/Services/` | brightness, network, bluetooth, audio, notifications, capture |
@@ -325,4 +348,5 @@ tests/test-doctor.sh
 tests/test-bootstrap.sh
 tests/test-upgrade.sh
 tests/test-greeter.sh
+tests/test-lockscreen.sh
 ```

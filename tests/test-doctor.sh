@@ -68,6 +68,9 @@ done
 
 mkdir -p "$conf/hypr" "$conf/quickshell/c7shell" "$tmp/share"
 : > "$conf/hypr/hyprland.lua"
+# Without this hyprlock will not start, which takes SUPER+L, the power menu's
+# lock row and the idle lock with it -- see the lock screen cases below.
+printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 : > "$conf/quickshell/c7shell/shell.qml"
 
 run() {
@@ -178,6 +181,32 @@ printf '[Desktop Entry]\nName=c7shell\nExec=start-hyprland\n' \
   > "$root/usr/share/wayland-sessions/c7shell.desktop"
 out=$(run --quiet 2>&1 || true)
 grep -q 'execs Hyprland directly' <<<"$out" && fail "a current session entry still warned:\n$out"
+
+# --- the lock screen -------------------------------------------------------
+# hyprlock refuses to start without a config, and nothing in the session says
+# so: the symptom is SUPER+L doing nothing and -- quietly -- the machine
+# suspending unlocked, because hypridle's before_sleep_cmd fails the same way.
+mv "$conf/hypr/hyprlock.conf" "$tmp/lock-gone"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "a missing hyprlock config should fail, got exit $rc:\n$out"
+grep -q 'suspends unlocked' <<<"$out" || fail "the consequence was not spelled out:\n$out"
+grep -q 'c7shell-upgrade' <<<"$out" || fail "no way to get the config named:\n$out"
+
+# The shipped copy changes the advice from "update the package" to "run upgrade,
+# it adds the file"
+mkdir -p "$tmp/share/hypr"
+: > "$tmp/share/hypr/hyprlock.conf"
+rc=0; out=$(run 2>&1) || rc=$?
+grep -q 'adds it as a new file' <<<"$out" || fail "the shipped config was not offered:\n$out"
+mv "$tmp/lock-gone" "$conf/hypr/hyprlock.conf"
+
+# grace is a CLI flag in hyprlock 0.9, not a config key: in the file it is a
+# config error that stops hyprlock starting, and on a before-sleep lock it would
+# unlock the screen on resume.
+printf 'general {\n    grace = 5\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+out=$(run 2>&1) || fail "a stray grace should warn, not fail:\n$out"
+grep -q 'sets grace' <<<"$out" || fail "grace in the config was not reported:\n$out"
+printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 
 # --- the greeter theme -----------------------------------------------------
 # The theme QML comes with the package; the selection is a drop-in in
