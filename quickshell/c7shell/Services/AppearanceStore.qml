@@ -24,6 +24,11 @@ Singleton {
   // accepting it would persist a variant nothing can render. The card is
   // shown disabled rather than silently doing nothing when picked.
   readonly property string theme: ["dark", "oled"].includes(root.values.theme) ? root.values.theme : "dark"
+  // What the rest of the desktop is told we prefer -- the portal's
+  // org.freedesktop.appearance color-scheme, not a shell palette. The shell
+  // renders `theme` either way; this only decides which face a GTK, Electron
+  // or browser window comes up wearing.
+  readonly property string colorScheme: ["dark", "light"].includes(root.values.colorScheme) ? root.values.colorScheme : "dark"
   readonly property color accent: /^#[0-9a-fA-F]{6}$/.test(root.values.accent) ? root.values.accent : "#e53a44"
   readonly property bool fromWallpaper: root.values.fromWallpaper
 
@@ -71,7 +76,7 @@ Singleton {
 
     onFileChanged: file.reload()
     onAdapterUpdated: file.writeAdapter()
-    onLoaded: { apply.restart(); kdeExport.restart() }
+    onLoaded: { apply.restart(); desktopExport.restart() }
     // Write the defaults out so hyprland has something to read on its next
     // config load, instead of both sides silently disagreeing.
     onLoadFailed: err => { if (err === FileViewError.FileNotFound) file.writeAdapter() }
@@ -80,6 +85,7 @@ Singleton {
       id: adapter
 
       property string theme: "dark"
+      property string colorScheme: "dark"
       property string accent: "#e53a44"
       property bool fromWallpaper: false
       property int rounding: 19
@@ -115,19 +121,24 @@ Singleton {
   onBorderWidthChanged: apply.restart()
   onAnimationsEnabledChanged: apply.restart()
   onAnimationSpeedChanged: apply.restart()
-  onAccentChanged: { apply.restart(); kdeExport.restart() }
-  onThemeChanged: kdeExport.restart()
+  onAccentChanged: { apply.restart(); desktopExport.restart() }
+  onThemeChanged: desktopExport.restart()
+  onColorSchemeChanged: desktopExport.restart()
   onWallpaperChanged: wallpaperApply.restart()
 
-  // Qt and KDE apps take their colours from ~/.config/kdeglobals, which nothing
-  // in this session kept in step with appearance.json -- so the shell went green
-  // and dolphin stayed crimson. scripts/c7shell-theme-export.py rewrites the
-  // C7Shell scheme from this store's own accent and variant, then emits the
-  // signal plasma-integration repaints on. Only accent and theme move it; the
-  // geometry sliders have nothing to export.
+  // The rest of the desktop does not read appearance.json: Qt and KDE apps take
+  // their colours from ~/.config/kdeglobals, and everything that asks "is this a
+  // dark desktop?" -- GTK, Electron, browsers -- asks the settings portal, which
+  // answers out of GSettings. Nothing kept either in step, so the shell went
+  // green while dolphin stayed crimson, and every app that detects a scheme came
+  // up light. scripts/c7shell-theme-export.py writes both from this store, then
+  // emits the signal plasma-integration repaints on. Only accent, theme and
+  // colorScheme move it; the geometry sliders have nothing to export.
   //
-  // Needs QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua): under qt6ct KDE
-  // apps read neither kdeglobals nor qt6ct's palette and come up stock light.
+  // The Qt half needs QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua):
+  // under qt6ct KDE apps read neither kdeglobals nor qt6ct's palette and come up
+  // stock light. The portal half needs an xdg-desktop-portal backend that
+  // implements Settings (xdg-desktop-portal-gtk; xdph does not).
   //
   // Resolved off this file, not off $HOME: the packaged shell lives in
   // /usr/share/c7shell, and a hardcoded ~/.config path would silently export
@@ -136,16 +147,16 @@ Singleton {
     Qt.resolvedUrl("../scripts/c7shell-theme-export.py").toString().replace(/^file:\/\//, "")
 
   Timer {
-    id: kdeExport
+    id: desktopExport
     interval: 250
     onTriggered: {
-      if (kdeGlobals.running) { kdeExport.restart(); return }
-      kdeGlobals.exec(["python3", root.exporter])
+      if (exportProc.running) { desktopExport.restart(); return }
+      exportProc.exec(["python3", root.exporter])
     }
   }
 
   Process {
-    id: kdeGlobals
+    id: exportProc
     // The script reads appearance.json itself rather than taking argv, so a
     // hand-edit lands the same way a settings click does.
     stderr: StdioCollector {}

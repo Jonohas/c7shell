@@ -28,6 +28,13 @@ depends=(
   'wl-clipboard'
   'libnotify'
   'xdg-desktop-portal-hyprland'
+  # xdph implements screencast, not Settings -- and Settings is the interface an
+  # app asks whether the desktop prefers dark through. Without a backend that
+  # implements it, everything that detects a system theme comes up light next to
+  # a dark shell (appearance.json's colorScheme, exported by
+  # scripts/c7shell-theme-export.py). hyprland-portals.conf already names gtk as
+  # the fallback backend, so installing it is the whole fix.
+  'xdg-desktop-portal-gtk'
 )
 optdepends=(
   'kitty: terminal bound to SUPER+Q'

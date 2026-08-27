@@ -273,6 +273,34 @@ else
   want_pkg xdg-desktop-portal-hyprland
 fi
 
+# The Settings interface is the one an app asks "does this desktop prefer dark?"
+# through. xdph does not implement it, so without a second backend every such
+# app answers itself with light. The gtk backend does implement it, and
+# /usr/share/xdg-desktop-portal/hyprland-portals.conf already names gtk as the
+# fallback -- installing it is the whole fix.
+if compgen -G "$root/usr/lib*/xdg-desktop-portal-gtk" >/dev/null \
+   || compgen -G "$root/usr/libexec/xdg-desktop-portal-gtk" >/dev/null; then
+  ok 'xdg-desktop-portal-gtk'
+else
+  bad 'xdg-desktop-portal-gtk missing -- apps that detect a system theme all pick light (package: xdg-desktop-portal-gtk)'
+  want_pkg xdg-desktop-portal-gtk
+fi
+
+# ...and the backend can only report what GSettings holds. Unset means "no
+# preference", which is what left every app light in the first place.
+if command -v gsettings >/dev/null; then
+  scheme=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || true)
+  case $scheme in
+    *prefer-dark*|*prefer-light*) ok "color-scheme preference exported (${scheme//\'/})" ;;
+    '') warn 'gsettings cannot read org.gnome.desktop.interface (package: gsettings-desktop-schemas)' ;;
+    *)
+      warn 'no color-scheme preference set, so apps that detect one pick light'
+      note 'set it in the settings app (Appearance -> app color scheme), or export it:'
+      note 'python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py'
+      ;;
+  esac
+fi
+
 section 'session entry'
 need_file /usr/share/wayland-sessions/c7shell.desktop c7shell \
   'the "c7shell" entry your greeter lists'

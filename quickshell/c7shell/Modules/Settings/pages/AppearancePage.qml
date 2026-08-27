@@ -15,6 +15,58 @@ SettingsPage {
 
   ThemeCards { width: parent.width }
 
+  // -- app colour scheme -----------------------------------------------------
+  // Separate from the variant above on purpose: this is what the desktop tells
+  // apps that ask (the portal's org.freedesktop.appearance color-scheme), not
+  // what the shell paints itself with. Without it every such app defaults to
+  // light next to a dark shell. AppearanceStore runs the export.
+  SettingsCard {
+    width: parent.width
+    spacing: 6
+
+    Item {
+      width: parent.width
+      implicitHeight: 22
+
+      Text {
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        text: "app color scheme"
+        font { family: Theme.fontMono; pixelSize: 11; weight: 600 }
+        color: Theme.alpha(Theme.text, 0.85)
+      }
+
+      Row {
+        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+        spacing: 8
+
+        Repeater {
+          model: ["dark", "light"]
+
+          ActionChip {
+            id: schemeChip
+
+            required property string modelData
+
+            readonly property bool selected: AppearanceStore.colorScheme === schemeChip.modelData
+
+            anchors.verticalCenter: parent.verticalCenter
+            text: schemeChip.modelData
+            accented: schemeChip.selected
+            onTriggered: AppearanceStore.values.colorScheme = schemeChip.modelData
+          }
+        }
+      }
+    }
+
+    Text {
+      width: parent.width
+      text: "what apps are told to prefer — the shell keeps its own theme either way"
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.alpha(Theme.text, 0.4)
+      wrapMode: Text.WordWrap
+    }
+  }
+
   // -- inactive border -------------------------------------------------------
   // The active border follows the accent (spec §7), so only its quiet
   // counterpart is a choice. Both are appearance.json-owned; neither is a

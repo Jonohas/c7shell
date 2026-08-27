@@ -139,7 +139,36 @@ checks all three:
   it the variable above does nothing at all.
 - **`breeze`** — the Qt6 widget style that platform theme draws with.
 
-To export by hand at any time:
+## The theme apps detect
+
+Separate from all of the above, and from the shell's own variant: **Appearance →
+app color scheme** in the settings app is what this desktop *tells other apps*
+it prefers. GTK, Electron, Chromium and libadwaita apps do not read kdeglobals —
+they ask `xdg-desktop-portal` for `org.freedesktop.appearance color-scheme`, and
+a desktop that never answers is read as "no preference", which every one of them
+renders as light. That is why a dark shell used to sit next to a light browser.
+
+The setting writes `colorScheme` into `~/.config/hypr/appearance.json`
+(`dark` by default), and the same export script publishes it where the answer is
+looked up:
+
+- the GSettings key `org.gnome.desktop.interface color-scheme`
+  (`prefer-dark` / `prefer-light`), which the portal reports over the bus;
+- `gtk-application-prefer-dark-theme` in `~/.config/gtk-{3,4}.0/settings.ini`,
+  for GTK apps that never ask the portal. `gtk-theme-name` is left alone — the
+  preference says which face an app should wear, not which theme you run.
+
+Two packages carry it, and `c7shell-doctor` checks both: **`xdg-desktop-portal-gtk`**,
+because `xdg-desktop-portal-hyprland` implements screencast and not `Settings`
+(the shipped `hyprland-portals.conf` already names `gtk` as the fallback, so
+installing it is the whole fix), and `gsettings-desktop-schemas`, which it
+depends on.
+
+The shell's own palette does not follow this setting: picking `light` here makes
+apps light, not the bar. The light *variant* is the card marked "later" on the
+same page.
+
+To export by hand at any time — palette and preference both:
 
 ```bash
 python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py
