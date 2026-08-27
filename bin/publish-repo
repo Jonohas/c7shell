@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# Publish the built package as a pacman repository, so an installed c7shell can
+# be upgraded by `pacman -Syu` like anything else.
+#
+# Every other install path here builds from source on the target machine:
+# install.sh runs makepkg, and c7shell-upgrade re-runs it against a fresh clone.
+# That is the only option without a repository to serve a built package from --
+# this script is that repository. pacman only ever does an HTTP GET against
+# Server, so a GitHub release with a fixed tag is one: the database and the
+# package sit beside each other as assets, with no web host, no Pages branch
+# and no second repository to keep in sync.
+#
+# This is a maintainer command. It is not installed into /usr/bin.
+set -euo pipefail
+
+repo=${C7SHELL_REPO_NAME:-c7}
+tag=${C7SHELL_REPO_TAG:-pacman-repo}
+branch=${C7SHELL_BRANCH:-main}
+src=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+dist=${C7SHELL_DIST:-$src/dist}
+upload=1
+
+usage() {
+  cat <<USAGE
+usage: bin/publish-repo [options] [message]
+
+Builds the package and publishes it as the pacman repository "$repo" on the
+GitHub release tagged "$tag". Clients add it with:
+
+    [$repo]
+    SigLevel = Optional TrustedOnly
+    Server = https://github.com/Jonohas/c7shell/releases/download/$tag
+
+  -l, --local    build the repository into $dist and stop, uploading nothing
+  -h, --help     this text
+
+The PKGBUILD clones the branch rather than building this working tree, so what
+gets published is what is pushed -- a local commit reaches nobody until it is on
+$branch.
+
+env: C7SHELL_BRANCH    branch to build and publish (default main)
+     C7SHELL_REPO_NAME pacman repository name (default c7)
+     C7SHELL_REPO_TAG  release tag serving as the repository (default pacman-repo)
+     C7SHELL_DIST      where the database and packages are built (default ./dist)
+USAGE
+}
+
+while (($#)); do
+  case $1 in
+    -l|--local) upload=0 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) printf 'publish-repo: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *) break ;;
+  esac
+  shift
+done
+
+for cmd in makepkg repo-add; do
+  command -v "$cmd" >/dev/null || { printf 'publish-repo: %s is required\n' "$cmd" >&2; exit 1; }
+done
+((upload)) && { command -v gh >/dev/null || {
+  echo 'publish-repo: gh is required to upload (or pass --local)' >&2; exit 1; }; }
+
+if ((EUID == 0)); then
+  echo 'publish-repo: run this as your own user; makepkg refuses to run as root' >&2
+  exit 2
+fi
+
+mkdir -p -- "$dist"
+# A package left from a previous run would go into the database beside the new
+# one and stay installable long after it stopped being what $branch says.
+rm -f -- "$dist"/*.pkg.tar.* "$dist/$repo".db* "$dist/$repo".files*
+
+cd -- "$src"
+# --nodeps: nothing here is compiled or linked, so having the 25 runtime
+# dependencies installed has no bearing on the build -- requiring them would
+# only mean whoever publishes has to run the desktop they publish. Whether
+# depends= names real packages is a namcap question, not a build-host one.
+C7SHELL_BRANCH=$branch PKGDEST=$dist makepkg -f --noconfirm --nodeps
+# makepkg rewrites pkgver= in the PKGBUILD with what pkgver() returned, which
+# would otherwise be staged into the next commit as a version nobody chose.
+git -C "$src" checkout -- PKGBUILD 2>/dev/null || true
+
+cd -- "$dist"
+repo-add --new --remove "$repo.db.tar.zst" ./*.pkg.tar.zst
+
+# Mirrors serve $repo.db as a symlink to the tarball, and a release asset cannot
+# be a symlink -- so replace the symlink repo-add just made with the bytes it
+# points at, and upload both names. .files is only read by `pacman -F`, and
+# costs one asset.
+cp -f --remove-destination -- "$repo.db.tar.zst" "$repo.db"
+cp -f --remove-destination -- "$repo.files.tar.zst" "$repo.files"
+
+pkg=$(basename -- "$(ls ./*.pkg.tar.zst)")
+
+if ((upload == 0)); then
+  printf 'publish-repo: built %s into %s, uploaded nothing\n' "$pkg" "$dist"
+  printf '  try it without publishing:\n'
+  printf '    pacman -U %s/%s\n' "$dist" "$pkg"
+  exit 0
+fi
+
+if ! gh release view "$tag" >/dev/null 2>&1; then
+  gh release create "$tag" --title 'pacman repository' --notes "Binary pacman repository for c7shell. Add to /etc/pacman.conf:
+
+    [$repo]
+    SigLevel = Optional TrustedOnly
+    Server = https://github.com/Jonohas/c7shell/releases/download/$tag
+
+Then \`pacman -Sy c7shell\`, and \`pacman -Syu\` keeps it current.
+
+The assets here are replaced by bin/publish-repo on every publish: this tag is a
+stable URL, not a version. The version is in the package name, from pkgver()."
+fi
+
+# Assets of superseded versions are no longer in the database, but they stay
+# downloadable by URL, which reads as a release nobody meant to publish.
+gh release view "$tag" --json assets --jq '.assets[].name' \
+  | grep -E '\.pkg\.tar\.' | grep -Fxv "$pkg" \
+  | while read -r stale; do
+      printf 'publish-repo: removing superseded asset %s\n' "$stale"
+      gh release delete-asset "$tag" "$stale" --yes
+    done || true
+
+gh release upload "$tag" --clobber -- \
+  "$pkg" "$repo.db" "$repo.db.tar.zst" "$repo.files" "$repo.files.tar.zst"
+
+printf 'publish-repo: published %s to release %s\n' "$pkg" "$tag"

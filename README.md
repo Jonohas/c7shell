@@ -16,6 +16,31 @@ PKGBUILD              the package
 
 ## Install
 
+### From the binary repository
+
+On a machine that already has a working Arch and a desktop, there is nothing to
+build. Add the repository to `/etc/pacman.conf`:
+
+```
+[c7]
+SigLevel = Optional TrustedOnly
+Server = https://github.com/Jonohas/c7shell/releases/download/pacman-repo
+```
+
+```bash
+sudo pacman -Sy c7shell
+c7shell-setup        # copies the configs into ~/.config (run as your user)
+```
+
+The packages are unsigned, so `SigLevel` has to allow that: HTTPS to GitHub is
+all that stands behind them. `pacman -Syu` upgrades c7shell from here on.
+
+This path installs a package and nothing else — it does not touch drivers, the
+greeter, pipewire or services. On a bare install, use the bootstrap below, or
+run `c7shell-bootstrap` afterwards.
+
+### From source
+
 From a bare Arch install — a CLI, `sudo` and a network connection is enough:
 
 ```bash
@@ -152,8 +177,13 @@ c7shell-upgrade              # rebuild the package from git, then refresh ~/.con
 c7shell-upgrade --dry-run    # show what both halves would change
 ```
 
-`pacman -Syu` cannot do this: `c7shell` is built locally, so there is no
-repository to upgrade it from. `c7shell-upgrade` keeps a build clone under
+This is for an install built from source. `pacman -Syu` cannot upgrade one:
+there is no repository behind a locally built package. Installed from the binary
+repository above, `pacman -Syu` does the package half, and
+`c7shell-upgrade --config-only` is what remains — the configs under `~/.config`
+are copies pacman must not touch.
+
+`c7shell-upgrade` keeps a build clone under
 `~/.cache/c7shell`, rebuilds when the installed commit is behind (the commit is
 baked into `pkgver`), and then refreshes the configs.
 
@@ -199,6 +229,23 @@ backlight over DDC/CI), `brightnessctl` (internal panel), `playerctl` (media
 keys), `upower` (battery), `solaar` (Logitech gestures — needs your own
 `~/.config/solaar/rules.yaml`). All are `optdepends`; the shell degrades
 without them.
+
+## Publishing (maintainer)
+
+```bash
+bin/publish-repo --local     # build the package and the database into ./dist
+bin/publish-repo             # and upload them to the release tagged pacman-repo
+```
+
+`bin/publish-repo` is the repository the install path above reads. pacman only
+does an HTTP GET against `Server`, so a release with a fixed tag is a
+repository: `repo-add` builds `c7.db` and the package is uploaded beside it.
+The tag is a stable URL, not a version — every publish replaces the assets and
+deletes the superseded package.
+
+It publishes **what is pushed**: the PKGBUILD clones the branch, so a local
+commit reaches nobody until it is on `main`. `C7SHELL_BRANCH=my-branch
+bin/publish-repo --local` builds a branch to check it first.
 
 ## Tests
 

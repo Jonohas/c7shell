@@ -18,3 +18,6 @@ docs/specs/
 # python bytecode
 __pycache__/
 *.pyc
+
+# built packages and repository database (bin/publish-repo)
+/dist/
