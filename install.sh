@@ -34,6 +34,7 @@ are missing, then runs: makepkg -si <makepkg options>
 
 env: C7SHELL_SKIP_DEPS=1    don't touch base-devel, just run makepkg
      C7SHELL_SKIP_DOCTOR=1  don't run the post-install c7shell-doctor check
+     C7SHELL_SKIP_OPTIONAL=1  don't offer the optional packages
      C7SHELL_BRANCH=<name>  build that branch instead of main (makepkg clones
                             the branch, not the working tree you run this in)
 USAGE
@@ -92,9 +93,14 @@ if [[ -z ${C7SHELL_SKIP_DOCTOR:-} ]]; then
   doctor=$(command -v c7shell-doctor || echo "$(dirname -- "$0")/bin/c7shell-doctor")
   echo
   echo 'checking the runtime requirements...'
+  # --optional lists the optional packages that are absent and lets you pick
+  # which to add; it installs nothing unless you choose it, and says so and
+  # moves on when there is no terminal to ask on.
+  offer=()
+  if [[ -z ${C7SHELL_SKIP_OPTIONAL:-} ]]; then offer=(--optional); fi
   # A missing requirement is worth a non-zero exit, but the package did build
   # and install -- say so rather than looking like the build failed.
-  "$doctor" --setup-pending || {
+  "$doctor" --setup-pending ${offer[@]+"${offer[@]}"} || {
     echo
     echo 'install.sh: the package installed, but the checks above did not all pass.' >&2
     exit 1

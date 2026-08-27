@@ -15,6 +15,10 @@ If the session does not come up, run:
 It checks everything the session needs that pacman cannot check for you -- the
 Hyprland version, quickshell's QML modules, the GPU device, the appmenu
 daemon's python modules -- and names the package behind anything missing.
+To pick from the optional programs (terminal, file manager, brightness, media
+keys, ...) at any time:
+
+    c7shell-doctor --optional
 MSG
 }
 

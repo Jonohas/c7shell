@@ -37,10 +37,19 @@ missing is reported with the package that provides it, and
 `c7shell-doctor --fix` installs those packages. Run it any time:
 
 ```bash
-c7shell-doctor          # required + optional checks, exits 1 if something required is missing
-c7shell-doctor --quiet  # problems only
-c7shell-doctor --fix    # pacman -S --needed the packages behind the failures
+c7shell-doctor            # required + optional checks, exits 1 if something required is missing
+c7shell-doctor --quiet    # problems only
+c7shell-doctor --fix      # pacman -S --needed the packages behind the failures
+c7shell-doctor --optional # pick which of the optional packages to install
 ```
+
+`install.sh` ends with the `--optional` picker: it lists the optional packages
+you do not have — terminal, file manager, `ddcutil`/`brightnessctl`, `upower`,
+`playerctl`, `solaar`, `jq`, `kwallet` — with what each one is for, and installs
+only the ones you choose (numbers, ranges, `a` for all, enter for none).
+Nothing is installed without a selection, and with no terminal to ask on it
+says so and moves on. `C7SHELL_SKIP_OPTIONAL=1 ./install.sh` skips the
+question entirely.
 
 A session that shows a black screen and drops straight back to the greeter is
 almost always one of the things it checks — most often that `c7shell-setup`

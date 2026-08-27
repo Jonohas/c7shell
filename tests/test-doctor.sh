@@ -114,4 +114,67 @@ out=$(run --quiet 2>&1 || true)
 grep -q 'FAIL  grim' <<<"$out" || fail "--quiet dropped the failure:\n$out"
 ! grep -q '  ok    ' <<<"$out" || fail "--quiet printed passing checks:\n$out"
 
+# --- the optional-package picker -------------------------------------------
+# It needs a terminal to prompt on, so drive it through a pty with `script`.
+# pacman is a stub that records what it was asked to install.
+log=$tmp/pacman.log
+printf '#!/bin/sh\necho "$@" >> "%s"\n' "$log" > "$bin/pacman"
+chmod +x "$bin/pacman"
+printf '#!/bin/sh\nexec "$@"\n' > "$bin/sudo"   # run the command as ourselves
+chmod +x "$bin/sudo"
+for helper in script sed; do ln -s "$(command -v "$helper")" "$bin/$helper"; done
+
+# Pin the offer list: dolphin present, kitty absent so 1) is kitty, and
+# pam_kwallet_init removed so the one file-kind entry is offered too (last).
+stub dolphin
+rm "$root/usr/lib/pam_kwallet_init"
+
+# pick <answer> -> what the picker asked pacman to install
+pick() {
+  : > "$log"
+  env -i PATH="$bin" HOME="$tmp" TERM=dumb \
+    C7SHELL_ROOT="$root" C7SHELL_SHARE="$tmp/share" XDG_CONFIG_HOME="$conf" \
+    /usr/bin/script -qec "/usr/bin/bash $doctor --optional --quiet" /dev/null <<<"$1" \
+    > "$tmp/pick.out" 2>&1 || true
+  tr -d '\r' < "$log"
+}
+
+out=$(pick '')
+[[ -z $out ]] || fail "an empty answer installed something: $out"
+grep -q 'nothing selected' "$tmp/pick.out" || fail "empty answer not acknowledged:\n$(cat "$tmp/pick.out")"
+
+out=$(pick 1)
+[[ $out == '-S --needed -- kitty' ]] || fail "picking 1 should install kitty, got: $out"
+
+out=$(pick '1 3')
+[[ $out == '-S --needed -- kitty ddcutil' ]] || fail "picking '1 3' installed: $out"
+
+out=$(pick '1-3')
+[[ $out == '-S --needed -- kitty hyprlauncher ddcutil' ]] || fail "the range 1-3 installed: $out"
+
+# a number covered twice is not an error and is not installed twice
+out=$(pick '1 1-2')
+[[ $out == '-S --needed -- kitty hyprlauncher' ]] || fail "duplicate selection installed: $out"
+
+out=$(pick a)
+[[ $out == *kitty*kwallet* ]] || fail "'a' should install every offered package, got: $out"
+
+out=$(pick 99)
+[[ -z $out ]] || fail "an out-of-range answer installed something: $out"
+grep -q 'out of range' "$tmp/pick.out" || fail "no out-of-range complaint:\n$(cat "$tmp/pick.out")"
+
+out=$(pick 'nope')
+[[ -z $out ]] || fail "a non-numeric answer installed something: $out"
+grep -q 'not a number' "$tmp/pick.out" || fail "no complaint about garbage input:\n$(cat "$tmp/pick.out")"
+
+# without a terminal the picker says so instead of hanging on a read
+out=$(run --optional 2>&1 </dev/null || true)
+grep -q 'no terminal to ask on' <<<"$out" || fail "no tty: expected a note, got:\n$out"
+[[ ! -s $log ]] || fail "the picker installed something with no terminal: $(cat "$log")"
+
+# and it never runs unless asked
+: > "$log"
+run --quiet >/dev/null 2>&1 || true
+[[ ! -s $log ]] || fail "the picker ran without --optional: $(cat "$log")"
+
 echo 'PASS: c7shell-doctor'
