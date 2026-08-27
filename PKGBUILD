@@ -42,7 +42,12 @@ optdepends=(
   'kwallet: secret storage unlocked at login by conf/autostart.lua'
 )
 makedepends=('git')
-source=("$pkgname::git+$url.git#branch=main")
+# makepkg builds the branch cloned here, NOT the working tree you run it from:
+# a local commit or a pulled feature branch has no effect until it is pushed and
+# named here. Override for testing a branch before it lands:
+#   C7SHELL_BRANCH=my-branch ./install.sh
+_branch=${C7SHELL_BRANCH:-main}
+source=("$pkgname::git+$url.git#branch=$_branch")
 sha256sums=('SKIP')
 install="$pkgname.install"
 

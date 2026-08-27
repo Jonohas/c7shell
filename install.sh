@@ -34,6 +34,8 @@ are missing, then runs: makepkg -si <makepkg options>
 
 env: C7SHELL_SKIP_DEPS=1    don't touch base-devel, just run makepkg
      C7SHELL_SKIP_DOCTOR=1  don't run the post-install c7shell-doctor check
+     C7SHELL_BRANCH=<name>  build that branch instead of main (makepkg clones
+                            the branch, not the working tree you run this in)
 USAGE
 }
 

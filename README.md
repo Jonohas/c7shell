@@ -47,6 +47,11 @@ almost always one of the things it checks — most often that `c7shell-setup`
 was never run, since the package installs to `/usr/share/c7shell` and neither
 hyprland nor quickshell reads config from there.
 
+The PKGBUILD is a git source: `makepkg` clones the branch named in it and
+builds *that*, not the working tree you run `./install.sh` from. Local commits
+and pulled feature branches therefore do nothing until they are pushed and
+named — to build one, `C7SHELL_BRANCH=my-branch ./install.sh`.
+
 Then log out and pick the **c7shell** session, or run `Hyprland` from a TTY.
 
 The shell installs as a [named Quickshell
