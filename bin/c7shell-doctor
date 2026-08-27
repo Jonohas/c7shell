@@ -220,6 +220,18 @@ need_cmd notify-send libnotify    'notifications from the shell scripts'
 need_cmd wpctl       wireplumber  'the volume and mute keybinds'
 need_cmd bluetoothctl bluez-utils 'the bluetooth applet'
 need_cmd nmcli       networkmanager 'the network applet'
+
+# Airplane mode is thrown through rfkill: the binary is in util-linux, which
+# every Arch install has, but the device needs write access -- logind grants
+# that to the active seat by ACL (70-uaccess.rules), so a bad answer here is
+# not a missing package. No device at all means no radios: nothing to report.
+if [[ -e $root/dev/rfkill ]]; then
+  if [[ -w $root/dev/rfkill ]]; then
+    ok '/dev/rfkill writable (airplane mode)'
+  else
+    warn "/dev/rfkill is not writable -- airplane mode will fail. Fix: sudo gpasswd -a $(id -un) rfkill, then log out and back in (c7shell-bootstrap does this)"
+  fi
+fi
 need_cmd systemctl   systemd      'the power menu (suspend, reboot, poweroff)'
 
 # Only checked when a QWidget-based Qt/KDE app is actually installed. The shell
