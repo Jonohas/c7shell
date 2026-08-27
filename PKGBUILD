@@ -5,7 +5,8 @@ pkgrel=1
 pkgdesc='c7shell desktop environment: Hyprland (lua config) with the c7shell Quickshell shell'
 arch=('any')
 url='https://github.com/Jonohas/c7shell'
-license=('custom')
+# MIT is this repository; OFL-1.1 is the Space Grotesk font vendored below.
+license=('MIT' 'OFL-1.1')
 # Hyprland 0.56+ is required: the config is hyprland.lua, not hyprland.conf.
 depends=(
   'hyprland>=0.56'
@@ -13,9 +14,24 @@ depends=(
   'hypridle'
   'hyprlock'
   'hyprpaper'
-  'hyprpicker'
   'hyprpolkitagent'
   'qt6-declarative'
+  # Theme.qml and hyprlock.conf both name the mono face; without the font the
+  # bar, launcher and lock screen silently fall back to default sans. Space
+  # Grotesk, the display face, is in no repository and is vendored below.
+  'ttf-jetbrains-mono'
+  # conf/environment.lua sets QT_QPA_PLATFORMTHEME=kde: plasma-integration is
+  # the platform theme that reads kdeglobals, which is what
+  # scripts/c7shell-theme-export.py writes the accent and variant into. Breeze
+  # is the widget style and icon set that scheme names.
+  'plasma-integration'
+  'breeze'
+  'breeze-icons'
+  # conf/environment.lua names Adwaita as XCURSOR_THEME and
+  # c7shell-theme-export.py writes it into kcminputrc. It is only ever reached
+  # implicitly otherwise -- default-cursors' index.theme inherits it -- so
+  # depend on the theme itself rather than on that inheritance holding.
+  'adwaita-cursors'
   'wireplumber'
   'networkmanager'
   'bluez'
@@ -28,6 +44,16 @@ depends=(
   'wl-clipboard'
   'libnotify'
   'xdg-desktop-portal-hyprland'
+  # Services/UpdatesService.qml runs `checkupdates`, the bar's updates pill.
+  'pacman-contrib'
+  # Services/CaptureService.qml opens captures with xdg-open and deletes them
+  # with `gio trash`.
+  'xdg-utils'
+  'glib2'
+  # The settings app's .desktop and icon land in /usr/share/{applications,
+  # icons/hicolor}; these two carry the pacman hooks that refresh both caches.
+  'desktop-file-utils'
+  'hicolor-icon-theme'
 )
 optdepends=(
   'kitty: terminal bound to SUPER+Q'
@@ -38,16 +64,41 @@ optdepends=(
   'upower: battery readout in the bar'
   'playerctl: media keys (XF86Audio{Next,Prev,Play,Pause})'
   'solaar: Logitech device support, autostarted if present'
+  'kwallet: secrets service, started by conf/autostart.lua when installed'
+  'kwallet-pam: unlocks that wallet with the login password'
+  'paru: AUR count in the updates pill'
+  'flatpak: flatpak count in the updates pill'
+  'fprintd: fingerprint unlock (commented out in hypr/hyprlock.conf)'
   'jq: helper scripting'
 )
-makedepends=('git')
-source=("$pkgname::git+$url.git#branch=main")
-sha256sums=('SKIP')
+# lua: tests/test-monitors.lua loads conf/monitors.lua against a stubbed hl.
+makedepends=('git' 'lua')
+# Space Grotesk (OFL-1.1) is vendored rather than depended on: it is the display
+# face in Theme.qml and hyprlock.conf, and no Arch repository carries it, so
+# without this the clock and headings fall back to default sans on every machine
+# but the author's -- where it happens to be installed by hand.
+_sgver=2.0.0
+source=(
+  "$pkgname::git+$url.git#branch=main"
+  "space-grotesk-$_sgver.tar.gz::https://github.com/floriankarsten/space-grotesk/archive/refs/tags/$_sgver.tar.gz"
+)
+sha256sums=(
+  'SKIP'
+  '366da4ddec4f637f6d2d342251c2e5e8b8af67d10653f347a9d9d603cc64547a'
+)
 install="$pkgname.install"
 
 pkgver() {
   cd "$srcdir/$pkgname"
   printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+check() {
+  cd "$srcdir/$pkgname"
+  tests/test-setup.sh
+  # From hypr/, because monitors.lua resolves its own require("conf/...")
+  # relative to the working directory.
+  cd hypr && lua ../tests/test-monitors.lua
 }
 
 package() {
@@ -65,6 +116,7 @@ package() {
   rm -rf "$pkgdir/usr/share/$pkgname/quickshell/c7shell/docs"
   chmod -R u=rwX,go=rX "$pkgdir/usr/share/$pkgname"
   chmod 755 "$pkgdir/usr/share/$pkgname/quickshell/c7shell/scripts/c7shell-appmenud.py" \
+            "$pkgdir/usr/share/$pkgname/quickshell/c7shell/scripts/c7shell-theme-export.py" \
             "$pkgdir/usr/share/$pkgname/quickshell/c7shell/bin/screenshare-picker.sh"
 
   install -Dm755 bin/c7shell-setup "$pkgdir/usr/bin/c7shell-setup"
@@ -80,5 +132,18 @@ package() {
     "$pkgdir/usr/share/applications/c7shell-settings.desktop"
   install -Dm644 quickshell/c7shell/Assets/applications/c7shell-settings.svg \
     "$pkgdir/usr/share/icons/hicolor/scalable/apps/c7shell-settings.svg"
+
+  # Space Grotesk, statics only: Theme.qml asks for weights 400-600 by name and
+  # the four static faces answer that the way every other Arch font package
+  # does. Shipping the variable TTF alongside them leaves fontconfig choosing
+  # between two families with the same name.
+  local sg="$srcdir/space-grotesk-$_sgver"
+  install -dm755 "$pkgdir/usr/share/fonts/$pkgname"
+  install -m644 "$sg"/fonts/ttf/static/SpaceGrotesk-*.ttf \
+    "$pkgdir/usr/share/fonts/$pkgname/"
+  install -Dm644 "$sg/OFL.txt" \
+    "$pkgdir/usr/share/licenses/$pkgname/OFL-1.1-space-grotesk.txt"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
