@@ -1,0 +1,602 @@
+#!/usr/bin/env python3
+"""The system side of c7shell's one password prompt.
+
+Every caller that needs a secret from the person at the keyboard arrives here,
+and the shell draws all of them with the same 280px panel
+(Modules/Auth/AuthPrompt.qml). Two callers are wired:
+
+  polkit  -- this process registers as the session's authentication agent, so
+             pkexec, systemctl, GNOME Disks and c7up's own root helper prompt
+             through the shell instead of through hyprpolkitagent's dialog.
+  sudo    -- `sudo -A` runs bin/c7-askpass, which connects to the unix socket
+             below; the prompt it raises is the same panel with the command
+             and the asking process named.
+
+Protocol with the shell: NDJSON, one object per line, events on stdout and
+commands on stdin. Services/AuthService.qml is the only reader.
+
+  out {"ev":"ready","polkit":BOOL,"askpass":PATH,"user":NAME}
+  out {"ev":"request","id":ID,"kind":"polkit"|"sudo",...}   a prompt to draw
+  out {"ev":"active","id":ID}                               it is now the head
+  out {"ev":"prompt","id":ID,"text":T,"echo":BOOL}          PAM wants an answer
+  out {"ev":"factor","id":ID,"kind":"fingerprint","text":T} PAM offered another
+  out {"ev":"info","id":ID,"text":T}                        PAM_TEXT_INFO
+  out {"ev":"pamerror","id":ID,"text":T}                    PAM_ERROR_MSG
+  out {"ev":"failed","id":ID,"tries":N,"max":N}             wrong, try again
+  out {"ev":"close","id":ID,"ok":BOOL}                      gone from the queue
+  in  {"cmd":"respond","id":ID,"secret":S}
+  in  {"cmd":"cancel","id":ID}
+
+Only the head of the queue is ever authenticating: a second request sits
+un-initiated until the first closes, so there is never more than one live PAM
+conversation and the design's "1 more waiting" line is simply len(queue) - 1.
+
+The PAM conversation itself is libpolkit-agent's PolkitAgent.Session, not a
+hand-rolled pipe to polkit-agent-helper-1. The helper is setuid root and the
+library is what knows how to talk to it and how to report the result back to
+polkitd; reimplementing that in Python would be reimplementing the one part of
+this that has to be right.
+
+Secrets are never logged, never written to argv, and never kept after the
+respond that carries them: they go straight into the session or back out the
+askpass socket and the reference is dropped.
+
+Requires python-gobject and polkit (both already depends= of c7shell).
+"""
+
+import argparse
+import json
+import os
+import pwd
+import grp
+import socket
+import sys
+import threading
+
+import gi
+
+gi.require_version("Polkit", "1.0")
+gi.require_version("PolkitAgent", "1.0")
+from gi.repository import Gio, GLib, Polkit, PolkitAgent  # noqa: E402
+
+AGENT_PATH = "/io/crimson7/c7shell/PolkitAgent"
+
+# polkit's own agents retry three times before handing the failure back to the
+# caller; the design's "n of 3" counter is this number.
+MAX_TRIES = 3
+
+AGENT_XML = """
+<node>
+  <interface name='org.freedesktop.PolicyKit1.AuthenticationAgent'>
+    <method name='BeginAuthentication'>
+      <arg type='s' name='action_id' direction='in'/>
+      <arg type='s' name='message' direction='in'/>
+      <arg type='s' name='icon_name' direction='in'/>
+      <arg type='a{ss}' name='details' direction='in'/>
+      <arg type='s' name='cookie' direction='in'/>
+      <arg type='a(sa{sv})' name='identities' direction='in'/>
+    </method>
+    <method name='CancelAuthentication'>
+      <arg type='s' name='cookie' direction='in'/>
+    </method>
+  </interface>
+</node>
+"""
+
+
+def log(msg):
+    print(f"c7-authd: {msg}", file=sys.stderr, flush=True)
+
+
+def runtime_dir():
+    base = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    d = os.path.join(base, "c7shell")
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    # Pre-existing directories keep their mode, and the socket in here carries
+    # passwords in both directions.
+    os.chmod(d, 0o700)
+    return d
+
+
+def default_socket():
+    return os.environ.get("C7_AUTHD_SOCKET") or os.path.join(runtime_dir(), "askpass.sock")
+
+
+def user_name(uid):
+    """The name to show in the identity row.
+
+    Just the name. The design's mockup puts a group beside it ("alex  wheel"),
+    and an earlier version of this filled that in by looking up whether the user
+    was in wheel or sudo -- which reads as "this is why you may answer this
+    prompt" while actually being a fact about the account that has nothing to do
+    with the request. polkit hands the agent its identities already resolved to
+    unix-user, so the group that made the user eligible is not something we are
+    told; inferring one and printing it next to a password field is asserting
+    something we cannot check.
+
+    If polkit ever does offer a unix-group identity, that group IS the reason
+    and would be worth showing. It does not today.
+    """
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
+        return str(uid)
+
+
+def proc_name(pid):
+    try:
+        with open(f"/proc/{pid}/comm") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+class Request:
+    """One prompt, from either caller. The queue holds these."""
+
+    _next_id = 0
+
+    def __init__(self, kind, **fields):
+        Request._next_id += 1
+        self.id = f"r{Request._next_id}"
+        self.kind = kind
+        self.fields = fields
+        self.tries = 0
+        self.session = None       # PolkitAgent.Session, polkit only
+        self.invocation = None    # held DBus reply, polkit only
+        self.identity = None
+        self.cookie = None
+        self.conn = None          # askpass socket, sudo only
+        self.pending_prompt = False
+        self.closed = False
+        # Set BEFORE the session is cancelled, never after. cancel() makes the
+        # session emit "completed" -- synchronously -- and the completed
+        # handler's job is to start the next attempt. Without this flag already
+        # up, cancelling a prompt silently opened a fresh PAM session and put
+        # the prompt straight back on screen.
+        self.cancelled = False
+
+
+class Daemon:
+    def __init__(self, with_polkit=True, with_askpass=True, sock_path=None):
+        self.loop = GLib.MainLoop()
+        self.queue = []
+        self.by_cookie = {}
+        self.with_polkit = with_polkit
+        self.sock_path = sock_path or default_socket()
+        self.bus = None
+        self.node = None
+        self.subject = None
+        self.authority = None
+        self.polkit_ok = False
+        if with_askpass:
+            self._serve_askpass()
+        if with_polkit:
+            self._register_polkit()
+        self._watch_stdin()
+
+    # ---------------------------------------------------------------- output --
+    def emit(self, **obj):
+        sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
+
+    def ready(self):
+        self.emit(ev="ready", polkit=self.polkit_ok,
+                  askpass=self.sock_path, user=user_name(os.getuid()))
+
+    # ----------------------------------------------------------------- queue --
+    def push(self, req):
+        self.queue.append(req)
+        self.emit(ev="request", id=req.id, kind=req.kind,
+                  waiting=len(self.queue) - 1, **req.fields)
+        if len(self.queue) == 1:
+            self.activate(req)
+
+    def head(self):
+        return self.queue[0] if self.queue else None
+
+    def activate(self, req):
+        self.emit(ev="active", id=req.id)
+        if req.kind == "polkit":
+            self.begin_session(req)
+        # A sudo request needs nothing started: the prompt text arrived with
+        # the request and the answer goes straight back down the socket.
+
+    def close(self, req, ok):
+        if req.closed:
+            return
+        req.closed = True
+        if req in self.queue:
+            self.queue.remove(req)
+        self.emit(ev="close", id=req.id, ok=ok)
+        if req.cookie:
+            self.by_cookie.pop(req.cookie, None)
+        head = self.head()
+        if head and not head.closed:
+            self.activate(head)
+
+    def find(self, req_id):
+        for req in self.queue:
+            if req.id == req_id:
+                return req
+        return None
+
+    # ------------------------------------------------------------- shell in --
+    def _watch_stdin(self):
+        # A reader thread rather than a GLib IO watch on fd 0. IOChannel's
+        # read_line() returns a four-tuple through introspection, and getting
+        # that wrong fails in the one way this daemon must never fail: the
+        # watch stays armed, every command is dropped, and the prompt on screen
+        # simply never responds to anything the person types.
+        threading.Thread(target=self._read_stdin, daemon=True).start()
+
+    def _read_stdin(self):
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                log("ignoring an unparseable command line")
+                continue
+            GLib.idle_add(self._dispatch, msg)
+        # EOF: the shell went away. Every queued caller is left hanging
+        # otherwise, so refuse them all rather than leaking them.
+        GLib.idle_add(self._dispatch_shutdown)
+
+    def _dispatch(self, msg):
+        self.handle(msg)
+        return False
+
+    def _dispatch_shutdown(self):
+        self.shutdown()
+        return False
+
+    def handle(self, msg):
+        req = self.find(msg.get("id", ""))
+        if req is None:
+            return
+        cmd = msg.get("cmd")
+        if cmd == "cancel":
+            self.deny(req)
+        elif cmd == "respond":
+            self.respond(req, msg.get("secret", ""))
+
+    def respond(self, req, secret):
+        if req.kind == "sudo":
+            self._askpass_reply(req, True, secret)
+            self.close(req, True)
+            return
+        if not req.pending_prompt or req.session is None:
+            # Nothing is waiting on an answer -- an Enter that raced the
+            # conversation, or a fingerprint stage with no password prompt
+            # behind it. Dropping it is right; queueing it would answer the
+            # NEXT prompt with a secret typed for this one.
+            return
+        req.pending_prompt = False
+        req.session.response(secret)
+
+    def deny(self, req):
+        req.cancelled = True
+        if req.kind == "sudo":
+            self._askpass_reply(req, False, "")
+        else:
+            if req.session is not None:
+                req.session.cancel()
+                req.session = None
+            # Cancelling the PAM session is only half of it: BeginAuthentication
+            # is still waiting for a reply, and a caller whose call is never
+            # answered does not fail -- it hangs until D-Bus times the call out.
+            # pkexec sat there for its full timeout on every cancelled prompt.
+            if req.invocation is not None:
+                req.invocation.return_dbus_error(
+                    "org.freedesktop.PolicyKit1.Error.Cancelled",
+                    "Authentication was cancelled")
+                req.invocation = None
+        self.close(req, False)
+
+    # ---------------------------------------------------------------- polkit --
+    def _register_polkit(self):
+        try:
+            # polkitd calls the agent back over the SYSTEM bus, on the same
+            # connection that registered it -- exporting the object on the
+            # session bus registers cleanly and is then never called, which
+            # looks exactly like having no agent at all.
+            # Every one of these is held on self for the daemon's whole life,
+            # and that is not tidiness. polkitd tracks the registration against
+            # the bus name that made it: let the authority be collected and the
+            # registration goes with it, which reads as a clean start followed
+            # by "No authentication agent found" on the first pkexec.
+            self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+            self.node = Gio.DBusNodeInfo.new_for_xml(AGENT_XML)
+            # register_object_with_closures2, not register_object: the latter
+            # is deprecated here and warns on every start, and the daemon's
+            # stderr is surfaced by the shell -- a permanent warning nobody can
+            # act on is how a diagnostic channel stops being read.
+            self.reg_id = self.bus.register_object_with_closures2(
+                AGENT_PATH, self.node.interfaces[0], self._on_dbus_call, None, None)
+            self.subject = Polkit.UnixSession.new_for_process_sync(os.getpid(), None)
+            self.authority = Polkit.Authority.get_sync(None)
+            self.authority.register_authentication_agent_sync(
+                self.subject, os.environ.get("LANG", "en_US.UTF-8"), AGENT_PATH, None)
+            self.polkit_ok = True
+        except GLib.Error as err:
+            # Almost always "another agent is already registered": hyprpolkitagent
+            # still autostarted, or a second shell. Say so and keep the askpass
+            # half working rather than exiting -- the shell reads polkit:false
+            # and leaves the existing agent alone.
+            log(f"not registering as the polkit agent: {err.message}")
+            self.polkit_ok = False
+
+    def _on_dbus_call(self, conn, sender, path, iface, method, params, invocation):
+        if method == "CancelAuthentication":
+            cookie, = params.unpack()
+            req = self.by_cookie.get(cookie)
+            if req is not None:
+                # The caller withdrew (ctrl-c on pkexec). Take the prompt off
+                # the screen, and answer its BeginAuthentication with an error
+                # rather than never answering it at all -- an unanswered call
+                # sits there until D-Bus times it out.
+                req.cancelled = True
+                if req.session is not None:
+                    req.session.cancel()
+                if req.invocation is not None:
+                    req.invocation.return_dbus_error(
+                        "org.freedesktop.PolicyKit1.Error.Cancelled",
+                        "Authentication was cancelled")
+                    req.invocation = None
+                self.close(req, False)
+            invocation.return_value(None)
+            return
+        if method != "BeginAuthentication":
+            invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+            return
+        action_id, message, icon_name, details, cookie, identities = params.unpack()
+        self._begin(action_id, message, icon_name, details, cookie, identities, invocation)
+
+    def _begin(self, action_id, message, icon_name, details, cookie, identities, invocation):
+        identity, uid = self._pick_identity(identities)
+        if identity is None:
+            # The rule from the design: a prompt that cannot say who is asking
+            # is refused, not shown. No identity means no one at this keyboard
+            # can answer it, and a field nobody can satisfy is worse than a
+            # clean failure.
+            log(f"refusing {action_id}: no identity this session can authenticate as")
+            invocation.return_value(None)
+            return
+        pid = details.get("polkit.subject-pid") or details.get("polkit.caller-pid")
+        req = Request(
+            "polkit",
+            title="Authentication required",
+            detail=message,
+            actionId=action_id,
+            iconName=icon_name,
+            command=details.get("command_line", ""),
+            program=details.get("program", ""),
+            proc=proc_name(pid) if pid else "",
+            pid=int(pid) if pid and pid.isdigit() else 0,
+            user=user_name(uid),
+            root=uid == 0 or details.get("user") == "root" or action_id.startswith("org.freedesktop.policykit.exec"),
+        )
+        req.identity = identity
+        req.cookie = cookie
+        req.invocation = invocation
+        self.by_cookie[cookie] = req
+        self.push(req)
+
+    def _pick_identity(self, identities):
+        """Prefer the user at this keyboard; fall back to the first offered."""
+        me = os.getuid()
+        parsed = []
+        for kind, data in identities:
+            if kind == "unix-user":
+                uid = int(data["uid"])
+                parsed.append((Polkit.UnixUser.new(uid), uid))
+            elif kind == "unix-group":
+                # polkit may offer a group; every member can answer, so the
+                # only one worth showing is the person actually here.
+                gid = int(data["gid"])
+                try:
+                    members = grp.getgrgid(gid).gr_mem
+                except KeyError:
+                    continue
+                if pwd.getpwuid(me).pw_name in members:
+                    parsed.append((Polkit.UnixUser.new(me), me))
+        for identity, uid in parsed:
+            if uid == me:
+                return identity, uid
+        return parsed[0] if parsed else (None, None)
+
+    def begin_session(self, req):
+        session = PolkitAgent.Session.new(req.identity, req.cookie)
+        session.connect("request", self._on_request, req)
+        session.connect("show-info", self._on_info, req)
+        session.connect("show-error", self._on_error, req)
+        session.connect("completed", self._on_completed, req)
+        req.session = session
+        req.pending_prompt = False
+        session.initiate()
+
+    def _on_request(self, session, text, echo, req):
+        req.pending_prompt = True
+        self.emit(ev="prompt", id=req.id, text=text.strip(), echo=bool(echo))
+
+    def _on_info(self, session, text, req):
+        # pam_fprintd speaks only through PAM_TEXT_INFO, so this is the one
+        # signal that tells us an alternate factor is live. The shell needs to
+        # know which state to draw, not just what to print.
+        kind = "fingerprint" if _looks_like_fingerprint(text) else ""
+        if kind:
+            self.emit(ev="factor", id=req.id, kind=kind, text=text)
+        else:
+            self.emit(ev="info", id=req.id, text=text)
+
+    def _on_error(self, session, text, req):
+        self.emit(ev="pamerror", id=req.id, text=text)
+
+    def _on_completed(self, session, authorized, req):
+        req.session = None
+        req.pending_prompt = False
+        if authorized:
+            self._finish_polkit(req)
+            self.close(req, True)
+            return
+        if req.closed or req.cancelled:
+            return
+        req.tries += 1
+        if req.tries >= MAX_TRIES:
+            # Hand back to the caller rather than asking a fourth time. pkexec
+            # prints "Not authorized" and the person can start again knowing
+            # why, which beats a field that never stops.
+            self._finish_polkit(req)
+            self.close(req, False)
+            return
+        self.emit(ev="failed", id=req.id, tries=req.tries, max=MAX_TRIES)
+        # A Session is single-shot: another attempt is another session, which
+        # is exactly what libpolkit-agent's own text listener does.
+        self.begin_session(req)
+
+    def _finish_polkit(self, req):
+        if req.invocation is None:
+            return
+        # The result reached polkitd through the setuid helper already; this
+        # call only tells it we are done with the dialog.
+        req.invocation.return_value(None)
+        req.invocation = None
+
+    # --------------------------------------------------------------- askpass --
+    def _serve_askpass(self):
+        try:
+            os.unlink(self.sock_path)
+        except FileNotFoundError:
+            pass
+        except OSError as err:
+            log(f"cannot clear a stale {self.sock_path}: {err}")
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(self.sock_path)
+        os.chmod(self.sock_path, 0o600)
+        srv.listen(4)
+        srv.setblocking(False)
+        self.srv = srv
+        GLib.io_add_watch(GLib.IOChannel.unix_new(srv.fileno()),
+                          GLib.PRIORITY_DEFAULT, GLib.IOCondition.IN, self._on_accept)
+
+    def _on_accept(self, chan, cond):
+        try:
+            conn, _ = self.srv.accept()
+        except OSError:
+            return True
+        # SO_PEERCRED, not the pid the client claims: the whole point of naming
+        # the asking process is that the name is true.
+        try:
+            creds = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+            peer_pid, peer_uid, _ = (int.from_bytes(creds[i:i + 4], sys.byteorder)
+                                     for i in (0, 4, 8))
+        except OSError:
+            peer_pid, peer_uid = 0, os.getuid()
+        if peer_uid != os.getuid():
+            # Only this user's own sudo may raise this user's prompt.
+            conn.close()
+            return True
+        threading.Thread(target=self._read_askpass, args=(conn, peer_pid), daemon=True).start()
+        return True
+
+    def _read_askpass(self, conn, peer_pid):
+        """Runs off the main loop: a client that connects and says nothing must
+        not stall the polkit agent."""
+        conn.settimeout(10)
+        buf = b""
+        try:
+            while b"\n" not in buf:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    conn.close()
+                    return
+                buf += chunk
+                if len(buf) > 64 * 1024:
+                    conn.close()
+                    return
+            msg = json.loads(buf.split(b"\n", 1)[0].decode("utf-8", "replace"))
+        except (OSError, ValueError):
+            conn.close()
+            return
+        GLib.idle_add(self._askpass_request, conn, peer_pid, msg)
+
+    def _askpass_request(self, conn, peer_pid, msg):
+        command = str(msg.get("command", ""))[:512]
+        asker = str(msg.get("asker", ""))[:64] or proc_name(msg.get("askerPid", 0))
+        req = Request(
+            "sudo",
+            title="Run as root",
+            detail=str(msg.get("prompt", ""))[:256],
+            actionId="",
+            command=command,
+            proc=asker,
+            pid=int(msg.get("askerPid") or peer_pid or 0),
+            user=user_name(os.getuid()),
+            root=True,
+        )
+        req.conn = conn
+        self.push(req)
+        # A sudo prompt has no PAM conversation of its own to wait for: the
+        # field is live the moment it is drawn.
+        req.pending_prompt = True
+        self.emit(ev="prompt", id=req.id, text=req.fields["detail"] or "Password:", echo=False)
+        return False
+
+    def _askpass_reply(self, req, ok, secret):
+        if req.conn is None:
+            return
+        try:
+            payload = json.dumps({"ok": bool(ok), "secret": secret}) + "\n"
+            req.conn.sendall(payload.encode())
+        except OSError:
+            pass
+        finally:
+            try:
+                req.conn.close()
+            except OSError:
+                pass
+            req.conn = None
+
+    # -------------------------------------------------------------- lifetime --
+    def shutdown(self):
+        for req in list(self.queue):
+            self.deny(req)
+        try:
+            os.unlink(self.sock_path)
+        except OSError:
+            pass
+        self.loop.quit()
+
+    def run(self):
+        self.ready()
+        try:
+            self.loop.run()
+        except KeyboardInterrupt:
+            self.shutdown()
+
+
+def _looks_like_fingerprint(text):
+    low = text.lower()
+    return any(word in low for word in ("finger", "swipe", "sensor", "fprint"))
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--no-polkit", action="store_true",
+                    help="do not register as the polkit agent (tests, and a "
+                         "session that already has one)")
+    ap.add_argument("--no-askpass", action="store_true",
+                    help="do not serve the sudo askpass socket")
+    ap.add_argument("--socket", help="askpass socket path (default: "
+                                     "$XDG_RUNTIME_DIR/c7shell/askpass.sock)")
+    args = ap.parse_args()
+    Daemon(with_polkit=not args.no_polkit,
+           with_askpass=not args.no_askpass,
+           sock_path=args.socket).run()
+
+
+if __name__ == "__main__":
+    main()

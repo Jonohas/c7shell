@@ -18,6 +18,8 @@
 #   pacnew             config files left to review
 #   resolve keep|take  resolve one of them
 #   services           units wanting a restart after the run
+#   orphans            packages nothing depends on any more
+#   remove-orphans     remove them, with their own dependencies
 #   aurdiff <pkg>      the PKGBUILD diff behind step 1's "view diff"
 #   log [path]         the run log, in whatever pager this machine has
 #   reboot             finish a pending kernel update
@@ -269,6 +271,10 @@ do_verdict() {
   local clean=true
   ((${#decisions[@]})) && clean=false
 
+  # Cleanup, not a decision: it rides along with the verdict so the dropdown
+  # can offer it without a second round trip, and it does not touch `clean`.
+  local orphan_json; orphan_json=$(collect_orphans)
+
   # -- keep arch-update's state in step ---------------------------------------
   printf '%s\n' "$pac_raw" | sed '/^$/d' > "$statedir/last_updates_check_packages"
   printf '%s\n' "$aur_raw" | sed '/^$/d' > "$statedir/last_updates_check_aur"
@@ -276,8 +282,8 @@ do_verdict() {
   cat "$statedir"/last_updates_check_{packages,aur,flatpak} > "$statedir/last_updates_check"
   date "+%s%n%F %T" > "$statedir/last_updates_check_time"
 
-  emit "$(printf '{"ev":"verdict","clean":%s,"checked":%s,"size":%s,"reboot":%s,"sources":[{"key":"pacman","label":"pacman","items":%s},{"key":"aur","label":"aur","items":%s},{"key":"flatpak","label":"flatpak","items":%s}],"decisions":%s}' \
-    "$clean" "$checked" "$size" "$reboot" "$pac_json" "$aur_json" "$fp_json" "$dec_json")"
+  emit "$(printf '{"ev":"verdict","clean":%s,"checked":%s,"size":%s,"reboot":%s,"sources":[{"key":"pacman","label":"pacman","items":%s},{"key":"aur","label":"aur","items":%s},{"key":"flatpak","label":"flatpak","items":%s}],"decisions":%s,"orphans":%s}' \
+    "$clean" "$checked" "$size" "$reboot" "$pac_json" "$aur_json" "$fp_json" "$dec_json" "$orphan_json")"
 }
 
 # ------------------------------------------------------------------- run ----
@@ -420,14 +426,17 @@ do_run() {
   rm -f "$progress"
 
   # Step 3 exists only if the run actually produced something to clean up.
-  local pacnew_json services_json reboot=false
+  local pacnew_json services_json orphan_json reboot=false
   pacnew_json=$(collect_pacnew)
   services_json=$(collect_services)
+  # After the run, not before: an upgrade that drops a dependency makes
+  # orphans, which is the moment arch-update asks about them too.
+  orphan_json=$(collect_orphans)
   [[ -f "/usr/lib/modules/$(uname -r)/vmlinuz" ]] || reboot=true
 
-  emit "$(printf '{"ev":"done","ok":true,"updated":%s,"total":%s,"secs":%s,"log":%s,"pacnew":%s,"services":%s,"reboot":%s}' \
+  emit "$(printf '{"ev":"done","ok":true,"updated":%s,"total":%s,"secs":%s,"log":%s,"pacnew":%s,"services":%s,"orphans":%s,"reboot":%s}' \
     "$total" "$total" "$(( $(date +%s) - started ))" "$(j "$log")" \
-    "$pacnew_json" "$services_json" "$reboot")"
+    "$pacnew_json" "$services_json" "$orphan_json" "$reboot")"
 }
 
 # ----------------------------------------------------------------- pager ----
@@ -484,6 +493,37 @@ collect_pacnew() {
   done <<<"$files" | as_array
 }
 
+# --------------------------------------------------------------- orphans ----
+# Packages nothing depends on any more. `pacman -Qtdq` is exactly what
+# arch-update's orphan_packages.sh reads, so the two agree about what is
+# unneeded, and the size is the only reason anyone cares: an orphan costs
+# nothing but disk.
+#
+# Deliberately NOT a decision in step 1. Orphans are not created by the update
+# that is about to run and they do not stop it; treating them as one would put
+# a question in front of every clean path, on every machine that has ever had
+# a package removed, forever. They are cleanup, and cleanup is step 3.
+collect_orphans() {
+  local -a names=()
+  mapfile -t names < <(pacman -Qtdq 2>/dev/null)
+  ((${#names[@]})) || { echo '[]'; return; }
+
+  local out n size
+  # -Qi rather than a second -Q pass: the installed size is what makes the
+  # offer worth making, and LC_ALL=C is what keeps the unit parseable.
+  out=$(while read -r n size; do
+    [[ -n $n ]] || continue
+    printf '{"name":%s,"size":%s}\n' "$(j "$n")" "$size"
+  done < <(LC_ALL=C pacman -Qi -- "${names[@]}" 2>/dev/null | awk '
+    /^Name +:/ { name = $3 }
+    /^Installed Size +:/ {
+      mult = ($5 == "KiB") ? 1024 : ($5 == "MiB") ? 1048576 \
+           : ($5 == "GiB") ? 1073741824 : 1
+      printf "%s %d\n", name, ($4 + 0) * mult
+    }') | as_array)
+  [[ -n $out ]] && printf '%s\n' "$out" || echo '[]'
+}
+
 collect_services() {
   local out
   out=$(pkexec "$libdir/c7up-root" check-services 2>/dev/null \
@@ -501,6 +541,15 @@ case "${1-}" in
   run)     shift; do_run "$@" ;;
   pacnew)  emit "{\"ev\":\"pacnew\",\"files\":$(collect_pacnew)}" ;;
   services) emit "{\"ev\":\"services\",\"units\":$(collect_services)}" ;;
+  orphans) emit "{\"ev\":\"orphans\",\"packages\":$(collect_orphans)}" ;;
+  # The names are passed rather than re-derived here so that a list the user
+  # looked at is the list that goes; c7up-root checks each one against
+  # `pacman -Qtdq` itself before it removes anything.
+  'remove-orphans')
+    shift
+    (($#)) || { echo 'c7up: remove-orphans <package>…' >&2; exit 2; }
+    pkexec "$libdir/c7up-root" remove-orphans "$@"
+    ;;
   resolve)
     shift
     case "${1-}" in
