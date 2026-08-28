@@ -47,7 +47,7 @@ GlassPopover {
     Text {
       anchors { right: refresh.left; rightMargin: 8; verticalCenter: title.verticalCenter }
       text: UpdatesService.checking ? "checking…" : UpdatesService.agoText()
-      font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.text3
     }
 
@@ -83,13 +83,13 @@ GlassPopover {
 
     Text {
       text: UpdatesService.total > 0 ? "nothing needs a decision" : "up to date"
-      font { family: Theme.fontMono; pixelSize: 10.5; weight: 500 }
+      font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
       color: Theme.success
     }
     Text {
       visible: UpdatesService.total > 0
       text: "no kernel, no replacements, no new keys"
-      font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.text3
     }
   }
@@ -104,7 +104,7 @@ GlassPopover {
     wrapMode: Text.Wrap
     visible: !root.runningHere && UpdatesService.checkError !== ""
     text: UpdatesService.checkError
-    font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+    font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
     color: Theme.accentSoft
   }
 
@@ -152,7 +152,7 @@ GlassPopover {
     visible: !root.runningHere && UpdatesService.total === 0
              && UpdatesService.pacnews.length === 0
     text: "everything is current"
-    font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+    font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
     color: Theme.textDisabled
   }
 
@@ -166,13 +166,13 @@ GlassPopover {
     Text {
       anchors.left: parent.left
       text: `${UpdatesService.pacnews.length} config file${UpdatesService.pacnews.length === 1 ? "" : "s"} to review`
-      font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: "#e0b341"
     }
     Text {
       anchors.right: parent.right
       text: "review →"
-      font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.text3
 
       HoverHandler { cursorShape: Qt.PointingHandCursor }

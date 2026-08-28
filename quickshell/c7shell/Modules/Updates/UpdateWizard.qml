@@ -154,7 +154,7 @@ Scope {
               property bool open: false
               anchors.right: parent.right
               text: showRoutine.open ? "hide ▾" : "show ▸"
-              font { family: Theme.fontMono; pixelSize: 9.5 }
+              font { family: Theme.fontMono; pixelSize: 10 }
               color: Theme.text3
 
               HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -232,7 +232,7 @@ Scope {
                       spacing: 6
                       Text {
                         text: decision.modelData.title
-                        font { family: Theme.fontMono; pixelSize: 10.5; weight: 600 }
+                        font { family: Theme.fontMono; pixelSize: 11; weight: 600 }
                         color: Theme.text
                       }
                       Text {
@@ -246,7 +246,7 @@ Scope {
                       width: parent.width
                       wrapMode: Text.Wrap
                       text: decision.modelData.note ?? ""
-                      font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+                      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
                       color: Theme.text3
                     }
                   }
@@ -256,7 +256,7 @@ Scope {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: decision.modelData.diff === true
                     text: "view diff"
-                    font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+                    font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
                     color: Theme.accentSoft
 
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -310,14 +310,14 @@ Scope {
               anchors { left: parent.left; right: parent.right; top: parent.top; margins: 9 }
               wrapMode: Text.Wrap
               text: UpdatesService.result?.error ?? "the update stopped"
-              font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+              font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
               color: Theme.text2
             }
           }
 
           Text {
             text: "transaction rolled back — no files written"
-            font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+            font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
             color: Theme.text3
           }
 
@@ -381,14 +381,14 @@ Scope {
 
               Text {
                 text: `${UpdatesService.services.length} service${UpdatesService.services.length === 1 ? "" : "s"} want a restart`
-                font { family: Theme.fontMono; pixelSize: 10.5; weight: 500 }
+                font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
                 color: Theme.text
               }
               Text {
                 width: parent.width
                 wrapMode: Text.Wrap
                 text: UpdatesService.services.join(" · ")
-                font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+                font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
                 color: Theme.text3
               }
               Row {
@@ -485,7 +485,7 @@ Scope {
           id: ghostText
           anchors.centerIn: parent
           text: ghost.label
-          font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+          font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
           color: Theme.text2
         }
 

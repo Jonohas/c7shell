@@ -41,7 +41,7 @@ SettingsPage {
         }
         Text {
           text: UpdatesService.checking ? "checking…" : UpdatesService.agoText()
-          font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+          font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
           color: Theme.text3
         }
       }
@@ -61,7 +61,7 @@ SettingsPage {
       text: UpdatesService.clean
         ? "nothing needs a decision — the bar's badge will do the whole update in place"
         : `${UpdatesService.decisions.length} things need a decision — the badge opens the review window`
-      font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: UpdatesService.clean ? Theme.text3 : Theme.accentSoft
     }
   }
@@ -91,7 +91,7 @@ SettingsPage {
     width: parent.width
     visible: UpdatesService.pacnews.length === 0
     text: "no config files waiting"
-    font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+    font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
     color: Theme.textDisabled
   }
 
@@ -107,7 +107,7 @@ SettingsPage {
       Text {
         anchors { left: parent.left; verticalCenter: parent.verticalCenter }
         text: "a kernel update is waiting on a reboot"
-        font { family: Theme.fontMono; pixelSize: 10.5; weight: 400 }
+        font { family: Theme.fontMono; pixelSize: 11; weight: 400 }
         color: Theme.text2
       }
       ActionChip {

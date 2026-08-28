@@ -92,7 +92,7 @@ Item {
               ? "pacnew files appeared during the run"
               : "a kernel update is waiting on a reboot")
           : `${UpdatesService.duration(root.result?.secs)} · nothing to review`
-        font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+        font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
         color: Theme.text3
       }
 
@@ -144,7 +144,7 @@ Item {
     signal triggered()
 
     text: act.label
-    font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+    font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
     color: act.accent ? Theme.accentSoft : Theme.text3
 
     MouseArea {

@@ -52,6 +52,8 @@ run() { if ((dry)); then printf '  would: %s\n' "$*"; else "$@"; fi; }
 stamp=$(date +%Y%m%d%H%M%S)
 skipped=0
 installed=0
+# Only the parts this run wrote may be claimed in the manifest below.
+installed_parts=()
 
 for part in "${parts[@]}"; do
   dst=$conf/$part
@@ -69,6 +71,7 @@ for part in "${parts[@]}"; do
   run mkdir -p -- "$(dirname -- "$dst")"
   run cp -a -- "$share/$part" "$dst"
   installed=1
+  installed_parts+=("$part")
 done
 
 # xdph has no variable expansion, so the shipped picker path is a $HOME
@@ -94,23 +97,41 @@ if [[ -f $exporter ]] && command -v python3 >/dev/null; then
   fi
 fi
 
-if ((installed == 0 && skipped)); then
-  exit 3
-fi
-
 # Record the hash of every file as installed. c7shell-upgrade compares against
 # this to tell "you edited it" from "it is just an old copy" -- without it, a
 # later upgrade has to assume every difference is a local edit and can only
 # park new versions as .new files.
+#
+# This runs even when every part was skipped, and BEFORE the early exit below.
+# It used to be the other way round, which meant the one situation that most
+# needs a baseline -- an existing config this run left alone -- was the only
+# one that never recorded one. The result was an upgrade that parked a .new
+# beside every shipped file it did not recognise, leaving a config that is
+# half one version and half another. A mixed config does not degrade: QML
+# resolves imports across the whole tree, so an old shell.qml next to a new
+# module directory fails the load and the desktop comes up with no bar.
+#
+# Only files this run actually wrote are claimed as ours. For a part that was
+# skipped we record nothing rather than guessing, so a genuine local edit is
+# still never overwritten -- the difference is that the upgrade now knows the
+# two cases apart instead of assuming the worst about both.
 if ((dry == 0)); then
   mkdir -p -- "$state"
   : > "$state/manifest"
-  for part in "${parts[@]}"; do
+  for part in "${installed_parts[@]+"${installed_parts[@]}"}"; do
     [[ -d $conf/$part ]] || continue
     while read -r f; do
       printf '%s\t%s\n' "${f#"$conf/"}" "$(sha256sum -- "$f" | cut -d' ' -f1)"
     done < <(find "$conf/$part" -type f ! -name '*.new' | sort)
   done >> "$state/manifest"
+fi
+
+if ((installed == 0 && skipped)); then
+  printf '\nNothing was copied. To take the shipped configs over what is there:\n'
+  printf '  c7shell-setup --force        (backs the current ones up first)\n'
+  printf 'or, to update in place without losing your edits:\n'
+  printf '  c7shell-upgrade --config-only\n'
+  exit 3
 fi
 
 cat <<'MSG'

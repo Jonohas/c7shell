@@ -32,12 +32,12 @@ Rectangle {
 
       Text {
         text: root.file.path
-        font { family: Theme.fontMono; pixelSize: 10.5; weight: 500 }
+        font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
         color: Theme.text
       }
       Text {
         text: ".pacnew"
-        font { family: Theme.fontMono; pixelSize: 10.5; weight: 500 }
+        font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
         color: root.amber
       }
     }
@@ -51,7 +51,7 @@ Rectangle {
       text: root.file.edited
         ? `${root.file.changed} changed line${root.file.changed === 1 ? "" : "s"} · you edited this file`
         : `${root.file.changed} changed line${root.file.changed === 1 ? "" : "s"} · default untouched → safe to take new`
-      font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.text3
     }
 
@@ -87,7 +87,7 @@ Rectangle {
       id: text
       anchors.centerIn: parent
       text: choice.label
-      font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: choice.highlight ? root.amber : Theme.text2
     }
 

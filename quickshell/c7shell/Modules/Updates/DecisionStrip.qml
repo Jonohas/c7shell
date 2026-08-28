@@ -29,7 +29,7 @@ Rectangle {
       text: root.decisions.length === 1
         ? "1 thing needs a decision"
         : `${root.decisions.length} things need a decision`
-      font { family: Theme.fontMono; pixelSize: 10.5; weight: 600 }
+      font { family: Theme.fontMono; pixelSize: 11; weight: 600 }
       color: Theme.accentSoft
     }
 
@@ -44,12 +44,12 @@ Rectangle {
 
         Text {
           text: line.modelData.kind
-          font { family: Theme.fontMono; pixelSize: 9.5; weight: 500 }
+          font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
           color: Theme.alpha(Theme.accentSoft, 0.75)
         }
         Text {
           text: "·"
-          font { family: Theme.fontMono; pixelSize: 9.5 }
+          font { family: Theme.fontMono; pixelSize: 10 }
           color: Theme.text3
         }
         Text {
@@ -58,7 +58,7 @@ Rectangle {
           text: line.modelData.detail && line.modelData.detail !== ""
             ? `${line.modelData.title} · ${line.modelData.detail.split("\n")[0]}`
             : line.modelData.title
-          font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+          font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
           color: Theme.text2
         }
       }

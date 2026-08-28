@@ -149,7 +149,7 @@ Column {
       id: pct
       anchors { left: track.right; leftMargin: 8; verticalCenter: parent.verticalCenter }
       text: `${Math.round(root.fraction * 100)}%`
-      font { family: Theme.fontMono; pixelSize: 9.5; weight: 600 }
+      font { family: Theme.fontMono; pixelSize: 10; weight: 600 }
       color: Theme.text2
     }
 
@@ -157,7 +157,7 @@ Column {
       id: abort
       anchors { right: parent.right; verticalCenter: parent.verticalCenter }
       text: "abort"
-      font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.accentSoft
 
       HoverHandler { cursorShape: Qt.PointingHandCursor }

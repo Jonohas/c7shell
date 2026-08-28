@@ -48,7 +48,7 @@ Rectangle {
         Text {
           anchors.centerIn: parent
           text: root.source?.key === "flatpak" ? "fp" : root.source?.key === "aur" ? "aur" : "pac"
-          font { family: Theme.fontMono; pixelSize: 8.5; weight: 600 }
+          font { family: Theme.fontMono; pixelSize: 9; weight: 600 }
           color: Theme.text3
         }
       }
@@ -56,14 +56,14 @@ Rectangle {
       Text {
         anchors { left: tag.right; leftMargin: 8; verticalCenter: parent.verticalCenter }
         text: root.source?.label ?? ""
-        font { family: Theme.fontMono; pixelSize: 10.5; weight: 500 }
+        font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
         color: Theme.text
       }
 
       Text {
         anchors { right: chevron.left; rightMargin: 7; verticalCenter: parent.verticalCenter }
         text: `${root.count}`
-        font { family: Theme.fontMono; pixelSize: 10.5; weight: 600 }
+        font { family: Theme.fontMono; pixelSize: 11; weight: 600 }
         color: Theme.text2
       }
 
@@ -112,7 +112,7 @@ Rectangle {
       Text {
         visible: !root.showAll && root.count > root.visibleRows
         text: `show ${root.count - root.visibleRows} more ▾`
-        font { family: Theme.fontMono; pixelSize: 9.5; weight: 400 }
+        font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
         color: Theme.text3
 
         HoverHandler { cursorShape: Qt.PointingHandCursor }
