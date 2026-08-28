@@ -221,6 +221,13 @@ Singleton {
     stderr: StdioCollector {}
   }
 
+  // Who paints the wallpaper. hypr/conf/environment.lua exports this after
+  // hypr/conf/gpu.lua decides -- on a virtual GPU hyprpaper is not merely
+  // unable to draw, it SIGABRTs on the first request and conf/autostart.lua
+  // does not start it there, so Modules/Wallpaper draws instead. Unset means
+  // hyprpaper, which keeps a shell run outside the session behaving as before.
+  readonly property bool shellDrawsWallpaper: Quickshell.env("C7SHELL_WALLPAPER") === "shell"
+
   // This hyprpaper (0.8.4) implements exactly one request — `wallpaper`, taking
   // [mon],[path],[fit_mode]. `preload` is rejected as an invalid request, and
   // is not needed: a bare wallpaper request loads the file itself (verified —
@@ -232,6 +239,9 @@ Singleton {
     interval: 200
     onTriggered: {
       if (root.wallpaper === "" || paper.running) return
+      // Nothing to push when the shell is the one drawing it: the window in
+      // Modules/Wallpaper is bound to the same value and has already changed.
+      if (root.shellDrawsWallpaper) return
       paper.exec(["hyprctl", "hyprpaper", "wallpaper", `,${root.wallpaper}`])
     }
   }
@@ -239,5 +249,50 @@ Singleton {
   Process {
     id: paper
     stderr: StdioCollector {}
+  }
+
+  // -- browsing for a wallpaper ---------------------------------------------
+  // The dialog is the desktop's, not the shell's: hyprland-portals.conf routes
+  // org.freedesktop.impl.portal.FileChooser to the kde backend, so this is the
+  // same picker -- same KIO places sidebar, same kdeglobals palette -- that
+  // every portal-using app on the machine shows (README, "The file picker").
+  // Quickshell 0.3.1 has no generic DBus client, so scripts/c7shell-filechooser.py
+  // makes the call and prints the path; only its exit status decides whether a
+  // wallpaper is set, so a cancelled dialog cannot clear the one in force.
+  //
+  // Resolved off this file for the same reason the exporter is: the packaged
+  // shell lives in /usr/share/c7shell, where a ~/.config path finds nothing.
+  readonly property string filechooser:
+    Qt.resolvedUrl("../scripts/c7shell-filechooser.py").toString().replace(/^file:\/\//, "")
+
+  // True while the dialog is up, so the settings page can say so -- the portal
+  // can take a moment to activate its backend the first time, and a button that
+  // looks like it did nothing gets clicked again.
+  readonly property bool browsing: chooser.running
+
+  function browseWallpaper() {
+    if (chooser.running) return
+    const cut = root.wallpaper.lastIndexOf("/")
+    const folder = cut > 0 ? root.wallpaper.slice(0, cut) : `${Quickshell.env("HOME")}/Pictures`
+    chooser.exec(["python3", root.filechooser,
+                  "--title", "Choose a wallpaper",
+                  "--accept", "Set wallpaper",
+                  "--images",
+                  "--current-folder", folder])
+  }
+
+  Process {
+    id: chooser
+
+    property string picked: ""
+
+    stdout: StdioCollector { onStreamFinished: chooser.picked = text.trim() }
+    stderr: StdioCollector {}
+    // Exit 1 is a cancelled dialog and 2 is a portal that could not be reached;
+    // neither is a wallpaper. Only status 0 carries a path.
+    onExited: exitCode => {
+      if (exitCode === 0 && chooser.picked !== "") root.values.wallpaper = chooser.picked
+      chooser.picked = ""
+    }
   }
 }

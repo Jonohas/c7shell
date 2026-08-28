@@ -19,7 +19,7 @@ mkdir -p "$bin" "$root" "$conf"
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 # The doctor itself needs these to run under a PATH with nothing else on it.
-for helper in grep head; do ln -s "$(command -v "$helper")" "$bin/$helper"; done
+for helper in grep head date stat; do ln -s "$(command -v "$helper")" "$bin/$helper"; done
 
 stub() { printf '#!/bin/sh\nexit 0\n' > "$bin/$1"; chmod +x "$bin/$1"; }
 
@@ -161,6 +161,18 @@ grep -q 'already waiting in hyprlock.conf.new' <<<"$out" \
 rm -f "$conf/hypr/hyprlock.conf.new"
 printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 
+# The third thing it breaks: hyprpaper SIGABRTs on the first wallpaper request,
+# so conf/gpu.lua leaves it out of autostart and the shell paints instead. A
+# ~/.config copy from before that has no gpu.lua, which is the whole check --
+# the wallpaper setting on such a machine saves fine and does nothing.
+out=$(run 2>&1) || fail "vmwgfx with no gpu.lua should warn, not fail:\n$out"
+grep -q 'hyprpaper is autostarted' <<<"$out" || fail "the dead hyprpaper was not reported:\n$out"
+grep -q 'c7shell-upgrade' <<<"$out" || fail "no way to fix it given:\n$out"
+
+: > "$conf/hypr/conf/gpu.lua"
+out=$(run 2>&1) || fail "vmwgfx with gpu.lua should pass:\n$out"
+grep -q 'the shell paints the wallpaper' <<<"$out" || fail "no wallpaper backend line:\n$out"
+
 # a real GPU is none of this machine's business, even with the same old copy
 printf 'DRIVER=amdgpu\n' > "$drm/uevent"
 printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
@@ -234,6 +246,37 @@ mv "$root/usr/lib/xdg-desktop-portal-kde" "$tmp/portal-kde-gone"
 out=$(run 2>&1) || fail "a missing FileChooser backend should warn, not fail:\n$out"
 grep -q 'xdg-desktop-portal-kde missing' <<<"$out" || fail "the missing kde backend was not reported:\n$out"
 mv "$tmp/portal-kde-gone" "$root/usr/lib/xdg-desktop-portal-kde"
+
+# a portal that has been running since before the config was written is still
+# routing FileChooser the old way, so every picker comes from gtk while the file
+# on disk says kde -- the one failure here that looks like nothing is wrong
+mkdir -p "$conf/xdg-desktop-portal"
+: > "$conf/xdg-desktop-portal/hyprland-portals.conf"
+portal_started() {
+  printf '#!/bin/sh\nif [ "$2" = show ]; then echo "%s"; fi\nexit 0\n' "$1" > "$bin/systemctl"
+  chmod +x "$bin/systemctl"
+}
+portal_started 'Fri 2020-01-01 00:00:00 CET'
+out=$(run 2>&1) || fail "a stale portal should warn, not fail:\n$out"
+grep -q 'started before the portal config was written' <<<"$out" \
+  || fail "the stale portal was not reported:\n$out"
+grep -q 'systemctl --user restart xdg-desktop-portal' <<<"$out" \
+  || fail "no way to fix the stale portal given:\n$out"
+
+# and a portal started after it is in force, so there is nothing to say
+portal_started 'Fri 2099-01-01 00:00:00 CET'
+out=$(run 2>&1) || fail "a fresh portal should pass:\n$out"
+grep -q 'started before the portal config' <<<"$out" \
+  && fail "a portal newer than its config was called stale:\n$out"
+grep -q 'the running portal is newer than its config' <<<"$out" \
+  || fail "a fresh portal was not reported:\n$out"
+
+# a portal that has never run is started by its socket on demand; nothing to say
+stub systemctl
+out=$(run 2>&1) || fail "a portal that has not run should pass:\n$out"
+grep -q 'the running portal' <<<"$out" \
+  && fail "a portal that has never run was judged anyway:\n$out"
+portal_started 'Fri 2099-01-01 00:00:00 CET'
 
 # the backend can only report what GSettings holds: unset is the state that left
 # apps light, and it names how to set it

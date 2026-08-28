@@ -177,6 +177,31 @@ sidebar and the same kdeglobals palette as dolphin. That backend is
 **`xdg-desktop-portal-kde`**, a package dependency; without it the portal
 falls back to the gtk picker on its own, and `c7shell-doctor` warns.
 
+The portal reads that file once, when it starts, so a fresh install or an
+upgrade that writes it does not change anything until the portal is restarted —
+until then every picker is still the gtk one, with nothing on screen to say so.
+`c7shell-doctor` warns when the running portal is older than the config:
+
+```bash
+systemctl --user restart xdg-desktop-portal
+```
+
+The settings app asks for the same dialog: **Appearance → wallpaper →
+"browse →"** opens the portal's `FileChooser`, filtered to the image formats
+hyprpaper can actually load — `png`, `jpg`, `jpeg`, `bmp`, `webp`, `jxl`, `svg`,
+the ones `libhyprgraphics` links a decoder for. It opens in the folder the
+current wallpaper came from, and cancelling it leaves that wallpaper alone. The
+path field beside the button still takes a typed or pasted path.
+
+Quickshell 0.3.1 has no generic DBus client, so the call is made by
+`quickshell/c7shell/scripts/c7shell-filechooser.py`, which prints the chosen
+path. It is usable on its own:
+
+```bash
+python3 ~/.config/quickshell/c7shell/scripts/c7shell-filechooser.py \
+  --title 'Choose a wallpaper' --images --current-folder ~/Pictures
+```
+
 The shell's own palette does not follow this setting: picking `light` here makes
 apps light, not the bar. The light *variant* is the card marked "later" on the
 same page.
@@ -186,6 +211,33 @@ To export by hand at any time — palette and preference both:
 ```bash
 python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py
 ```
+
+### Where the wallpaper comes from
+
+hyprpaper draws it, except on a virtual GPU, where it cannot: hyprpaper renders
+through hyprtoolkit, which has no software path and commits a dmabuf for every
+wallpaper. `aquamarine` cannot build a DRM renderer to import that buffer —
+
+```
+CDRMRenderer(drm): Can't create renderer, no matching devices found
+drm: initMgpu: no renderer
+```
+
+— the compositor drops the connection, and hyprtoolkit aborts on the way out
+rather than exiting. So hyprpaper is not merely wallpaper-less on those
+machines: it **SIGABRTs on the first wallpaper request of the session** and is
+gone, which looks exactly like a setting that saves and does nothing.
+`LIBGL_ALWAYS_SOFTWARE` does not help — the buffer is allocated on the device
+the compositor advertises, not by GL.
+
+`hypr/conf/gpu.lua` decides which it is (the same `vmwgfx` / `vboxvideo` /
+`virtio_gpu` test that picks llvmpipe for clients). On a virtual GPU
+`conf/autostart.lua` leaves hyprpaper out, `conf/environment.lua` exports
+`C7SHELL_WALLPAPER=shell`, and the shell paints the wallpaper itself on the
+background layer — it renders with llvmpipe and the compositor imports its
+buffers happily, which the bar has been proof of all along. Everywhere else
+nothing changes and the shell maps no window at all. `c7shell-doctor` reports
+which one is in force.
 
 ## Global menu
 
@@ -361,4 +413,14 @@ tests/test-bootstrap.sh
 tests/test-upgrade.sh
 tests/test-greeter.sh
 tests/test-lockscreen.sh
+tests/test-packaging.sh
+tests/test-filechooser.sh
+tests/test-wallpaper.sh
+```
+
+The two lua suites run from `hypr/`, since the config resolves its own
+`require("conf/...")` relative to the working directory:
+
+```bash
+cd hypr && lua ../tests/test-monitors.lua && lua ../tests/test-gpu.lua
 ```

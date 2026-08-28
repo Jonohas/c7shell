@@ -5,6 +5,7 @@
 -- See https://wiki.hypr.land/Configuring/Basics/Autostart/
 
 local programs = require("conf/programs")
+local gpu = require("conf/gpu")
 
 -- Autostart necessary processes (like notifications daemons, status bars, etc.)
 -- Or execute your favorite apps at launch like this:
@@ -19,7 +20,13 @@ hl.on("hyprland.start", function ()
   -- first menu bar, and caches. Anything started before the daemon shows no
   -- menus until it is relaunched. Order against qs does not matter; the shell
   -- retries the daemon's socket with backoff.
-  hl.exec_cmd("python3 $HOME/.config/quickshell/c7shell/scripts/c7shell-appmenud.py & QT_WAYLAND_DISABLE_WINDOWDECORATION=1 qs -c c7shell -d -n & hyprpaper & hypridle")
+  --
+  -- hyprpaper is left out on a virtual GPU, where it does not merely fail to
+  -- draw but SIGABRTs on the first wallpaper request (conf/gpu.lua has the
+  -- whole trace). The shell draws the wallpaper instead, and knows to because
+  -- conf/environment.lua sets C7SHELL_WALLPAPER=shell.
+  local paper = gpu.wallpaper_backend() == "hyprpaper" and "hyprpaper & " or ""
+  hl.exec_cmd("python3 $HOME/.config/quickshell/c7shell/scripts/c7shell-appmenud.py & QT_WAYLAND_DISABLE_WINDOWDECORATION=1 qs -c c7shell -d -n & " .. paper .. "hypridle")
 end)
 
 -- pam_kwallet_init drains the socket pam_kwallet5 opened at login

@@ -9,6 +9,7 @@
 -- Refer to https://wiki.hypr.land/Configuring/Basics/Variables/
 
 local a = require("conf/appearance")
+local gpu = require("conf/gpu")
 
 local function border(hex, alpha, fallback)
     -- appearance.json is hand-editable, so `hex` is untrusted: anything that is
@@ -73,6 +74,11 @@ hl.config({
 -- the path is whitelisted rather than escaped, and single-quoted. Anything with
 -- a quote, a dollar or a backtick in it is simply not restored here -- the
 -- settings app applies the wallpaper over argv, where none of this applies.
-if type(a.wallpaper) == "string" and a.wallpaper:match("^[%w%._%-/ ]+$") then
+--
+-- Skipped where hyprpaper is not the backend: conf/autostart.lua does not start
+-- it on a virtual GPU, so this would be a request to nothing. The shell paints
+-- the wallpaper there and reads appearance.json for itself.
+if gpu.wallpaper_backend() == "hyprpaper"
+    and type(a.wallpaper) == "string" and a.wallpaper:match("^[%w%._%-/ ]+$") then
     hl.exec_cmd(string.format("hyprctl hyprpaper wallpaper ',%s'", a.wallpaper))
 end
