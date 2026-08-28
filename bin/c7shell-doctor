@@ -297,6 +297,28 @@ if command -v hyprlock >/dev/null && [[ -d $conf/hypr ]]; then
       warn "$lock_conf sets grace, which is a CLI flag in hyprlock 0.9, not a"
       note 'config key: hyprlock reports a config error and refuses to start.'
     fi
+    # A newer hyprlock.conf parked beside an edited one. c7shell-upgrade says
+    # this once, at the moment it writes the file, and then never again -- so on
+    # the machine that most needs to hear it (an install whose config predates
+    # the manifest, where *everything* is treated as edited) the message is long
+    # gone and the lock screen quietly stays on the old design. This is the only
+    # thing that still knows.
+    if [[ -f $lock_conf.new ]]; then
+      warn 'a newer hyprlock.conf is waiting beside yours as hyprlock.conf.new --'
+      note 'c7shell-upgrade kept your copy because it differs from what was'
+      note 'installed. Merge the two and the new lock screen takes effect at the'
+      note 'next lock; nothing needs restarting.'
+      note "  diff ${lock_conf/#$HOME/~} ${lock_conf/#$HOME/~}.new"
+    fi
+    # The now-playing and status lines are a command on PATH, not a path in the
+    # config: refreshing ~/.config alone (c7shell-upgrade --config-only) leaves
+    # the config asking for a binary the old package never installed. The labels
+    # fail silently, so nothing else would ever mention it.
+    if grep -q 'c7shell-lock-info' "$lock_conf" && ! command -v c7shell-lock-info >/dev/null; then
+      warn 'hyprlock.conf calls c7shell-lock-info, which is not installed --'
+      note 'the now-playing and status lines will be blank. It ships with the'
+      note 'package, so the config was refreshed without it: c7shell-upgrade'
+    fi
   elif ((pending)); then
     printf '  next  the lock screen config lands with the rest -- run: c7shell-setup\n'
   else

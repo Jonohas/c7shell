@@ -249,6 +249,33 @@ out=$(run 2>&1) || fail "a stray grace should warn, not fail:\n$out"
 grep -q 'sets grace' <<<"$out" || fail "grace in the config was not reported:\n$out"
 printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 
+# A newer hyprlock.conf parked beside an edited one. c7shell-upgrade reports
+# this once, as it writes the file; on an install whose config predates the
+# manifest every file is treated as edited, so the one message scrolls past in a
+# crowd and the lock screen silently stays on the old design.
+: > "$conf/hypr/hyprlock.conf.new"
+out=$(run 2>&1) || fail "a parked hyprlock.conf.new should warn, not fail:\n$out"
+grep -q 'hyprlock.conf.new' <<<"$out" || fail "the parked config was not reported:\n$out"
+grep -q 'diff ' <<<"$out" || fail "no way to see what changed:\n$out"
+rm -f "$conf/hypr/hyprlock.conf.new"
+
+# The now-playing and status lines are a command on PATH. c7shell-upgrade
+# --config-only refreshes the config without reinstalling the package, which
+# leaves the config calling a binary that is not there -- and hyprlock draws an
+# empty label rather than complaining.
+printf 'label {\n    text = cmd[update:2000] c7shell-lock-info media\n}\n' \
+  >> "$conf/hypr/hyprlock.conf"
+out=$(run 2>&1) || fail "a missing c7shell-lock-info should warn, not fail:\n$out"
+grep -q 'c7shell-lock-info, which is not installed' <<<"$out" \
+  || fail "the missing helper was not reported:\n$out"
+# ...and says nothing once it is on PATH, where the package puts it.
+stub c7shell-lock-info
+out=$(run 2>&1) || fail "an installed c7shell-lock-info should be silent:\n$out"
+grep -q 'c7shell-lock-info, which is not installed' <<<"$out" \
+  && fail "the helper is on PATH and still reported missing:\n$out"
+rm -f "$bin/c7shell-lock-info"
+printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+
 # --- the greeter theme -----------------------------------------------------
 # The theme QML comes with the package; the selection is a drop-in in
 # /etc/sddm.conf.d that c7shell-bootstrap or c7shell-upgrade writes. Every
