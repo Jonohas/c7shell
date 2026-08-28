@@ -594,6 +594,32 @@ for rel in hypr/hyprland.lua quickshell/c7shell/shell.qml; do
     note "run: c7shell-setup      (as your own user, not root)"
   fi
 done
+# The half-upgraded machine, and the reason it is worth its own check: the
+# package half of c7shell-upgrade and the config half can land separately. If
+# you had edited shell.qml, the refresh leaves yours alone and parks the new one
+# beside it -- so the package brings c7-authd while your shell.qml has no
+# AuthWindow in it. The shell then registers as the polkit agent and draws no
+# prompt for it, which is worse than not being the agent at all: pkexec waits
+# on a window that does not exist.
+shellqml=$conf/quickshell/c7shell/shell.qml
+if command -v c7-authd >/dev/null && [[ -f $shellqml ]] \
+   && ! grep -q 'AuthWindow' "$shellqml"; then
+  bad "$shellqml has no AuthWindow, but this machine has the password prompt's
+       backend installed -- so nothing would draw the prompt it raises"
+  note "your config is older than the package. run: c7shell-upgrade --config-only"
+  note "if that reports a conflict on shell.qml, merge it:  diff -u $shellqml{,.new}"
+fi
+
+# The other half of the same split, and only a note: this one is not broken,
+# just not switched over. Two agents cannot both hold the registration, so
+# whichever starts first draws every prompt.
+autostart=$conf/hypr/conf/autostart.lua
+if command -v c7-authd >/dev/null && [[ -f $autostart ]] \
+   && grep -q 'hyprpolkitagent' "$autostart"; then
+  note "$autostart still starts hyprpolkitagent, so it will keep drawing the"
+  note 'password prompts. c7shell-upgrade --config-only replaces that file.'
+fi
+
 if [[ -d $share ]]; then
   ok "$share"
 else

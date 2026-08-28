@@ -82,7 +82,13 @@ mkdir -p "$conf/hypr" "$conf/quickshell/c7shell" "$tmp/share"
 # Without this hyprlock will not start, which takes SUPER+L, the power menu's
 # lock row and the idle lock with it -- see the lock screen cases below.
 printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
-: > "$conf/quickshell/c7shell/shell.qml"
+# A shell.qml that draws the password prompt, and an autostart that has stopped
+# starting hyprpolkitagent -- what a machine looks like after the config half of
+# the upgrade has actually landed. The two cases where it has not are asserted
+# further down.
+printf 'import Quickshell\nScope { AuthWindow {} }\n' > "$conf/quickshell/c7shell/shell.qml"
+mkdir -p "$conf/hypr/conf"
+printf 'hl.exec_cmd("/usr/lib/pam_kwallet_init")\n' > "$conf/hypr/conf/autostart.lua"
 
 run() {
   env -i PATH="$bin" HOME="$tmp" \
@@ -710,5 +716,35 @@ out=$(run --quiet 2>&1 || true)
 grep -q 'Path askpass /usr/bin/c7-askpass' <<<"$out" \
   && fail "the doctor still suggested a sudo.conf line that is already there:\n$out"
 rm -f "$root/etc/sudo.conf"
+
+# --- the half-upgraded machine ---------------------------------------------
+# c7shell-upgrade installs the package and refreshes ~/.config as two separate
+# halves, and the second one deliberately does not overwrite a file you edited.
+# So a machine can end up with c7-authd installed and a shell.qml that never
+# instantiates AuthWindow: the shell registers as the polkit agent and then
+# draws nothing for it, which leaves pkexec waiting on a window that does not
+# exist. Worse than not being the agent at all, and silent.
+printf 'import Quickshell\nScope { Bar {} }\n' > "$conf/quickshell/c7shell/shell.qml"
+out=$(run --quiet 2>&1 || true)
+grep -q 'no AuthWindow' <<<"$out" \
+  || fail "a config too old to draw the password prompt was not reported:\n$out"
+grep -q 'c7shell-upgrade --config-only' <<<"$out" \
+  || fail "the stale-config report does not say how to fix it:\n$out"
+printf 'import Quickshell\nScope { AuthWindow {} }\n' > "$conf/quickshell/c7shell/shell.qml"
+out=$(run --quiet 2>&1 || true)
+grep -q 'no AuthWindow' <<<"$out" \
+  && fail "a config that does draw the prompt was still reported as stale:\n$out"
+
+# The other half of the same split: autostart.lua still launching the old
+# agent. Not broken -- two agents simply cannot both hold the registration --
+# so a note, not a failure.
+printf 'hl.exec_cmd("/usr/lib/pam_kwallet_init & /usr/lib/hyprpolkitagent/hyprpolkitagent")\n' \
+  > "$conf/hypr/conf/autostart.lua"
+out=$(run --quiet 2>&1 || true)
+grep -q 'still starts hyprpolkitagent' <<<"$out" \
+  || fail "an autostart still launching the old agent was not mentioned:\n$out"
+grep -q 'FAIL.*hyprpolkitagent' <<<"$out" \
+  && fail "still starting the old agent was reported as a failure; it is not:\n$out"
+printf 'hl.exec_cmd("/usr/lib/pam_kwallet_init")\n' > "$conf/hypr/conf/autostart.lua"
 
 echo 'PASS: c7shell-doctor'

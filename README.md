@@ -435,9 +435,28 @@ That is a line in a file the sudo package owns, so neither the package nor
 `c7shell-bootstrap` writes it for you; `c7shell-doctor` prints it and stops
 there.
 
-After upgrading an existing session, hyprpolkitagent is still running and holds
-the registration until you log out and back in — `c7shell-doctor` says so if it
-finds one.
+### Upgrading an existing install
+
+`c7shell-upgrade` covers both halves: it rebuilds the package from git (which
+brings `c7-authd` and `c7-askpass`) and refreshes `~/.config`. Then log out and
+back in — until you do, hyprpolkitagent is still running from the old session
+and holds the registration.
+
+The one thing to watch is a half-upgraded config. The refresh deliberately does
+not overwrite a file you have edited: it parks the new version as `<file>.new`
+and leaves yours alone. If that happens to `shell.qml`, the package brings the
+prompt's backend while your config has no `AuthWindow` to draw it — the shell
+becomes the polkit agent and then shows nothing, so `pkexec` waits on a window
+that does not exist. `c7shell-doctor` reports exactly that, and the fix is to
+merge the parked file:
+
+```
+diff -u ~/.config/quickshell/c7shell/shell.qml{,.new}
+```
+
+`c7shell-upgrade --take-shipped` resolves every such conflict in favour of the
+shipped version, which is what you want for configs you did not deliberately
+edit.
 
 ## System updates
 
