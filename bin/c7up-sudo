@@ -7,4 +7,18 @@
 # action as the repo half means the authorisation the user already gave in step
 # 1 covers it (auth_admin_keep), and the wizard's "waiting for authorisation"
 # state covers the case where it has expired.
+set -euo pipefail
+
+# sudo's contract is `sudo <program> <args...>`, so the helper names pacman
+# here and the rest is pacman's own command line. Dropping that first word is
+# this shim's job: pass it on and root's allowlist reads "pacman" as a package
+# to install, which is not what anyone asked for.
+prog=${1-}
+shift || true
+case "$prog" in
+  pacman|/usr/bin/pacman|/bin/pacman) ;;
+  *) printf 'c7up-sudo: the AUR helper asked to run %s as root; only pacman is routed here\n' \
+       "${prog:-<nothing>}" >&2; exit 2 ;;
+esac
+
 exec pkexec /usr/lib/c7shell/c7up-root pacman "$@"
