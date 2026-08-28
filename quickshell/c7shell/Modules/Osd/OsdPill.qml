@@ -92,8 +92,8 @@ Scope {
                   case "brightness": return "sun"
                   case "mic": return win.off ? "mic-off" : "mic"
                   case "layout": return "keyboard"
-                  // volume lands here, and so do workspace and the idle "" --
-                  // both hide this Icon, and an empty name logs a load error.
+                  // volume lands here, and so does the pre-first-show "" --
+                  // never mapped, but an empty name would log a load error.
                   default: return "volume-2"
                 }
               }
