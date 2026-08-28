@@ -14,6 +14,11 @@ depends=(
   'hyprlock'
   'hyprpaper'
   'hyprpicker'
+  # No longer started at login -- the shell is the polkit agent now
+  # (bin/c7-authd, and hypr/conf/autostart.lua no longer launches this). It
+  # stays a hard dependency because Services/AuthService.qml falls back to it
+  # when c7-authd will not start: an unstyled dialog is worth having when the
+  # alternative is a desktop where pkexec silently does nothing.
   'hyprpolkitagent'
   'qt6-declarative'
   'wireplumber'
@@ -22,6 +27,9 @@ depends=(
   'bluez-utils'
   'python'
   'python-dbus'
+  # The app-menu registrar needs it -- and so does c7-authd, which drives the
+  # PAM conversation through libpolkit-agent rather than reimplementing the
+  # setuid helper protocol by hand.
   'python-gobject'
   'grim'
   'wf-recorder'
@@ -184,6 +192,16 @@ package() {
   # whose dialog names a binary rather than the task.
   install -Dm644 share/polkit-1/actions/io.crimson7.c7shell.policy \
     "$pkgdir/usr/share/polkit-1/actions/io.crimson7.c7shell.policy"
+
+  # The password prompt's backend. c7-authd registers as the session's polkit
+  # authentication agent and serves the socket c7-askpass connects to, so
+  # pkexec, `sudo -A` and c7up's own root helper all prompt through the shell's
+  # panel. Both are on PATH by name: the shell spawns c7-authd by name, and
+  # hypr/conf/environment.lua points SUDO_ASKPASS at c7-askpass by absolute
+  # path -- hyprlang does no variable expansion, so it cannot name one under
+  # $HOME.
+  install -Dm755 bin/c7-authd "$pkgdir/usr/bin/c7-authd"
+  install -Dm755 bin/c7-askpass "$pkgdir/usr/bin/c7-askpass"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
 

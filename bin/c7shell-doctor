@@ -232,7 +232,13 @@ need_file /usr/share/polkit-1/actions/io.crimson7.c7shell.policy c7shell \
 need_file /usr/lib/c7shell/c7up-root c7shell \
   'the root half of the update flow, reached only through that polkit action'
 need_file /usr/lib/hyprpolkitagent/hyprpolkitagent hyprpolkitagent \
-  'the polkit agent, started by conf/autostart.lua by absolute path'
+  'the fallback polkit agent, launched only if c7-authd will not start'
+# The password prompt. c7-authd registers as the session's polkit agent and
+# serves the socket c7-askpass connects to; without it nothing in the session
+# can be authorised through the shell, and pkexec has no agent to talk to at
+# all now that conf/autostart.lua no longer starts hyprpolkitagent.
+need_cmd c7-authd   c7shell 'the password prompt'"'"'s backend (polkit agent + sudo askpass)'
+need_cmd c7-askpass c7shell 'what SUDO_ASKPASS points at, so sudo -A prompts through the shell'
 need_cmd grim        grim         'screenshots'
 need_cmd wf-recorder wf-recorder  'screen recording'
 need_cmd wl-copy     wl-clipboard 'copying captures to the clipboard'
@@ -811,6 +817,60 @@ else
   # is what the wizard's "merge..." promises. vim -d is pacdiff's own default
   # and works just as well for anyone who wants it.
   offer meld 'three-pane merge for the update wizard'"'"'s pacnew review'
+fi
+
+# The password prompt's own dependencies. These are not optional -- without
+# them c7-authd exits at startup and the shell falls back to hyprpolkitagent's
+# dialog -- but they are libraries rather than commands, so need_cmd cannot see
+# them. A missing typelib is the failure that looks like nothing at all: the
+# daemon dies, the shell retries three times, and the prompt that appears is
+# simply the wrong one.
+if command -v python3 >/dev/null; then
+  if python3 - <<'PYPROBE' 2>/dev/null
+import gi
+gi.require_version('Polkit', '1.0')
+gi.require_version('PolkitAgent', '1.0')
+from gi.repository import Polkit, PolkitAgent  # noqa: F401
+PYPROBE
+  then
+    ok 'Polkit and PolkitAgent typelibs (the password prompt talks to PAM through them)'
+  else
+    bad 'the Polkit/PolkitAgent GObject typelibs are missing -- c7-authd cannot start,
+       so every password prompt falls back to hyprpolkitagent'
+    want_pkg polkit
+    want_pkg python-gobject
+  fi
+fi
+# The setuid helper libpolkit-agent runs to do the PAM conversation. It is the
+# one part of authenticating that must be root, and it is shipped by polkit
+# rather than by us.
+need_file /usr/lib/polkit-1/polkit-agent-helper-1 polkit \
+  'the setuid helper every polkit agent authenticates through'
+
+# The handover. After an upgrade, hyprpolkitagent is still running from the
+# session that started it, and only one agent may hold the registration -- so
+# c7-authd comes up, finds the seat taken, and the prompts stay the old ones
+# until the next login. That is a confusing thing to work out from a screenshot,
+# so say it plainly rather than leaving someone to wonder why the new prompt
+# never appeared.
+if command -v pgrep >/dev/null && pgrep -x hyprpolkitagent >/dev/null 2>&1; then
+  note 'hyprpolkitagent is still running, so it -- not c7shell -- is drawing password prompts.'
+  note 'It is no longer autostarted; log out and back in for the shell to take over.'
+fi
+
+# Not a check: the last mile of the sudo variant, which c7shell will not do on
+# anyone's behalf. hypr/conf/environment.lua sets SUDO_ASKPASS, which sudo(8)
+# consults for `sudo -A` and when there is no terminal to read from. Making
+# plain `sudo` in a terminal use it as well is one line in /etc/sudo.conf -- a
+# file the sudo package owns, and one this project does not edit, since a
+# desktop shell rewriting another package's config in /etc is how a machine
+# ends up unable to authenticate at all.
+if [[ -r ${root}/etc/sudo.conf ]] \
+   && grep -qE '^[[:space:]]*Path[[:space:]]+askpass' "${root}/etc/sudo.conf"; then
+  ok 'sudo.conf names an askpass helper'
+else
+  note 'to route every terminal sudo through the shell prompt, not just `sudo -A`:'
+  note '  echo "Path askpass /usr/bin/c7-askpass" | sudo tee -a /etc/sudo.conf'
 fi
 
 # Let the user pick which of the absent optional packages to install. Only

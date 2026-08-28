@@ -48,6 +48,10 @@ Singleton {
   property bool promptReady: false
   property string factorKind: ""
   property string factorText: ""
+  // PAM_TEXT_INFO. Not decoration: pam_faillock says "the account is locked
+  // due to 3 failed logins" through this and nothing else, and a prompt that
+  // swallows that just looks like a password that has stopped working.
+  property string noticeText: ""
   property string pamError: ""
 
   readonly property bool verifying: root.stage === "verifying"
@@ -113,6 +117,7 @@ Singleton {
       root.promptReady = false
       root.factorKind = ""
       root.factorText = ""
+      root.noticeText = ""
       root.pamError = ""
       break
 
@@ -132,7 +137,7 @@ Singleton {
       break
 
     case "info":
-      root.factorText = ev.text ?? ""
+      root.noticeText = ev.text ?? ""
       break
 
     case "pamerror":

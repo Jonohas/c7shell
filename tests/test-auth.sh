@@ -115,4 +115,46 @@ if grep '\.qml:' "$log" | grep -qv 'another polkit agent'; then
   fail "QML diagnostics:\n$(grep '\.qml:' "$log" | grep -v 'another polkit agent')"
 fi
 
+# --- the window's bindings, which nothing above can instantiate -----------
+# AuthWindow.qml needs PanelWindow and WlrLayershell, so it cannot be loaded
+# here. Its risk is not the layer surface, though -- it is the names it reads
+# off AuthService. A misspelt one is not a load failure: quickshell logs a
+# binding warning and carries on, so the shell comes up looking right and the
+# prompt is missing exactly one thing.
+win=$src/Modules/Auth/AuthWindow.qml
+svc=$src/Services/AuthService.qml
+missing=()
+while read -r name; do
+  grep -qE "^[[:space:]]*(readonly[[:space:]]+)?property[[:space:]]+[A-Za-z0-9_<>]+[[:space:]]+$name\b" "$svc" && continue
+  grep -qE "^[[:space:]]*function[[:space:]]+$name\b" "$svc" && continue
+  grep -qE "^[[:space:]]*signal[[:space:]]+$name\b" "$svc" && continue
+  missing+=("$name")
+done < <(sed 's|//.*||' "$win" | grep -oE 'AuthService\.[A-Za-z_][A-Za-z0-9_]*' \
+         | sed 's/AuthService\.//' | sort -u)
+
+if ((${#missing[@]})); then
+  fail "AuthWindow.qml reads these off AuthService, which does not declare them:
+  ${missing[*]}
+A misspelt binding here is a warning, not an error -- the shell loads clean and
+the prompt quietly loses that one piece."
+fi
+
+# The same for the handlers it connects to. onFooChanged needs a `foo`.
+missing=()
+while read -r handler; do
+  base=${handler#on}
+  base=${base%Changed}
+  prop=$(printf '%s' "${base:0:1}" | tr '[:upper:]' '[:lower:]')${base:1}
+  grep -qE "^[[:space:]]*(readonly[[:space:]]+)?property[[:space:]]+[A-Za-z0-9_<>]+[[:space:]]+$prop\b" "$svc" && continue
+  grep -qE "^[[:space:]]*signal[[:space:]]+$prop\b" "$svc" && continue
+  missing+=("$handler")
+done < <(sed 's|//.*||' "$win" | grep -oE 'function on[A-Za-z0-9_]+' | sed 's/function //' | sort -u)
+
+if ((${#missing[@]})); then
+  fail "AuthWindow.qml connects handlers with nothing on AuthService to fire them:
+  ${missing[*]}
+Connections does not complain about a handler for a signal that does not exist;
+it simply never runs."
+fi
+
 echo 'test-auth.sh: all checks passed'

@@ -394,11 +394,50 @@ eat local edits by accident.
 | `sddm/themes/c7shell/` | the greeter theme; `Main.qml` wires SDDM's models into `Greeter.qml` |
 | `sddm/themes/c7shell/theme.conf` | greeter settings (wallpaper, user list, lockout) |
 | `share/c7shell-network-dispatcher` | NetworkManager dispatcher script; publishes the connection for the greeter's network pill |
+| `bin/c7-authd` | the password prompt's backend: polkit agent + the `sudo -A` askpass socket |
+| `bin/c7-askpass` | what `SUDO_ASKPASS` points at, so sudo asks through the shell |
+| `quickshell/c7shell/Modules/Auth/` | the 280px prompt panel and the window it lives in |
 | `bin/c7up` | the system-update backend: dry run, transaction, pacnew review — NDJSON, unprivileged |
 | `bin/c7up-root` | the only part of it that runs as root; takes a fixed verb, never a command line |
 | `share/polkit-1/actions/io.crimson7.c7shell.policy` | the polkit action that authorises it |
 | `quickshell/c7shell/Modules/Updates/` | the update dropdown's run view, the wizard, the toast |
 | `/etc/sddm.conf.d/10-c7shell.conf` | selects the theme; written by bootstrap/upgrade, not by the package |
+
+## Password prompts
+
+Everything that needs your password uses one panel: polkit (pkexec, systemctl,
+GNOME Disks, the update flow's own root helper) and `sudo -A`. It names what is
+being asked for in plain language, keeps the polkit action id visible
+underneath, and says which user is authenticating.
+
+The shell is the session's polkit authentication agent — `bin/c7-authd`
+registers as one at startup, which is why `hypr/conf/autostart.lua` no longer
+launches hyprpolkitagent. hyprpolkitagent stays installed as a fallback: if
+c7-authd will not start, the shell launches it after three failed attempts, on
+the grounds that an unstyled dialog beats a desktop where `pkexec` silently
+does nothing.
+
+Only one prompt is on screen at a time. A second request queues behind the
+first and says so; the queued one is not started, so there is never more than
+one live PAM conversation.
+
+For sudo, `hypr/conf/environment.lua` sets `SUDO_ASKPASS=/usr/bin/c7-askpass`.
+sudo consults that for `sudo -A`, and when there is no terminal to read from —
+so a GUI program that shells out to sudo gets the prompt instead of failing.
+Plain `sudo` in a terminal is left alone: it has a terminal, so it reads from
+it. To route those through the shell too:
+
+```
+echo "Path askpass /usr/bin/c7-askpass" | sudo tee -a /etc/sudo.conf
+```
+
+That is a line in a file the sudo package owns, so neither the package nor
+`c7shell-bootstrap` writes it for you; `c7shell-doctor` prints it and stops
+there.
+
+After upgrading an existing session, hyprpolkitagent is still running and holds
+the registration until you log out and back in — `c7shell-doctor` says so if it
+finds one.
 
 ## System updates
 
@@ -473,6 +512,8 @@ tests/test-filechooser.sh
 tests/test-wallpaper.sh
 tests/test-c7up.sh
 tests/test-updates.sh
+tests/test-authd.sh
+tests/test-auth.sh
 ```
 
 The two lua suites run from `hypr/`, since the config resolves its own

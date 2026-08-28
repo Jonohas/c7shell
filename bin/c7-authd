@@ -150,6 +150,12 @@ class Request:
         self.conn = None          # askpass socket, sudo only
         self.pending_prompt = False
         self.closed = False
+        # Set BEFORE the session is cancelled, never after. cancel() makes the
+        # session emit "completed" -- synchronously -- and the completed
+        # handler's job is to start the next attempt. Without this flag already
+        # up, cancelling a prompt silently opened a fresh PAM session and put
+        # the prompt straight back on screen.
+        self.cancelled = False
 
 
 class Daemon:
@@ -159,7 +165,10 @@ class Daemon:
         self.by_cookie = {}
         self.with_polkit = with_polkit
         self.sock_path = sock_path or default_socket()
-        self.listener = None
+        self.bus = None
+        self.node = None
+        self.subject = None
+        self.authority = None
         self.polkit_ok = False
         if with_askpass:
             self._serve_askpass()
@@ -271,12 +280,22 @@ class Daemon:
         req.session.response(secret)
 
     def deny(self, req):
+        req.cancelled = True
         if req.kind == "sudo":
             self._askpass_reply(req, False, "")
-        elif req.session is not None:
-            req.session.cancel()
-        elif req.invocation is not None:
-            self._finish_polkit(req)
+        else:
+            if req.session is not None:
+                req.session.cancel()
+                req.session = None
+            # Cancelling the PAM session is only half of it: BeginAuthentication
+            # is still waiting for a reply, and a caller whose call is never
+            # answered does not fail -- it hangs until D-Bus times the call out.
+            # pkexec sat there for its full timeout on every cancelled prompt.
+            if req.invocation is not None:
+                req.invocation.return_dbus_error(
+                    "org.freedesktop.PolicyKit1.Error.Cancelled",
+                    "Authentication was cancelled")
+                req.invocation = None
         self.close(req, False)
 
     # ---------------------------------------------------------------- polkit --
@@ -286,13 +305,23 @@ class Daemon:
             # connection that registered it -- exporting the object on the
             # session bus registers cleanly and is then never called, which
             # looks exactly like having no agent at all.
-            bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
-            node = Gio.DBusNodeInfo.new_for_xml(AGENT_XML)
-            bus.register_object(AGENT_PATH, node.interfaces[0], self._on_dbus_call, None, None)
-            subject = Polkit.UnixSession.new_for_process_sync(os.getpid(), None)
-            authority = Polkit.Authority.get_sync(None)
-            self.listener = authority.register_authentication_agent_sync(
-                subject, os.environ.get("LANG", "en_US.UTF-8"), AGENT_PATH, None)
+            # Every one of these is held on self for the daemon's whole life,
+            # and that is not tidiness. polkitd tracks the registration against
+            # the bus name that made it: let the authority be collected and the
+            # registration goes with it, which reads as a clean start followed
+            # by "No authentication agent found" on the first pkexec.
+            self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+            self.node = Gio.DBusNodeInfo.new_for_xml(AGENT_XML)
+            # register_object_with_closures2, not register_object: the latter
+            # is deprecated here and warns on every start, and the daemon's
+            # stderr is surfaced by the shell -- a permanent warning nobody can
+            # act on is how a diagnostic channel stops being read.
+            self.reg_id = self.bus.register_object_with_closures2(
+                AGENT_PATH, self.node.interfaces[0], self._on_dbus_call, None, None)
+            self.subject = Polkit.UnixSession.new_for_process_sync(os.getpid(), None)
+            self.authority = Polkit.Authority.get_sync(None)
+            self.authority.register_authentication_agent_sync(
+                self.subject, os.environ.get("LANG", "en_US.UTF-8"), AGENT_PATH, None)
             self.polkit_ok = True
         except GLib.Error as err:
             # Almost always "another agent is already registered": hyprpolkitagent
@@ -308,10 +337,17 @@ class Daemon:
             req = self.by_cookie.get(cookie)
             if req is not None:
                 # The caller withdrew (ctrl-c on pkexec). Take the prompt off
-                # the screen; do not reply to a call that is already gone.
+                # the screen, and answer its BeginAuthentication with an error
+                # rather than never answering it at all -- an unanswered call
+                # sits there until D-Bus times it out.
+                req.cancelled = True
                 if req.session is not None:
                     req.session.cancel()
-                req.invocation = None
+                if req.invocation is not None:
+                    req.invocation.return_dbus_error(
+                        "org.freedesktop.PolicyKit1.Error.Cancelled",
+                        "Authentication was cancelled")
+                    req.invocation = None
                 self.close(req, False)
             invocation.return_value(None)
             return
@@ -410,7 +446,7 @@ class Daemon:
             self._finish_polkit(req)
             self.close(req, True)
             return
-        if req.closed:
+        if req.closed or req.cancelled:
             return
         req.tries += 1
         if req.tries >= MAX_TRIES:

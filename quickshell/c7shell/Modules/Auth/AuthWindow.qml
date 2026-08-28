@@ -76,6 +76,7 @@ PanelWindow {
         promptReady: AuthService.promptReady
         promptText: AuthService.promptText
         factorText: AuthService.factorText
+        noticeText: AuthService.noticeText
         pamError: AuthService.pamError
         waiting: AuthService.waiting
 

@@ -192,6 +192,7 @@ Window {
 
     for (const c of cases) {
       prompt.pamError = ""
+      prompt.noticeText = ""
       prompt.promptText = ""
       prompt.request = c.req
       prompt.stage = c.stage
@@ -229,11 +230,30 @@ Window {
     check(prompt.description === "asked by foot · pid 41207",
           `the sudo prompt does not name its caller: "${prompt.description}"`)
 
-    // A PAM error outranks both -- it is the only line that says why.
-    prompt.pamError = "Account locked"
-    check(prompt.description === "Account locked",
-          "a PAM error was buried under the caller's own description")
+    // A PAM notice outranks the caller's own description: pam_faillock's
+    // "the account is locked" arrives this way and nothing else says it, so a
+    // prompt that swallows it looks like a password that stopped working.
+    prompt.request = root.polkitReq
+    prompt.noticeText = "The account is locked due to 3 failed logins."
+    check(prompt.description === "The account is locked due to 3 failed logins.",
+          `a PAM notice was buried under the description: "${prompt.description}"`)
+
+    // And a PAM error outranks even that.
+    prompt.pamError = "Account expired"
+    check(prompt.description === "Account expired",
+          "a PAM error was buried under a PAM notice")
     prompt.pamError = ""
+    prompt.noticeText = ""
+
+    // A notice belongs to one conversation only: carried into the next
+    // request it would explain a failure that did not happen.
+    root.feed(root.polkitReq)
+    root.feed({ ev: "info", id: "r1", text: "The account is locked" })
+    check(AuthService.noticeText !== "", "a PAM notice was dropped")
+    root.feed({ ev: "active", id: "r1" })
+    check(AuthService.noticeText === "",
+          "a PAM notice survived into the next request")
+    root.feed({ ev: "close", id: "r1", ok: false })
 
     // ------------------------------------------------------------------ 9 --
     // PAM's own wording when it asks for something that is not the password.

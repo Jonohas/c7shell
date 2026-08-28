@@ -26,6 +26,7 @@ Item {
   property bool promptReady: true
   property string promptText: ""
   property string factorText: ""
+  property string noticeText: ""
   property string pamError: ""
   property int waiting: 0
 
@@ -56,8 +57,13 @@ Item {
       : root.failed && root.kind === "polkit" ? "Authentication failed"
       : (root.request?.title ?? "Authentication required")
 
+  // Ranked by what the person most needs to read. A PAM error outranks
+  // everything; a PAM notice ("the account is locked due to 3 failed logins")
+  // outranks the caller's own description, because it is the only line that
+  // explains why the password that works is not working.
   readonly property string description: root.pamError !== "" ? root.pamError
       : root.onFactor && root.factorText !== "" ? root.factorText
+      : root.noticeText !== "" ? root.noticeText
       : root.kind === "sudo" ? root.askedBy
       : (root.request?.detail ?? "")
 
