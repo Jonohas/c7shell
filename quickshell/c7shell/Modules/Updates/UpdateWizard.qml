@@ -87,7 +87,7 @@ Scope {
             Text {
               text: root.entry === "failure" ? `Stopped at package ${UpdatesService.result?.done ?? 0}`
                   : root.step === 1 ? "Before we update"
-                  : root.step === 2 ? "Updating"
+                  : root.step === 2 ? (UpdatesService.awaitingAuth ? "Waiting for authorisation" : "Updating")
                   : root.entry === "review" ? `${UpdatesService.pacnews.length} config file${UpdatesService.pacnews.length === 1 ? "" : "s"} to review`
                   : `Done — ${UpdatesService.result?.updated ?? 0} updated`
               font { family: Theme.fontDisplay; pixelSize: 13; weight: 700 }
@@ -101,7 +101,9 @@ Scope {
                   : root.step === 1
                   ? `${UpdatesService.total} packages · ${UpdatesService.humanSize(UpdatesService.size)} · ${UpdatesService.total - UpdatesService.decisions.length} auto-approved`
                   : root.step === 2
-                  ? `${UpdatesService.doneCount} of ${UpdatesService.runTotal}`
+                  ? (UpdatesService.awaitingAuth
+                     ? "confirm the prompt to continue"
+                     : `${UpdatesService.doneCount} of ${UpdatesService.runTotal}`)
                   : root.entry === "review"
                   ? "from an earlier update"
                   : `${UpdatesService.duration(UpdatesService.result?.secs)} · log at ${UpdatesService.logPath}`
@@ -288,6 +290,7 @@ Scope {
           width: parent.width
           visible: root.step === 2 && root.entry !== "failure"
           showPhases: true
+          showHeadline: false
           logLines: 6
         }
 
