@@ -8,21 +8,25 @@ import QtQuick
 Singleton {
   id: root
 
-  // "" = nothing on screen. Kinds: volume · mute · mic · brightness · layout ·
-  // workspace. `payload` carries whatever that kind renders (see Modules/Osd).
+  // Kinds: volume · mute · mic · brightness · layout · workspace. `payload`
+  // carries whatever that kind renders (see Modules/Osd). Both survive hide():
+  // the pill window stays mapped through its fade-out, so clearing them there
+  // would swap the content for the fallback glyph mid-fade. "" only before the
+  // first show().
   property string kind: ""
   property var payload: ({})
 
-  readonly property bool showing: root.kind !== ""
+  property bool showing: false
 
   function show(kind, payload) {
     root.payload = payload ?? ({})
     root.kind = kind
+    root.showing = true
     hideTimer.restart()
   }
 
   function hide() {
-    root.kind = ""
+    root.showing = false
   }
 
   Timer {
