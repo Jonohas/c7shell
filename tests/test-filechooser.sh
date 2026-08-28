@@ -90,8 +90,37 @@ command -v dbus-daemon >/dev/null && python3 -c 'import dbus, dbus.service, gi' 
 # --- a private bus with a fake portal on it ---------------------------------
 # Private, emphatically: the real session bus has the real portal on it, and a
 # test that opened a file dialog on the developer's screen would be a bug.
+#
+# Hand-written config rather than --session, and the difference is the whole
+# point: --session reads session.conf, which pulls in the standard service
+# directories, and a bus that can activate services is not empty. The "no
+# portal" case below asks for org.freedesktop.portal.Desktop, and such a bus
+# starts the real /usr/lib/xdg-desktop-portal -- with the real kde, gtk and
+# hyprland backends behind it -- instead of refusing the call. The script then
+# waits on a dialog on the developer's screen until the timeout kills it. No
+# <servicedir> and no <standard_session_servicedirs/> here: the only thing on
+# this bus is what the test puts there.
 addr_file=$tmp/bus.addr
-dbus-daemon --session --print-address=1 --nofork >"$addr_file" 2>"$tmp/bus.err" &
+cat >"$tmp/bus.conf" <<'EOF'
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:tmpdir=/tmp</listen>
+  <policy context="default">
+    <allow own="*"/>
+    <allow send_type="method_call"/>
+    <allow send_type="signal"/>
+    <allow send_type="method_return"/>
+    <allow send_type="error"/>
+    <allow receive_type="method_call"/>
+    <allow receive_type="signal"/>
+    <allow receive_type="method_return"/>
+    <allow receive_type="error"/>
+  </policy>
+</busconfig>
+EOF
+dbus-daemon --config-file="$tmp/bus.conf" --print-address=1 --nofork >"$addr_file" 2>"$tmp/bus.err" &
 pids+=($!)
 for _ in $(seq 40); do [[ -s $addr_file ]] && break; sleep 0.1; done
 [[ -s $addr_file ]] || fail "the test bus did not start:\n$(cat "$tmp/bus.err")"
