@@ -181,8 +181,14 @@ cp "$here/../hypr/hyprlock.conf" "$lockdir/conf/hypr/hyprlock.conf"
 # c7shell-lock would have handed over to without locking anything.
 printf '#!/bin/sh\nprintf "%%s\\n" "$@"\n' > "$lockdir/bin/hyprlock"
 chmod +x "$lockdir/bin/hyprlock"
+# The PATH is hermetic -- only this bin, holding just what c7shell-lock and the
+# stubs invoke -- so that deleting the fake hyprctl below makes hyprctl truly
+# missing. With the inherited PATH appended, the developer's real hyprctl was
+# found instead and the missing-hyprctl case decorated against real monitors.
+ln -s "$(command -v python3)" "$lockdir/bin/python3"
+ln -s "$(command -v cat)" "$lockdir/bin/cat"
 runlock() {
-  PATH=$lockdir/bin:$PATH XDG_CONFIG_HOME=$lockdir/conf XDG_CACHE_HOME=$lockdir/cache \
+  PATH=$lockdir/bin XDG_CONFIG_HOME=$lockdir/conf XDG_CACHE_HOME=$lockdir/cache \
     "$lock" "$@" 2>"$lockdir/err"
 }
 
