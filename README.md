@@ -429,6 +429,9 @@ against a TTY, and its output is localised, coloured and column-aligned — so
 `arch-update` itself is still one click away: the failure state's "open in
 terminal" runs it.
 
+`c7shell-bootstrap` installs everything this needs; nothing here is a manual
+step.
+
 Elevation goes through one polkit action (`io.crimson7.c7shell.update`,
 `auth_admin_keep`), so a single authorisation covers both the repo half and
 the AUR half of a run. `bin/c7up-root` is the trust boundary and takes a fixed
@@ -444,11 +447,17 @@ keys), `upower` (battery), `solaar` (Logitech gestures — needs your own
 `~/.config/solaar/rules.yaml`). All are `optdepends`; the shell degrades
 without them.
 
-For the update flow: `pacman-contrib` (`checkupdates` for the rootless dry
-run, `pacdiff` for the pacnew list), `arch-update` (AUR — the shared config
-and state), `paru` (AUR updates), `flatpak`, `checkservices` (the post-update
-restart check). Without `pacman-contrib` the badge cannot count anything;
-without the rest, that source simply does not appear.
+The update flow's dependencies are not in this list — `c7shell-bootstrap`
+installs them, because the badge is not something the shell degrades
+gracefully without: `pacman-contrib` (`checkupdates` for the rootless dry run,
+`pacdiff` for the pacnew list) from the repos, and `arch-update` (the shared
+config and state) plus `checkservices` (the post-update restart check) from
+the AUR. `--no-aur` drops the last two and the flow still works — what is lost
+is agreement with a terminal `arch-update` about what is pending, and the
+service-restart step.
+
+`flatpak` stays genuinely optional: install it and its updates join the same
+flow, skip it and that source does not appear.
 
 ## Tests
 
