@@ -394,7 +394,7 @@ eat local edits by accident.
 | `sddm/themes/c7shell/` | the greeter theme; `Main.qml` wires SDDM's models into `Greeter.qml` |
 | `sddm/themes/c7shell/theme.conf` | greeter settings (wallpaper, user list, lockout) |
 | `share/c7shell-network-dispatcher` | NetworkManager dispatcher script; publishes the connection for the greeter's network pill |
-| `bin/c7up` | the system-update backend: dry run, transaction, pacnew review — NDJSON, unprivileged |
+| `bin/c7up` | the system-update backend: dry run, transaction, pacnew review, orphan cleanup — NDJSON, unprivileged |
 | `bin/c7up-root` | the only part of it that runs as root; takes a fixed verb, never a command line |
 | `share/polkit-1/actions/io.crimson7.c7shell.policy` | the polkit action that authorises it |
 | `quickshell/c7shell/Modules/Updates/` | the update dropdown's run view, the wizard, the toast |
@@ -416,9 +416,18 @@ is:
 
 The run never stops to ask a question. Everything answerable is answered
 before it starts, and anything left over — configs to review, a pending
-reboot, services wanting a restart — is collected at the end. "Later" parks it
-in **settings → system** with an amber dot on the badge rather than dropping
-it.
+reboot, services wanting a restart, packages nothing depends on any more — is
+collected at the end. "Later" parks it in **settings → system** with an amber
+dot on the badge rather than dropping it.
+
+Orphans are the one item that is offered rather than escalated: `arch-update`
+asks about them after every terminal run, and they are the same list
+(`pacman -Qtdq`), but an orphan costs disk and nothing else. Making one a
+decision would put a question in front of the one-click path on every machine
+that has ever removed a package, so they appear as a card in the cleanup step,
+a line in the dropdown and a card in **settings → system** — with their total
+size, the names spelled out, and one button that removes the set with
+`pacman -Rns`.
 
 `arch-update` is underneath: c7up reads its config (which AUR helper, which
 elevation command) and writes its state files, so the bar and a terminal run

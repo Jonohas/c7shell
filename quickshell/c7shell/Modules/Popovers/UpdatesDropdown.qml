@@ -151,6 +151,7 @@ GlassPopover {
     width: parent.width
     visible: !root.runningHere && UpdatesService.total === 0
              && UpdatesService.pacnews.length === 0
+             && UpdatesService.orphans.length === 0
     text: "everything is current"
     font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
     color: Theme.textDisabled
@@ -172,6 +173,38 @@ GlassPopover {
     Text {
       anchors.right: parent.right
       text: "review →"
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.text3
+
+      HoverHandler { cursorShape: Qt.PointingHandCursor }
+      TapHandler {
+        onTapped: {
+          PopoverManager.close()
+          UpdatesService.openWizard("review")
+        }
+      }
+    }
+  }
+
+  // Packages nothing depends on any more. Not amber and not a decision: an
+  // orphan is disk, not a broken config, and the flow is still clean with a
+  // dozen of them sitting there. It is offered, and that is all.
+  Item {
+    width: parent.width
+    height: 15
+    visible: !root.runningHere && UpdatesService.orphans.length > 0
+
+    Text {
+      anchors.left: parent.left
+      text: `${UpdatesService.orphans.length} package${UpdatesService.orphans.length === 1 ? "" : "s"} nothing needs`
+          + (UpdatesService.orphanSize > 0
+             ? ` · ${UpdatesService.humanSize(UpdatesService.orphanSize)}` : "")
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.text3
+    }
+    Text {
+      anchors.right: parent.right
+      text: "clean up →"
       font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.text3
 

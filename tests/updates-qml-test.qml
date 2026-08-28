@@ -117,6 +117,34 @@ Window {
     root.check(UpdatesService.kernelPending, "a kernel decision did not tint the bar")
     root.check(UpdatesService.rebootPredicted, "the predicted reboot was dropped")
 
+    // -- the cleanup nobody was shown ----------------------------------------
+    // Orphans ride along on the verdict, and the card is built from the size
+    // sum and the name list. A verdict without them must leave the card off
+    // rather than render "0 packages · NaN".
+    root.check(UpdatesService.orphans.length === 0,
+      "a verdict with no orphan list still produced orphans")
+    root.check(UpdatesService.orphanSize === 0,
+      `orphanSize with no orphans = ${UpdatesService.orphanSize}`)
+
+    // Assigned directly rather than through `verdict`: the property is written
+    // by three different events (a verdict, a run's done, the standalone
+    // orphans verb) and cleared by "keep them", so it is a property and not a
+    // binding. What is under test here is the arithmetic the card is built
+    // from, which is the part that is silently wrong rather than absent.
+    UpdatesService.orphans =
+      [{ name: "oldlib", size: 12582912 }, { name: "stale-thing", size: 524288 }]
+    root.check(UpdatesService.orphanSize === 13107200,
+      `orphanSize summed to ${UpdatesService.orphanSize}`)
+    root.check(UpdatesService.orphanNames().join(" · ") === "oldlib · stale-thing",
+      `the orphan card would list "${UpdatesService.orphanNames().join(" · ")}"`)
+    // Orphans are cleanup, not a decision: they must not tint the bar or take
+    // the one-click path away.
+    root.check(!UpdatesService.kernelPending || UpdatesService.decisions.length === 1,
+      "the orphan list changed what counts as a decision")
+    // An empty removal is a no-op rather than a c7up invocation with no
+    // arguments, which would exit 2 and pop a polkit dialog for nothing.
+    UpdatesService.removeOrphans([])
+
     // These three route into the Terminal singleton, and an unresolved name
     // there would not surface until the first click on "merge…" in a shipped
     // build. Calling them here is the only place that gets caught.
