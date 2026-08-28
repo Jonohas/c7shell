@@ -27,7 +27,7 @@ Scope {
 
   readonly property bool hasCleanup:
     UpdatesService.pacnews.length > 0 || UpdatesService.rebootRequired
-    || UpdatesService.services.length > 0
+    || UpdatesService.services.length > 0 || UpdatesService.orphans.length > 0
 
   // Two dots or three. On the review-only entry there are none at all.
   readonly property int stepCount: {
@@ -88,7 +88,10 @@ Scope {
               text: root.entry === "failure" ? `Stopped at package ${UpdatesService.result?.done ?? 0}`
                   : root.step === 1 ? "Before we update"
                   : root.step === 2 ? "Updating"
-                  : root.entry === "review" ? `${UpdatesService.pacnews.length} config file${UpdatesService.pacnews.length === 1 ? "" : "s"} to review`
+                  : root.entry === "review"
+                    ? (UpdatesService.pacnews.length > 0
+                       ? `${UpdatesService.pacnews.length} config file${UpdatesService.pacnews.length === 1 ? "" : "s"} to review`
+                       : `${UpdatesService.orphans.length} package${UpdatesService.orphans.length === 1 ? "" : "s"} nothing needs`)
                   : `Done — ${UpdatesService.result?.updated ?? 0} updated`
               font { family: Theme.fontDisplay; pixelSize: 13; weight: 700 }
               color: Theme.text
@@ -400,6 +403,14 @@ Scope {
                 GhostButton { label: "later"; onTriggered: UpdatesService.services = [] }
               }
             }
+          }
+
+          // arch-update asks this after every run, in a terminal nobody sees.
+          // Here it is a card with the names in it, at the wizard's width.
+          OrphanCard {
+            width: parent.width
+            visible: UpdatesService.orphans.length > 0
+            onDismissed: UpdatesService.orphans = []
           }
 
           Rectangle {

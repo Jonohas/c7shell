@@ -108,6 +108,20 @@ case "$verb" in
     rm -f -- "$1.c7up-bak" "$1.pacnew"
     ;;
 
+  # The post-update task arch-update offers and the shell never showed. Root
+  # re-derives the orphan list rather than trusting the argv it was handed: an
+  # argument is a wish, `pacman -Qtdq` is the fact, and -Rns on a package
+  # something still depends on takes that something with it.
+  remove-orphans)
+    (($# > 0)) || die 'no package named'
+    orphans=$(pacman -Qtdq) || true
+    for pkg; do
+      check_pkgname "$pkg"
+      grep -qxF -- "$pkg" <<<"$orphans" || die "not an orphan package: $pkg"
+    done
+    exec pacman -Rns --noconfirm --color never -- "$@"
+    ;;
+
   restart-services)
     (($# > 0)) || die 'no service named'
     for s; do

@@ -263,6 +263,10 @@ for l in sys.stdin:
   || fail "the run never cleared its waiting-on-authorisation state:\n$out"
 
 [[ $(ev done <<<"$out" | field ok) == True ]] || fail "the run did not report success:\n$out"
+# Step 3 is built from this payload, so an absent key is a card that never
+# appears rather than a card that says zero.
+[[ $(ev done <<<"$out" | jq_py "'orphans' in d") == True ]] \
+  || fail "the run's done event carried no orphan list:\n$out"
 # A run that leaves the counts it started from in place would have the bar
 # still advertising updates that are now installed.
 [[ ! -s $state/last_updates_check_packages ]] \
@@ -453,5 +457,93 @@ out=$(C7UP_TEST_ROOT="$tmp" bash "$tmp/lib/c7up-root" pacnew-write "$tmp/fake" "
 [[ $out == *"not a regular file"* ]] \
   || fail "pacnew-write did not reject a symlink as its source: $out"
 [[ $(cat "$tmp/fake") == x ]] || fail 'pacnew-write wrote despite rejecting the source' 
+
+# --------------------------------------------------------------------------
+# 13. Orphan packages: arch-update's own post-update question, which this
+#     flow computed and never showed. They are cleanup, not a decision --
+#     every machine that has ever removed a package has some, and putting
+#     them in front of the clean path would mean nobody ever gets one click.
+# --------------------------------------------------------------------------
+stub checkupdates 'echo "mesa 25.1.2 -> 25.1.4"'
+stub pacdiff 'exit 0'
+stub paru 'exit 0'
+stub pacman 'case "$*" in
+  *--print-format*) echo 1000 ;;
+  *--print*) echo "https://mirror/extra/mesa.pkg.tar.zst" ;;
+  *-Qtdq*) echo oldlib; echo stale-thing ;;
+  *-Qii*) printf "MODIFIED\t/etc/pacman.conf\n" ;;
+  *-Qi*) cat <<EOF
+Name            : oldlib
+Version         : 1.0-1
+Installed Size  : 12.00 MiB
+Description     : nothing depends on this
+
+Name            : stale-thing
+Version         : 2.0-1
+Installed Size  : 512.00 KiB
+Description     : nor this
+EOF
+  ;;
+esac
+exit 0'
+
+out=$(run_verdict) || fail "verdict exited non-zero with orphans present:\n$(cat "$tmp/err")"
+[[ $(jq_py "[x['name'] for x in d['orphans']]" <<<"$out") == "['oldlib', 'stale-thing']" ]] \
+  || fail "the verdict did not carry the orphan list:\n$out"
+# The size is the only reason to care about an orphan, and MiB/KiB is what
+# pacman prints -- a naive parse turns 512.00 KiB into 512 bytes.
+[[ $(jq_py "d['orphans'][0]['size']" <<<"$out") == 12582912 ]] \
+  || fail "an orphan's MiB size was not converted to bytes:\n$out"
+[[ $(jq_py "d['orphans'][1]['size']" <<<"$out") == 524288 ]] \
+  || fail "an orphan's KiB size was not converted to bytes:\n$out"
+# Cleanup, not a decision: two orphans and a routine mesa bump is still the
+# one-click path.
+[[ $(field clean <<<"$out") == True ]] || fail "orphans escalated the clean path:\n$out"
+[[ $(jq_py "len(d['decisions'])" <<<"$out") == 0 ]] \
+  || fail "an orphan became a decision:\n$out"
+
+# The standalone verb, which is what the shell re-reads after a removal --
+# taking one orphan away can orphan the next.
+out=$(env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp" \
+      XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" \
+      XDG_CONFIG_HOME="$tmp/config" TMPDIR="$tmp" \
+      bash "$c7up" orphans 2>"$tmp/err") || fail "the orphans verb exited non-zero:\n$(cat "$tmp/err")"
+[[ $(jq_py "[x['name'] for x in d['packages']]" <<<"$out") == "['oldlib', 'stale-thing']" ]] \
+  || fail "the orphans verb did not list them:\n$out"
+
+# A machine with none says so in JSON rather than emitting a bare comma.
+stub pacman 'case "$*" in
+  *-Qtdq*) exit 1 ;;
+esac
+exit 0'
+out=$(env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp" \
+      XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" \
+      XDG_CONFIG_HOME="$tmp/config" TMPDIR="$tmp" \
+      bash "$c7up" orphans 2>/dev/null)
+python3 -c 'import json,sys;json.loads(sys.stdin.read())' <<<"$out" \
+  || fail "no orphans at all did not produce valid JSON:\n$out"
+[[ $(jq_py "d['packages']" <<<"$out") == "[]" ]] \
+  || fail "no orphans should be an empty list:\n$out"
+
+# Root re-derives the list rather than trusting its argv: -Rns on a package
+# something still depends on takes that something with it, and the caller is
+# not in a position to promise otherwise.
+stub pacman 'case "$*" in
+  *-Qtdq*) echo oldlib ;;
+  *) echo "REMOVED: $*" ;;
+esac
+exit 0'
+out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans oldlib 2>&1 || true)
+[[ $out == *"REMOVED:"* && $out == *"-Rns"* ]] \
+  || fail "c7up-root did not remove a genuine orphan: $out"
+out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans systemd 2>&1 || true)
+[[ $out == *"not an orphan package"* ]] \
+  || fail "c7up-root removed a package that is not an orphan: $out"
+out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans 'oldlib; reboot' 2>&1 || true)
+[[ $out == *"implausible package name"* ]] \
+  || fail "c7up-root accepted a crafted package name: $out"
+out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans 2>&1 || true)
+[[ $out == *"no package named"* ]] \
+  || fail "c7up-root accepted an empty removal: $out"
 
 echo 'test-c7up.sh: all checks passed'

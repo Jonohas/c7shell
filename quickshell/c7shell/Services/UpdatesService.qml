@@ -60,6 +60,18 @@ Singleton {
   property var services: []              // units wanting a restart
   property bool rebootRequired: false
 
+  // Packages nothing depends on any more -- arch-update's own post-update
+  // question, which this shell used to compute and never show. They are not a
+  // decision and they never block a run: an orphan costs disk and nothing
+  // else, and putting it in front of the clean path would mean no machine
+  // that has ever removed a package gets one click again.
+  property var orphans: []
+  // A removal goes through pkexec, so there is a dialog between the click and
+  // anything happening. The card says "removing…" rather than looking dead.
+  property bool removingOrphans: false
+  readonly property real orphanSize:
+    root.orphans.reduce((n, p) => n + (p.size ?? 0), 0)
+
   // A clean run that turned out to need a decision anyway. The toast escalates
   // on this rather than the run having stopped mid-way to ask.
   readonly property bool needsReview: root.pacnews.length > 0 || root.rebootRequired
@@ -139,6 +151,18 @@ Singleton {
   }
 
   function reloadPacnews() { pacnewProc.running = true }
+  function reloadOrphans() { orphanProc.running = true }
+
+  // -Rns takes the whole set at once, the way arch-update asks it. Removing
+  // one can orphan the next, so the list is reloaded rather than assumed
+  // empty afterwards.
+  function removeOrphans(names) {
+    if (!names || names.length === 0 || root.removingOrphans) return
+    root.removingOrphans = true
+    removeOrphanProc.exec(["c7up", "remove-orphans"].concat(names))
+  }
+  function orphanNames() { return root.orphans.map(p => p.name) }
+
   function resolvePacnew(action, path) { resolveProc.exec(["c7up", "resolve", action, path]) }
 
   // "merge…" is a three-pane editor, which is the one part of this flow that
@@ -180,7 +204,10 @@ Singleton {
           if (ev.error) { root.checkError = ev.error; return }
           root.verdict = ev
           // A verdict is also the moment to notice work parked by an earlier
-          // run: pacnews outlive the process that made them.
+          // run: pacnews and orphans outlive the process that made them. The
+          // orphans ride along on the verdict itself; the pacnews need a
+          // second call because resolving one does not produce a new verdict.
+          root.orphans = ev.orphans ?? []
           root.reloadPacnews()
         } catch (e) {
           console.warn("updates: unparseable verdict line:", line)
@@ -231,6 +258,7 @@ Singleton {
           root.result = ev
           root.pacnews = ev.pacnew ?? []
           root.services = ev.services ?? []
+          root.orphans = ev.orphans ?? []
           root.rebootRequired = ev.reboot ?? false
           break
         }
@@ -281,6 +309,30 @@ Singleton {
       }
     }
     stderr: StdioCollector {}
+  }
+
+  Process {
+    id: orphanProc
+    command: ["c7up", "orphans"]
+    stdout: SplitParser {
+      onRead: line => {
+        if (line.trim() === "") return
+        try {
+          const ev = JSON.parse(line)
+          if (ev.ev === "orphans") root.orphans = ev.packages ?? []
+        } catch (e) {}
+      }
+    }
+    stderr: StdioCollector {}
+  }
+
+  Process {
+    id: removeOrphanProc
+    stderr: StdioCollector {}
+    onExited: {
+      root.removingOrphans = false
+      root.reloadOrphans()
+    }
   }
 
   Process {

@@ -397,10 +397,10 @@ eat local edits by accident.
 | `bin/c7-authd` | the password prompt's backend: polkit agent + the `sudo -A` askpass socket |
 | `bin/c7-askpass` | what `SUDO_ASKPASS` points at, so sudo asks through the shell |
 | `quickshell/c7shell/Modules/Auth/` | the 280px prompt panel and the window it lives in |
-| `bin/c7up` | the system-update backend: dry run, transaction, pacnew review — NDJSON, unprivileged |
+| `bin/c7up` | the system-update backend: dry run, transaction, pacnew review, orphan cleanup — NDJSON, unprivileged |
 | `bin/c7up-root` | the only part of it that runs as root; takes a fixed verb, never a command line |
 | `share/polkit-1/actions/io.crimson7.c7shell.policy` | the polkit action that authorises it |
-| `quickshell/c7shell/Modules/Updates/` | the update dropdown's run view, the wizard, the toast |
+| `quickshell/c7shell/Modules/Updates/` | the update dropdown's run view, the wizard, the toast, the pacnew and orphan cards |
 | `/etc/sddm.conf.d/10-c7shell.conf` | selects the theme; written by bootstrap/upgrade, not by the package |
 
 ## Password prompts
@@ -474,9 +474,21 @@ is:
 
 The run never stops to ask a question. Everything answerable is answered
 before it starts, and anything left over — configs to review, a pending
-reboot, services wanting a restart — is collected at the end. "Later" parks it
-in **settings → system** with an amber dot on the badge rather than dropping
-it.
+reboot, services wanting a restart, packages nothing depends on any more — is
+collected at the end. "Later" parks it in **settings → system** with an amber
+dot on the badge rather than dropping it.
+
+Orphans are the one item that is offered rather than escalated: `arch-update`
+asks about them after every terminal run, and they are the same list
+(`pacman -Qtdq`), but an orphan costs disk and nothing else. Making one a
+decision would put a question in front of the one-click path on every machine
+that has ever removed a package, so they are offered rather than escalated:
+one card — total size, names spelled out, `remove them` / `keep them` — at
+three widths. In the dropdown "clean up" unfolds it in place rather than
+opening a window, the same way the update itself runs in place; the wizard's
+cleanup step and **settings → system** show the same card. Removal is
+`pacman -Rns` on the set, and root re-derives the orphan list before it
+removes anything.
 
 `arch-update` is underneath: c7up reads its config (which AUR helper, which
 elevation command) and writes its state files, so the bar and a terminal run
