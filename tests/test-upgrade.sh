@@ -23,7 +23,7 @@ ship() { mkdir -p -- "$(dirname -- "$C7SHELL_SHARE/$1")"; printf '%s\n' "$2" > "
 local_is() { [[ $(cat "$XDG_CONFIG_HOME/$1") == "$2" ]] || fail "$1 should be '$2', is '$(cat "$XDG_CONFIG_HOME/$1")'"; }
 
 # v1 ships, and c7shell-setup installs it and records the manifest
-mkdir -p "$C7SHELL_SHARE"/{hypr,quickshell/c7shell}
+mkdir -p "$C7SHELL_SHARE"/{hypr,quickshell/c7shell,xdg-desktop-portal}
 ship hypr/hyprland.lua 'v1 entry'
 ship hypr/keep.lua 'v1 keep'
 ship hypr/gone.lua 'v1 gone'

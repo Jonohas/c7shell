@@ -35,6 +35,12 @@ depends=(
   # scripts/c7shell-theme-export.py). hyprland-portals.conf already names gtk as
   # the fallback backend, so installing it is the whole fix.
   'xdg-desktop-portal-gtk'
+  # The shipped xdg-desktop-portal/hyprland-portals.conf routes FileChooser to
+  # the kde backend, so file pickers are the KDE file dialog -- same KIO
+  # sidebar and kdeglobals palette as dolphin (SUPER+E). Without the package
+  # the portal silently falls back to the gtk picker and the config line does
+  # nothing.
+  'xdg-desktop-portal-kde'
 )
 optdepends=(
   # Not a depends=: the greeter is system state that c7shell-bootstrap sets up,
@@ -101,7 +107,7 @@ package() {
   # `quickshell/c7shell`, so it lands in ~/.config/quickshell/c7shell and
   # leaves any other config in ~/.config/quickshell alone (`qs -c c7shell`).
   install -dm755 "$pkgdir/usr/share/$pkgname"
-  cp -a hypr quickshell "$pkgdir/usr/share/$pkgname/"
+  cp -a hypr quickshell xdg-desktop-portal "$pkgdir/usr/share/$pkgname/"
   # Dev-facing only, and setup copies whatever is here into the user's config.
   rm -rf "$pkgdir/usr/share/$pkgname/quickshell/c7shell/docs"
   chmod -R u=rwX,go=rX "$pkgdir/usr/share/$pkgname"

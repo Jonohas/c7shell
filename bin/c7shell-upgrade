@@ -24,7 +24,7 @@ cache=${C7SHELL_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/c7shell}
 state=${C7SHELL_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/c7shell}
 manifest=$state/manifest
 
-parts=(hypr quickshell/c7shell)
+parts=(hypr quickshell/c7shell xdg-desktop-portal)
 dry=0
 do_package=1
 do_config=1

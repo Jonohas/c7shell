@@ -7,7 +7,7 @@ set -euo pipefail
 share=${C7SHELL_SHARE:-/usr/share/c7shell}
 conf=${XDG_CONFIG_HOME:-$HOME/.config}
 state=${C7SHELL_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/c7shell}
-parts=(hypr quickshell/c7shell)
+parts=(hypr quickshell/c7shell xdg-desktop-portal)
 force=0
 dry=0
 
@@ -15,8 +15,9 @@ usage() {
   cat <<USAGE
 usage: c7shell-setup [--force] [--dry-run]
 
-  --force     replace existing ~/.config/hypr and ~/.config/quickshell/c7shell,
-              keeping a timestamped .bak-<stamp> copy of each
+  --force     replace existing ~/.config/hypr, ~/.config/quickshell/c7shell and
+              ~/.config/xdg-desktop-portal, keeping a timestamped .bak-<stamp>
+              copy of each
   --dry-run   print what would happen and change nothing
 
 env: C7SHELL_SHARE (default /usr/share/c7shell)

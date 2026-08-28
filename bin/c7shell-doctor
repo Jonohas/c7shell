@@ -341,6 +341,17 @@ else
   want_pkg xdg-desktop-portal-gtk
 fi
 
+# The shipped hyprland-portals.conf routes FileChooser to the kde backend: the
+# KDE file dialog shares dolphin's KIO sidebar and kdeglobals palette, so the
+# picker matches the file manager. A warn, not a FAIL -- without it the portal
+# falls back to the gtk picker on its own and nothing stops working.
+if compgen -G "$root/usr/lib*/xdg-desktop-portal-kde" >/dev/null \
+   || compgen -G "$root/usr/libexec/xdg-desktop-portal-kde" >/dev/null; then
+  ok 'xdg-desktop-portal-kde'
+else
+  warn 'xdg-desktop-portal-kde missing -- file pickers fall back to the gtk one, which matches nothing (package: xdg-desktop-portal-kde)'
+fi
+
 # ...and the backend can only report what GSettings holds. Unset means "no
 # preference", which is what left every app light in the first place.
 if command -v gsettings >/dev/null; then
