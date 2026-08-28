@@ -36,7 +36,7 @@ usage: ./install.sh [options] [makepkg options...]
 Takes a bare Arch install to a working c7shell session:
   1. installs the base-devel tools makepkg needs (fakeroot, debugedit, ...)
   2. runs c7shell-bootstrap: GPU driver, SDDM, pipewire, fonts, services
-  3. runs makepkg -si to build and install the package
+  3. runs makepkg -sif to build and install the package
   4. runs c7shell-doctor to check the result and offer the optional programs
 
 options (everything else is passed straight to makepkg):
@@ -123,7 +123,17 @@ if [[ -z ${skip_bootstrap:-} ]]; then
   fi
 fi
 
-makepkg -si ${makepkg_args[@]+"${makepkg_args[@]}"}
+# -f, always: makepkg does not build at all when a tarball for the pkgver it
+# computes is already sitting in this directory -- it prints "A package has
+# already been built, installing existing package..." and hands that file to
+# pacman. Because the PKGBUILD sources a git branch and pkgver() bakes the
+# commit into the version, the file it finds is often one an interrupted build
+# left half-written, and pacman rejects it ("missing package metadata ...
+# invalid or corrupted package") on every subsequent run, because the broken
+# file keeps matching. Deciding whether a rebuild is worth doing belongs to
+# c7shell-upgrade, which compares the installed commit against the branch --
+# never to whatever happens to be lying in the build directory.
+makepkg -sif ${makepkg_args[@]+"${makepkg_args[@]}"}
 
 if [[ -z ${C7SHELL_SKIP_DOCTOR:-} ]]; then
   # Prefer the copy that was just installed; fall back to the tree we are in
