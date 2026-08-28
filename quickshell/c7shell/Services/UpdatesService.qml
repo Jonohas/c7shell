@@ -151,10 +151,18 @@ Singleton {
 
   // Step 1's "view diff" on an AUR package whose PKGBUILD moved. A PKGBUILD is
   // a shell script and its diff is read in a pager, not a panel.
-  function showDiff(pkg) { Terminal.run(["sh", "-c", `c7up aurdiff ${pkg} | less -R`]) }
+  //
+  // WHICH pager, and whether this machine has one at all, is c7up's business
+  // and not this file's. Naming `less` here is how the log button came to open
+  // a terminal that printed "Failed to launch child: less" and closed again:
+  // `less` is not part of base, and a shell must not assume the tools it hands
+  // work off to.
+  function showDiff(pkg) { Terminal.run(["c7up", "aurdiff", pkg]) }
 
+  // No argument: c7up falls back to the most recent log, so the button still
+  // works in a shell session that has not run an update itself.
   function openLog() {
-    if (root.logPath !== "") Terminal.run(["less", "-R", root.logPath])
+    Terminal.run(root.logPath !== "" ? ["c7up", "log", root.logPath] : ["c7up", "log"])
   }
   function restartServices(units) { restartProc.exec(["c7up", "restart"].concat(units)) }
   function reboot() { rebootProc.exec(["c7up", "reboot"]) }

@@ -308,4 +308,84 @@ out=$(env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp" \
 [[ -s $state/last_updates_check_packages ]] \
   || fail "a failed run cleared arch-update's pending list"
 
+# --------------------------------------------------------------------------
+# 11. The three hand-offs to a terminal must not name a program the machine
+#     may not have. `less` is not part of base, and the first version of this
+#     shipped a "log" button that opened a terminal just long enough to print
+#     "Failed to launch child: less" and close again.
+# --------------------------------------------------------------------------
+# No QML file may name a pager or an editor: choosing one is c7up's job,
+# because only c7up runs at the moment of use and can look.
+qml=$here/../quickshell/c7shell
+# Comments stripped first, then any mention at all -- the first attempt at this
+# check only matched a quoted token and sailed straight past a `| less` inside
+# a template literal, which is exactly the form the bug shipped in.
+bad=$(find "$qml" -name '*.qml' -exec sed 's|//.*||' {} + \
+  | grep -nE '\b(less|most|vimdiff|nvim|nano)\b' || true)
+[[ -z $bad ]] || fail "a QML file names a pager or editor directly; c7up picks
+  those at the point of use so a machine without it still gets something:\n$bad"
+
+logdir=$tmp/cache/c7up
+mkdir -p "$logdir"
+printf 'line one\nline two\n' > "$logdir/$(date +%F).log"
+
+# stdin from /dev/null and a timeout: a pager that decided to be interactive
+# would otherwise hang the suite on whatever terminal it was started from.
+runc7up() {
+  timeout 20 env -i PATH="$1" HOME="$tmp" TERM=dumb \
+      XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" \
+      XDG_CONFIG_HOME="$tmp/config" TMPDIR="$tmp" \
+      bash "$c7up" "${@:2}" </dev/null || true
+  # `|| true` so a c7up that dies (an exec onto a program that is not there
+  # exits 127) reaches the assertion below and reports what went wrong, rather
+  # than set -e killing this file with no message at all.
+}
+
+# A machine with a pager uses it.
+stub less 'echo "LESS SAW: $*"'
+out=$(runc7up "$bin:/usr/bin:/bin" log)
+[[ $out == *"LESS SAW:"* ]] || fail "the log verb did not use the pager it found:\n$out"
+
+# A machine with no less at all still shows the log rather than failing to
+# launch. `more` is util-linux, so it is there on any Arch install.
+rm -f "$bin/less"
+out=$(runc7up "$bin:/usr/bin:/bin" log 2>&1)
+[[ $out == *"line one"* ]] \
+  || fail "with no less installed the log was not shown at all:\n$out"
+[[ $out != *"No such file"* && $out != *"command not found"* ]] \
+  || fail "the log verb tried to launch a pager that is not installed:\n$out"
+
+# Not even more: it must still print the log and hold the terminal open, not
+# flash it shut.
+barebin=$tmp/barebin; mkdir -p "$barebin"
+# diff too: the merge fallback below shows a diff when no merge tool exists.
+for h in bash cat date ls head printf read sed rm mkdir tr grep diff; do
+  p=$(command -v "$h" 2>/dev/null) && ln -sf "$p" "$barebin/$h"
+done
+out=$(runc7up "$barebin" log 2>&1)
+[[ $out == *"line one"* ]] || fail "with no pager at all the log was not printed:\n$out"
+[[ $out == *"press enter"* ]] \
+  || fail "with no pager the terminal would close before anything could be read:\n$out"
+
+# $PAGER is the user's choice and wins over anything we would pick.
+out=$(PAGER=cat runc7up "$bin:/usr/bin:/bin" log 2>&1)
+[[ $out == *"line one"* ]] || fail "PAGER was not honoured:\n$out"
+
+# No log yet is a sentence, not a stack trace.
+out=$(timeout 20 env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp" XDG_CACHE_HOME="$tmp/nothing" \
+        XDG_STATE_HOME="$tmp/state" XDG_CONFIG_HOME="$tmp/config" TMPDIR="$tmp" \
+        bash "$c7up" log </dev/null 2>&1)
+[[ $out == *"no update log yet"* ]] || fail "an absent log was not explained:\n$out"
+
+# And a merge with no merge tool installed shows the difference instead of
+# exec'ing something that is not there.
+target=$tmp/etc-conf
+printf 'a\nb\n' > "$target"
+printf 'a\nc\n' > "$target.pacnew"
+out=$(PAGER=cat runc7up "$barebin" resolve merge "$target" 2>&1)
+[[ $out == *"no merge tool found"* ]] \
+  || fail "a missing merge tool was not reported:\n$out"
+[[ $out == *"-b"* && $out == *"+c"* ]] \
+  || fail "with no merge tool the difference itself was not shown:\n$out"
+
 echo 'test-c7up.sh: all checks passed'

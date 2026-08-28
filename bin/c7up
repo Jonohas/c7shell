@@ -19,6 +19,7 @@
 #   resolve keep|take  resolve one of them
 #   services           units wanting a restart after the run
 #   aurdiff <pkg>      the PKGBUILD diff behind step 1's "view diff"
+#   log [path]         the run log, in whatever pager this machine has
 #   reboot             finish a pending kernel update
 #
 # Everything here runs unprivileged. The only root is bin/c7up-root, reached
@@ -429,6 +430,44 @@ do_run() {
     "$pacnew_json" "$services_json" "$reboot")"
 }
 
+# ----------------------------------------------------------------- pager ----
+# The shell hands three things to a terminal -- the log, a PKGBUILD diff and a
+# pacnew merge -- and every one of them used to name a program that a perfectly
+# ordinary Arch install may not have. `less` is not pulled in by base, and a
+# terminal that opens just long enough to print "Failed to launch child: less"
+# is a worse answer than no button at all. So the choice happens here, at the
+# moment of use, and always ends somewhere that exists.
+page() {
+  local pager
+  for pager in ${PAGER:+"$PAGER"} less most more; do
+    command -v "${pager%% *}" >/dev/null || continue
+    # -R so the log's own colours survive; the others are given no flags
+    # because none of them agree on what the flags mean.
+    case ${pager%% *} in
+      less) exec "$pager" -R "$@" ;;
+      *) exec "$pager" "$@" ;;
+    esac
+  done
+  # Nothing at all. cat on its own would flash the terminal shut before any of
+  # it could be read, so hold the window open.
+  cat -- "$@"
+  printf '\n-- no pager installed (try: pacman -S less) -- press enter to close '
+  # `read` returns 1 at EOF, and that would otherwise become c7up's exit
+  # status: showing the log successfully must not report failure.
+  read -r _ || true
+  return 0
+}
+
+# The editor for a pacnew merge. DIFFPROG is pacdiff's own variable and
+# arch-update.conf may set diff_prog; both are the user's choice and win.
+merge_prog() {
+  local p
+  for p in ${DIFFPROG:+"$DIFFPROG"} ${diff_prog:+"$diff_prog"} vimdiff "nvim -d" "vim -d"; do
+    command -v "${p%% *}" >/dev/null && { printf '%s' "$p"; return 0; }
+  done
+  return 1
+}
+
 # ---------------------------------------------------------------- pacnew ----
 collect_pacnew() {
   local files; files=$(pacdiff -o 2>/dev/null)
@@ -468,22 +507,55 @@ case "${1-}" in
       take) pkexec "$libdir/c7up-root" pacnew-take "${2-}" ;;
       # "merge" is a three-pane editor, which is a terminal's job. The wizard
       # links here and the shell opens it in $TERMINAL.
-      merge) exec "${DIFFPROG:-vimdiff}" "${2-}" "${2-}.pacnew" ;;
+      merge)
+        f=${2-}
+        if prog=$(merge_prog); then
+          # Unquoted on purpose: "nvim -d" is a program and an argument.
+          # shellcheck disable=SC2086
+          exec $prog "$f" "$f.pacnew"
+        fi
+        # No merge tool installed anywhere. Showing the difference is still
+        # most of the value, and it beats a terminal that dies on exec.
+        printf 'no merge tool found -- set DIFFPROG, or install one (vim, neovim)\n\n'
+        tmpd=${TMPDIR:-/tmp}/c7up-merge.$$
+        diff -u --label "$f (yours)" --label "$f.pacnew (shipped)" -- "$f" "$f.pacnew" > "$tmpd"
+        page "$tmpd"
+        rm -f "$tmpd"
+        exit 0
+        ;;
       *) echo 'c7up: resolve keep|take|merge <file>' >&2; exit 2 ;;
     esac
     ;;
   restart) shift; pkexec "$libdir/c7up-root" restart-services "$@" ;;
   reboot)  pkexec "$libdir/c7up-root" reboot ;;
+  log)
+    shift
+    # Named explicitly, or today's, or the most recent there is -- a run that
+    # crossed midnight, or a shell restarted since, must not leave "view log"
+    # pointing at nothing.
+    f=${1-}
+    [[ -n $f ]] || f=$logdir/$(date +%F).log
+    [[ -r $f ]] || f=$(ls -t "$logdir"/*.log 2>/dev/null | head -1)
+    if [[ -z $f || ! -r $f ]]; then
+      printf 'no update log yet in %s\n' "$logdir"
+      exit 0
+    fi
+    page "$f"
+    ;;
   aurdiff)
     shift
     pkg=${1-}
     clone="${XDG_CACHE_HOME:-$HOME/.cache}/paru/clone/$pkg/PKGBUILD"
+    out=${TMPDIR:-/tmp}/c7up-aurdiff.$$
     if [[ -r $clone ]]; then
       diff -u --label "PKGBUILD (built)" --label "PKGBUILD (aur)" \
-        "$clone" <("$aur_helper" -Gp "$pkg" 2>/dev/null)
+        "$clone" <("$aur_helper" -Gp "$pkg" 2>/dev/null) > "$out"
     else
-      "$aur_helper" -Gp "$pkg" 2>/dev/null
+      "$aur_helper" -Gp "$pkg" 2>/dev/null > "$out"
     fi
+    # Paged when a human is looking at it, plain when something is reading it.
+    if [[ -t 1 ]]; then page "$out"; else cat "$out"; fi
+    rm -f "$out"
     exit 0
     ;;
   ''|-h|--help)

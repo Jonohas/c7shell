@@ -1,6 +1,6 @@
 # Maintainer: Jonohas <https://github.com/Jonohas>
 pkgname=c7shell
-pkgver=0.1.0.r27.ga9d7ea2
+pkgver=0.1.0.r72.g90bf261
 pkgrel=1
 pkgdesc='c7shell desktop environment: Hyprland (lua config) with the c7shell Quickshell shell'
 arch=('any')
@@ -80,6 +80,10 @@ optdepends=(
   'paru: AUR updates in the same flow as the repo ones'
   'flatpak: flatpak updates in the same flow'
   'checkservices: the "these services want a restart" step after an update'
+  # Not required: c7up walks $PAGER, less, most, more and finally cat, so the
+  # log and diff views work on a machine with none of them. less is simply the
+  # nicest of those, and it is not part of base.
+  'less: a scrolling pager for the update log and PKGBUILD diffs'
   'kwallet: secret storage unlocked at login by conf/autostart.lua'
 )
 # lua: tests/test-monitors.lua loads conf/monitors.lua against a stubbed hl.

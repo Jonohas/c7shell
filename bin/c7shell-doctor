@@ -762,6 +762,9 @@ optional_entries=(
   "cmd:checkupdates:pacman-contrib:the rootless update check the bar's badge is built on"
   "cmd:pacdiff:pacman-contrib:the pacnew list the update wizard reviews"
   "cmd:checkservices:checkservices:the post-update service restart check"
+  # c7up degrades to more, then to cat, so this really is optional -- but the
+  # update log and PKGBUILD diffs are much easier to read in a real pager.
+  "cmd:less:less:a scrolling pager for the update log and PKGBUILD diffs"
 )
 
 
