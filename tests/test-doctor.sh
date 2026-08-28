@@ -296,6 +296,21 @@ out=$(run 2>&1) || fail "an installed c7shell-lock-info should be silent:\n$out"
 grep -q 'c7shell-lock-info, which is not installed' <<<"$out" \
   && fail "the helper is on PATH and still reported missing:\n$out"
 rm -f "$bin/c7shell-lock-info"
+
+# SUPER+L runs c7shell-lock, which ships with the package while the keybind
+# ships with the config -- so --config-only leaves the bind calling a command
+# that is not installed and nothing locks at all.
+mkdir -p "$conf/hypr/conf"
+printf 'hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("c7shell-lock"))\n' \
+  > "$conf/hypr/conf/binds.lua"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "a missing c7shell-lock should fail, got exit $rc"
+grep -q 'suspends unlocked' <<<"$out" || fail "the consequence was not spelled out:\n$out"
+stub c7shell-lock
+out=$(run 2>&1) || fail "an installed c7shell-lock should be silent:\n$out"
+grep -q 'runs c7shell-lock, which is not installed' <<<"$out" \
+  && fail "c7shell-lock is on PATH and still reported missing:\n$out"
+rm -f "$bin/c7shell-lock" "$conf/hypr/conf/binds.lua"
 printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 
 # --- the greeter theme -----------------------------------------------------

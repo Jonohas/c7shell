@@ -9,7 +9,10 @@ Singleton {
 
   // The launcher offers lock as well (the mockup puts it there), so the argv
   // is readable rather than written out twice.
-  readonly property var lockArgv: ["hyprlock"]
+  // c7shell-lock, not hyprlock: it draws the backdrop decoration the design
+  // doc asks for and then execs hyprlock. It falls back to plain hyprlock on
+  // any failure, so this stays the one call site either way.
+  readonly property var lockArgv: ["c7shell-lock"]
 
   function lock() { Quickshell.execDetached(root.lockArgv) }
 

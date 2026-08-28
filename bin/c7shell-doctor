@@ -319,6 +319,20 @@ if command -v hyprlock >/dev/null && [[ -d $conf/hypr ]]; then
       note 'the now-playing and status lines will be blank. It ships with the'
       note 'package, so the config was refreshed without it: c7shell-upgrade'
     fi
+    # SUPER+L, the power menu's lock row and hypridle all run c7shell-lock now.
+    # It ships with the package while the keybind ships with the config, so a
+    # ~/.config refreshed without a package rebuild (c7shell-upgrade
+    # --config-only) leaves every one of them calling a command that is not
+    # there. Nothing locks, and -- as ever -- the before-sleep lock fails the
+    # same way, so the machine suspends unlocked. A failure, not a warning.
+    if [[ -f $conf/hypr/conf/binds.lua ]] \
+       && grep -q 'c7shell-lock"' "$conf/hypr/conf/binds.lua" \
+       && ! command -v c7shell-lock >/dev/null; then
+      bad 'the lock keybind runs c7shell-lock, which is not installed -- nothing'
+      note 'locks, and this machine suspends unlocked. It ships with the package,'
+      note 'so the config was refreshed without rebuilding it:'
+      note '  c7shell-upgrade'
+    fi
   elif ((pending)); then
     printf '  next  the lock screen config lands with the rest -- run: c7shell-setup\n'
   else

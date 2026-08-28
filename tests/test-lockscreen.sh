@@ -151,6 +151,95 @@ rm -rf "$stubbin"
 grep -qE '^\s*screencopy_mode\s*=\s*1' "$conf" \
   || fail 'screencopy_mode is not 1, so hyprlock takes the dmabuf route and aborts on any virtual GPU -- nothing locks and the machine suspends unlocked'
 
+# The generated overlay image sits at zindex 0, above the background's -1.
+# hyprlock sorts widgets by zindex with std::ranges::sort, which is not stable,
+# so anything sharing 0 with the overlay has an unspecified draw order -- the
+# clock would render under the decoration on some runs and over it on others.
+# Every widget in this file therefore names its own layer.
+widgets=$(grep -cE '^(label|input-field) \{' "$conf")
+layered=$(grep -cE '^\s*zindex = 1$' "$conf")
+((widgets > 0)) || fail 'no labels or input-field found in hyprlock.conf'
+((widgets == layered)) \
+  || fail "$widgets widgets but $layered at zindex 1 -- one draws under the backdrop overlay on an unstable sort"
+
+# --- c7shell-lock, the backdrop decoration ---------------------------------
+# It replaces hyprlock at every call site, so its failure mode is the whole lock
+# screen. Everything below is about it degrading rather than dying.
+lock=$here/../bin/c7shell-lock
+[[ -x $lock ]] || fail 'bin/c7shell-lock is missing or not executable -- SUPER+L runs it'
+for caller in ../hypr/conf/binds.lua ../hypr/hypridle.conf; do
+  grep -q 'c7shell-lock' "$here/$caller" \
+    || fail "$caller does not call c7shell-lock, so it gets no backdrop decoration"
+done
+
+# A fake hyprctl and a cache of our own: the real ones would decorate against
+# whatever monitors this machine happens to have.
+lockdir=$tmp/lock
+mkdir -p "$lockdir/bin" "$lockdir/cache" "$lockdir/conf/hypr"
+cp "$here/../hypr/hyprlock.conf" "$lockdir/conf/hypr/hyprlock.conf"
+# Stands in for hyprlock itself: prints its argv and exits, so we can see what
+# c7shell-lock would have handed over to without locking anything.
+printf '#!/bin/sh\nprintf "%%s\\n" "$@"\n' > "$lockdir/bin/hyprlock"
+chmod +x "$lockdir/bin/hyprlock"
+runlock() {
+  PATH=$lockdir/bin:$PATH XDG_CONFIG_HOME=$lockdir/conf XDG_CACHE_HOME=$lockdir/cache \
+    "$lock" "$@" 2>"$lockdir/err"
+}
+
+# One monitor: a PNG the size of that monitor, and a config that points at it.
+printf '#!/bin/sh\ncat <<JSON\n[{"name":"DP-1","width":1920,"height":1080,"scale":1.0}]\nJSON\n' \
+  > "$lockdir/bin/hyprctl"
+chmod +x "$lockdir/bin/hyprctl"
+out=$(runlock) || fail "c7shell-lock exited non-zero:\n$(cat "$lockdir/err")"
+grep -q -- '--config' <<<"$out" || fail "c7shell-lock did not hand hyprlock a generated config:\n$out"
+gen=$lockdir/cache/c7shell/hyprlock-generated.conf
+[[ -f $gen ]] || fail 'no generated config was written'
+grep -q 'monitor = DP-1' "$gen" || fail "the generated config has no image for DP-1:\n$(tail -14 "$gen")"
+# min(1920, 1080) at scale 1: the size that makes a screen-aspect PNG land 1:1.
+grep -qE '^\s*size = 1080$' "$gen" || fail "wrong image size:\n$(tail -14 "$gen")"
+# The defaults would draw a circle inside a grey frame.
+grep -qE '^\s*rounding = 0$' "$gen" || fail 'the overlay image is left rounded'
+grep -qE '^\s*border_size = 0$' "$gen" || fail 'the overlay image is left with a border'
+# The whole config has to survive being copied into the generated one.
+grep -q 'screencopy_mode = 1' "$gen" || fail 'the generated config lost the base config'
+png=$(grep -oE '/[^ ]*\.png' "$gen" | head -1)
+[[ -f $png ]] || fail "the overlay PNG named in the config was not written: $png"
+# A PNG header, 1920x1080, 8-bit RGBA (colour type 6) -- anything else and
+# hyprlock draws nothing.
+python3 - "$png" <<'PYCHK' || fail 'the overlay is not a 1920x1080 RGBA PNG'
+import struct, sys
+d = open(sys.argv[1], "rb").read()
+w, h = struct.unpack(">II", d[16:24])
+sys.exit(0 if d[:8] == b"\x89PNG\r\n\x1a\n" and (w, h) == (1920, 1080)
+         and d[24] == 8 and d[25] == 6 else 1)
+PYCHK
+
+# Two monitors of different sizes get one image block each -- the whole reason
+# this runs at lock time instead of shipping one asset.
+printf '#!/bin/sh\ncat <<JSON\n[{"name":"DP-1","width":1920,"height":1080,"scale":1.0},{"name":"HDMI-A-1","width":2560,"height":1440,"scale":1.0}]\nJSON\n' \
+  > "$lockdir/bin/hyprctl"
+runlock >/dev/null || fail "two monitors broke c7shell-lock:\n$(cat "$lockdir/err")"
+(($(grep -c '^image {' "$gen") == 2)) || fail "expected one image block per monitor:\n$(grep -c '^image {' "$gen")"
+
+# No hyprctl at all, an unreadable config, and a hyprctl that fails: each one
+# has to reach hyprlock anyway. A lock screen with no decoration beats no lock
+# screen, and this is the code path that decides which one happens.
+printf '#!/bin/sh\nexit 1\n' > "$lockdir/bin/hyprctl"
+out=$(runlock) || fail 'a failing hyprctl should still reach hyprlock'
+grep -q -- '--config' <<<"$out" && fail 'a failing hyprctl still produced a generated config'
+rm -f "$lockdir/bin/hyprctl"
+out=$(runlock) || fail 'a missing hyprctl should still reach hyprlock'
+grep -q -- '--config' <<<"$out" && fail 'a missing hyprctl still produced a generated config'
+mv "$lockdir/conf/hypr/hyprlock.conf" "$lockdir/conf/hypr/gone"
+out=$(runlock) || fail 'an unreadable base config should still reach hyprlock'
+mv "$lockdir/conf/hypr/gone" "$lockdir/conf/hypr/hyprlock.conf"
+
+# An explicit --config is the caller overriding us; decorating someone else's
+# config would be a surprise, and the test harness above depends on it.
+out=$(runlock --config /some/other.conf)
+grep -q '/some/other.conf' <<<"$out" || fail "an explicit --config was not passed through:\n$out"
+(($(grep -c -- '--config' <<<"$out") == 1)) || fail "an explicit --config was decorated anyway:\n$out"
+
 command -v hyprlock >/dev/null || {
   echo 'SKIP: hyprlock not installed, only the file itself was checked'
   exit 0
