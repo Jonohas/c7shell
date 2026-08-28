@@ -97,39 +97,17 @@ SettingsPage {
 
   // -- packages nothing needs -------------------------------------------------
   // The other half of what "later" parks. arch-update offers this at the end
-  // of a terminal run; parking it here is what lets the card in the wizard say
-  // "keep them" without the offer being lost.
-  SettingsCard {
+  // of a terminal run; parking it here is what lets the dropdown and the
+  // wizard say "keep them" without the offer being lost.
+  SectionLabel {
+    text: "packages nothing needs"
+    visible: UpdatesService.orphans.length > 0
+  }
+
+  OrphanCard {
     width: parent.width
     visible: UpdatesService.orphans.length > 0
-    spacing: 8
-
-    Item {
-      width: parent.width
-      height: 26
-
-      Text {
-        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
-        text: `${UpdatesService.orphans.length} package${UpdatesService.orphans.length === 1 ? "" : "s"} nothing depends on`
-            + (UpdatesService.orphanSize > 0
-               ? ` · ${UpdatesService.humanSize(UpdatesService.orphanSize)}` : "")
-        font { family: Theme.fontMono; pixelSize: 11; weight: 400 }
-        color: Theme.text2
-      }
-      ActionChip {
-        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-        text: "remove them"
-        onTriggered: UpdatesService.removeOrphans(UpdatesService.orphanNames())
-      }
-    }
-
-    Text {
-      width: parent.width
-      wrapMode: Text.Wrap
-      text: UpdatesService.orphanNames().join(" · ")
-      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-      color: Theme.text3
-    }
+    onDismissed: UpdatesService.orphans = []
   }
 
   // -- pending reboot ---------------------------------------------------------

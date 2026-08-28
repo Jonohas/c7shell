@@ -66,6 +66,9 @@ Singleton {
   // else, and putting it in front of the clean path would mean no machine
   // that has ever removed a package gets one click again.
   property var orphans: []
+  // A removal goes through pkexec, so there is a dialog between the click and
+  // anything happening. The card says "removing…" rather than looking dead.
+  property bool removingOrphans: false
   readonly property real orphanSize:
     root.orphans.reduce((n, p) => n + (p.size ?? 0), 0)
 
@@ -154,7 +157,8 @@ Singleton {
   // one can orphan the next, so the list is reloaded rather than assumed
   // empty afterwards.
   function removeOrphans(names) {
-    if (!names || names.length === 0) return
+    if (!names || names.length === 0 || root.removingOrphans) return
+    root.removingOrphans = true
     removeOrphanProc.exec(["c7up", "remove-orphans"].concat(names))
   }
   function orphanNames() { return root.orphans.map(p => p.name) }
@@ -325,7 +329,10 @@ Singleton {
   Process {
     id: removeOrphanProc
     stderr: StdioCollector {}
-    onExited: root.reloadOrphans()
+    onExited: {
+      root.removingOrphans = false
+      root.reloadOrphans()
+    }
   }
 
   Process {

@@ -406,48 +406,11 @@ Scope {
           }
 
           // arch-update asks this after every run, in a terminal nobody sees.
-          // Here it is one card with the list in it, because "12 packages" is
-          // not something to say yes to unseen.
-          Rectangle {
+          // Here it is a card with the names in it, at the wizard's width.
+          OrphanCard {
             width: parent.width
             visible: UpdatesService.orphans.length > 0
-            implicitHeight: orph.implicitHeight + 18
-            radius: Theme.radiusRow
-            color: Theme.surface04
-            border.width: 1
-            border.color: Theme.hairline
-
-            Column {
-              id: orph
-              anchors { left: parent.left; right: parent.right; top: parent.top; margins: 9 }
-              spacing: 6
-
-              Text {
-                text: `${UpdatesService.orphans.length} package${UpdatesService.orphans.length === 1 ? "" : "s"} nothing depends on`
-                    + (UpdatesService.orphanSize > 0
-                       ? ` · ${UpdatesService.humanSize(UpdatesService.orphanSize)}` : "")
-                font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
-                color: Theme.text
-              }
-              Text {
-                width: parent.width
-                wrapMode: Text.Wrap
-                text: UpdatesService.orphanNames().join(" · ")
-                font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-                color: Theme.text3
-              }
-              Row {
-                spacing: 6
-                GhostButton {
-                  label: "remove them"
-                  onTriggered: UpdatesService.removeOrphans(UpdatesService.orphanNames())
-                }
-                // Kept, not queued: the next dry run finds them again, so
-                // "later" here is the same promise "later" makes everywhere
-                // else in this flow.
-                GhostButton { label: "keep them"; onTriggered: UpdatesService.orphans = [] }
-              }
-            }
+            onDismissed: UpdatesService.orphans = []
           }
 
           Rectangle {

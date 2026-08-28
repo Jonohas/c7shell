@@ -24,6 +24,14 @@ GlassPopover {
 
   readonly property bool runningHere: UpdatesService.running
 
+  // The orphan offer, unfolded in place. Same rule as the update itself: this
+  // panel does what it can do here, and a window is only for what genuinely
+  // needs one.
+  property bool cleaning: false
+  // Folded again on close: the next open is the summary, not wherever the
+  // last one was left.
+  onOpenChanged: if (!root.open) root.cleaning = false
+
   // -- header ------------------------------------------------------------------
   Item {
     width: parent.width
@@ -204,18 +212,21 @@ GlassPopover {
     }
     Text {
       anchors.right: parent.right
-      text: "clean up →"
+      text: root.cleaning ? "hide" : "clean up →"
       font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.text3
 
       HoverHandler { cursorShape: Qt.PointingHandCursor }
-      TapHandler {
-        onTapped: {
-          PopoverManager.close()
-          UpdatesService.openWizard("review")
-        }
-      }
+      TapHandler { onTapped: root.cleaning = !root.cleaning }
     }
+  }
+
+  OrphanCard {
+    width: parent.width
+    visible: !root.runningHere && root.cleaning && UpdatesService.orphans.length > 0
+    // Folded away, not resolved: the next dry run finds them again, and the
+    // list itself is left alone so settings → system still has it.
+    onDismissed: root.cleaning = false
   }
 
   // -- 12a · 2, running in place ---------------------------------------------------

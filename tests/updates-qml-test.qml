@@ -142,8 +142,13 @@ Window {
     root.check(!UpdatesService.kernelPending || UpdatesService.decisions.length === 1,
       "the orphan list changed what counts as a decision")
     // An empty removal is a no-op rather than a c7up invocation with no
-    // arguments, which would exit 2 and pop a polkit dialog for nothing.
+    // arguments, which would exit 2 and pop a polkit dialog for nothing --
+    // and it must not arm the card's "removing…" state, which only a real
+    // process exiting clears again.
+    root.check(!UpdatesService.removingOrphans, "the removing state did not start off")
     UpdatesService.removeOrphans([])
+    root.check(!UpdatesService.removingOrphans,
+      "an empty removal armed the card's removing state with nothing running")
 
     // These three route into the Terminal singleton, and an unresolved name
     // there would not surface until the first click on "merge…" in a shipped
