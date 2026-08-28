@@ -23,11 +23,15 @@ conf=${XDG_CONFIG_HOME:-$HOME/.config}
 cache=${C7SHELL_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/c7shell}
 state=${C7SHELL_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/c7shell}
 manifest=$state/manifest
+# Suffix for the backups --take-shipped leaves behind. One per run, so a single
+# upgrade's backups sort together.
+stamp=$(date +%Y%m%d%H%M%S)
 
 parts=(hypr quickshell/c7shell xdg-desktop-portal)
 dry=0
 do_package=1
 do_config=1
+take_shipped=0
 do_doctor=1
 do_greeter=1
 force=0
@@ -57,6 +61,11 @@ must not do the second (the configs are yours to edit).
   -n, --dry-run        print what would change and change nothing
       --package-only   rebuild and reinstall the package, leave ~/.config alone
       --config-only    refresh ~/.config from $share, don't touch the package
+      --take-shipped   resolve every config conflict in favour of the shipped
+                       version, backing the local file up as <file>.bak-<stamp>.
+                       For a config you have not deliberately edited -- the
+                       usual case on a machine set up before the manifest
+                       existed -- this is what you want.
       --no-doctor      skip the c7shell-doctor run at the end
       --no-greeter     don't touch the sddm greeter theme selection
   -f, --force          rebuild even when the installed version is current
@@ -85,6 +94,7 @@ while (($#)); do
     -n|--dry-run) dry=1 ;;
     --package-only) do_config=0 ;;
     --config-only) do_package=0 ;;
+    --take-shipped) take_shipped=1 ;;
     --no-doctor) do_doctor=0; pass_on+=(--no-doctor) ;;
     --no-greeter) do_greeter=0; pass_on+=(--no-greeter) ;;
     -f|--force) force=1 ;;
@@ -240,6 +250,17 @@ if ((do_config)); then
           if ((dry)); then printf '  would: rewrite %s\n' "$dst"
           else shipped_at "$rel" "$src" > "$dst"; fi
           ((++updated))
+        elif ((take_shipped)); then
+          # Asked for explicitly: the shipped file wins and the local one is
+          # kept as a backup rather than thrown away.
+          info "replace $rel  (yours backed up as $rel.bak-$stamp)"
+          if ((dry)); then printf '  would: back up and rewrite %s\n' "$dst"
+          else
+            cp -a -- "$dst" "$dst.bak-$stamp"
+            shipped_at "$rel" "$src" > "$dst"
+            rm -f -- "$dst.new"
+          fi
+          ((++updated))
         else
           # Edited locally and changed upstream: keep theirs, park ours.
           if [[ -e $dst.new ]] && [[ $(hash_of "$dst.new") == "$want" ]]; then
@@ -252,7 +273,12 @@ if ((do_config)); then
           conflicts+=("$rel")
           # The manifest keeps the older hash on purpose: it is still the
           # version this file diverged from, which is what the next upgrade
-          # needs to compare against.
+          # needs to compare against. With no manifest at all the fallback is
+          # the SHIPPED hash -- deliberately a hash the file does not have, so
+          # the file stays marked divergent on every run rather than being
+          # mistaken for one we installed and silently overwritten. It clears
+          # itself once the user merges: then have == want and the comparison
+          # above short-circuits before reaching here.
           now[$rel]=${last[$rel]:-$want}
         fi
       done < <(find "$share/$part" -type f | sort)
@@ -283,6 +309,19 @@ if ((do_config)); then
       : > "$manifest"
       for rel in "${!now[@]}"; do printf '%s\t%s\n' "$rel" "${now[$rel]}" >> "$manifest"; done
       sort -o "$manifest" "$manifest"
+    fi
+
+    if ((${#conflicts[@]})); then
+      warn "${#conflicts[@]} config file(s) were left as they are and the new"
+      warn 'versions parked beside them as .new -- your config is now part one'
+      warn 'version and part another.'
+      # Not a style note: QML resolves imports across the whole tree, so an old
+      # shell.qml next to a new module directory fails the entire load and the
+      # desktop comes up with no bar at all.
+      warn 'a mixed config can fail to load outright, not just look wrong.'
+      info 'to take the shipped versions (yours are backed up):'
+      info '  c7shell-upgrade --config-only --take-shipped'
+      info 'or merge them yourself, then delete the .new files.'
     fi
 
     ((added || updated || removed || ${#conflicts[@]})) \

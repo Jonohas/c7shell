@@ -165,6 +165,26 @@ grep -q 'enable: .*NetworkManager.service' <<<"$out" && fail "NetworkManager ena
 STUB_ENABLED='sddm.service NetworkManager.service bluetooth.service' out=$(plan "$AMD")
 grep -q 'no system units to enable' <<<"$out" || fail "re-enabled units that were already enabled:\n$out"
 
+# --- the update flow's dependencies ----------------------------------------
+# The bar's update badge is not an extra that degrades: without checkupdates
+# there is no rootless dry run behind it and it can count nothing at all, so
+# pacman-contrib has to be planned on a plain run with no flags.
+out=$(plan "$AMD")
+grep -q '\bpacman-contrib\b' <<<"$out" \
+  || fail "pacman-contrib was not planned -- the update badge cannot count without it:\n$out"
+# arch-update is what c7up shares its config and state directory with, and
+# checkservices backs the post-update restart step. Both are AUR-only.
+grep -qE 'from the AUR:.*\barch-update\b' <<<"$out" \
+  || fail "arch-update was not planned from the AUR:\n$out"
+grep -qE 'from the AUR:.*\bcheckservices\b' <<<"$out" \
+  || fail "checkservices was not planned from the AUR:\n$out"
+# ...but neither is worth failing an install over, so --no-aur still drops them
+# and the repo half stays.
+out=$(plan "$AMD" --no-aur)
+grep -q '\barch-update\b' <<<"$out" && fail "--no-aur still planned arch-update:\n$out"
+grep -q '\bpacman-contrib\b' <<<"$out" \
+  || fail "--no-aur dropped pacman-contrib, which is a repo package:\n$out"
+
 # --- opting out ------------------------------------------------------------
 out=$(plan "$AMD" --no-greeter)
 grep -q '\bsddm\b' <<<"$out" && fail "--no-greeter still installed sddm:\n$out"

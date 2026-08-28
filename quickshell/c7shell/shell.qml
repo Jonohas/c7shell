@@ -10,6 +10,7 @@ import qs.Modules.Popovers
 import qs.Modules.Osd
 import qs.Modules.Power
 import qs.Modules.Settings
+import qs.Modules.Updates
 import qs.Modules.Wallpaper
 import qs.Services
 
@@ -28,10 +29,15 @@ Scope {
   WifiPopover {}
   BluetoothPopover {}
   CalendarPopover {}
+  UpdatesDropdown {}
 
   // One instance, like every other popover: it anchors to whichever bar's
   // power button opened it.
   PowerDropdown {}
+
+  // The escalated path's window. Like SettingsWindow it is a Scope around a
+  // Loader, so killing the toplevel does not stop it reopening.
+  UpdateWizard {}
 
   // The one top-right toast host: capture card and notification stack.
   NotificationToasts {}

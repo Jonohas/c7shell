@@ -6,6 +6,7 @@ import Quickshell.Wayland
 import qs.Theme
 import qs.Services
 import qs.Modules.Capture
+import qs.Modules.Updates
 
 // The one top-right host: the capture card (5b) on top, the notification stack
 // (1d) under it. There used to be two windows in this corner, each with its own
@@ -37,7 +38,7 @@ PanelWindow {
   // Toasts are muted while sharing a screen; the notification still lands in
   // the popover list, only the on-screen pop-up is suppressed.
   readonly property bool anyNotif: NotifServer.popups.length > 0 && !ScreenshareService.active
-  visible: win.anyNotif || capture.visible
+  visible: win.anyNotif || capture.visible || updates.visible
 
   anchors { top: true; right: true }
   // Ignore, not a zero zone: a zero zone still respects the bar's 48px, which
@@ -65,6 +66,14 @@ PanelWindow {
 
     FinishedToast {
       id: capture
+      width: stack.width
+    }
+
+    // The end of a clean update run. Above the notification stack for the same
+    // reason the capture card is: it is the shorter-lived of the two and it is
+    // the thing you just asked for.
+    UpdateToast {
+      id: updates
       width: stack.width
     }
 

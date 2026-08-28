@@ -1,0 +1,586 @@
+#!/bin/bash
+# c7up: the machine-readable half of the update flow.
+#
+# arch-update owns the *policy* -- which AUR helper, which elevation command,
+# what counts as a post-update task, and the order the three sources are
+# updated in. It cannot own the *interface*: every stage of it is a `read -rp`
+# against a TTY and its output is gettext-localised, ANSI-coloured and passed
+# through `column -t`, so there is nothing there for a GUI to parse and nothing
+# to answer its questions with. This script is that missing half. It reads
+# arch-update's own config and writes arch-update's own state files, so the two
+# never disagree about what is pending, and it emits NDJSON on stdout so the
+# shell can render the merged flow.
+#
+# Verbs:
+#   verdict            the background dry run: counts, versions, download size,
+#                      and whether anything needs a decision
+#   run [--skip id]…   the whole transaction, streaming progress
+#   pacnew             config files left to review
+#   resolve keep|take  resolve one of them
+#   services           units wanting a restart after the run
+#   aurdiff <pkg>      the PKGBUILD diff behind step 1's "view diff"
+#   log [path]         the run log, in whatever pager this machine has
+#   reboot             finish a pending kernel update
+#
+# Everything here runs unprivileged. The only root is bin/c7up-root, reached
+# through pkexec and the io.crimson7.c7shell.update polkit action.
+set -uo pipefail
+
+# Overridable only so tests/test-c7up.sh can point the run at stubs. This is
+# not a privilege seam: c7up runs entirely as the user, and pkexec -- not this
+# variable -- decides what may run as root, by matching the absolute path
+# against the policy in share/polkit-1/actions. Pointing this elsewhere gets
+# you a pkexec that asks for an admin password to run your own program, which
+# you could have done without c7up.
+readonly libdir=${C7UP_LIBDIR:-/usr/lib/c7shell}
+readonly logdir="${XDG_CACHE_HOME:-$HOME/.cache}/c7up"
+
+# arch-update's own state directory, verbatim from its common.sh. We read the
+# same files its --check writes and write them back after a run, so its timer,
+# its tray applet and this shell all see one answer.
+readonly statedir="${XDG_STATE_HOME:-$HOME/.local/state}/arch-update"
+
+mkdir -p "$logdir" "$statedir" || exit 16
+
+# ---------------------------------------------------------------- config ----
+# arch-update.conf is the user's, not ours. Reading it is what keeps us from
+# picking a different AUR helper than the one they run in a terminal.
+aur_helper='' no_aur='' no_flatpak='' devel=''
+for c in "${XDG_CONFIG_HOME:-$HOME/.config}/arch-update/arch-update.conf" \
+         /etc/arch-update/arch-update.conf; do
+  if [[ -r $c ]]; then . "$c"; break; fi
+done
+if [[ -z $no_aur && -z $aur_helper ]]; then
+  for h in paru yay pikaur; do command -v "$h" >/dev/null && { aur_helper=$h; break; }; done
+fi
+[[ -n $no_aur ]] && aur_helper=''
+command -v "${aur_helper:-:}" >/dev/null 2>&1 || aur_helper=''
+flatpak_ok=''
+if [[ -z $no_flatpak ]] && command -v flatpak >/dev/null; then flatpak_ok=1; fi
+devel_flag=()
+[[ -n $devel ]] && devel_flag=(--devel)
+
+# Packages whose update makes the running system inconsistent until a reboot,
+# and out-of-tree modules built against the running kernel. Deliberately NOT
+# every graphics package: mesa ships in most weeks' updates and treating it as
+# a decision would mean the clean path never happens.
+readonly kernel_re='^(linux|linux-lts|linux-zen|linux-hardened|linux-rt|linux-rt-lts)(-headers)?$'
+readonly driver_re='(^nvidia($|-)|-dkms$|^linux-firmware)'
+
+# ------------------------------------------------------------------ json ----
+# Small enough to hand-roll, and a jq dependency for four call sites is not
+# worth it -- jq is only an optdepends elsewhere in this package.
+j() {   # j <string> -> a quoted JSON string
+  local s=$1
+  s=${s//\\/\\\\}; s=${s//\"/\\\"}
+  s=${s//$'\t'/\\t}; s=${s//$'\r'/}; s=${s//$'\n'/\\n}
+  # Strip the C0 controls that survive that -- pacman's progress bars are full
+  # of them and one raw byte invalidates the whole line for the QML parser on
+  # the other side, which shows up as a silently empty dropdown. Guarded,
+  # because this is on the per-line path of a run with thousands of lines in it
+  # and almost none of them need it.
+  if [[ $s == *[$'\001'-$'\037']* ]]; then
+    s=$(printf '%s' "$s" | tr -d '\000-\010\013\014\016-\037')
+  fi
+  printf '"%s"' "$s"
+}
+emit() { printf '%s\n' "$1"; }
+
+# ANSI is a display concern; every consumer here is a parser.
+strip_ansi() { sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g; s/\r/\n/g'; }
+
+# --------------------------------------------------------------- helpers ----
+# A synced pacman database we own, so the dry run needs no root and cannot
+# leave the real one half-synced. Exactly checkupdates' trick, reused because
+# checkupdates is what populates it.
+tmpdb=''
+make_tmpdb() {
+  tmpdb=$(mktemp -d "${TMPDIR:-/tmp}/c7up-db-XXXXX") || return 1
+  CHECKUPDATES_DB=$tmpdb checkupdates --nocolor >/dev/null 2>&1
+  local rc=$?
+  # 0 = updates found, 2 = none, anything else = we could not sync.
+  ((rc == 0 || rc == 2)) || return 1
+  return 0
+}
+cleanup() { [[ -n $tmpdb && -d $tmpdb ]] && rm -rf "$tmpdb"; }
+trap cleanup EXIT
+
+# "name old new" -> one JSON object, splitting on checkupdates' "old -> new".
+pkg_json() {
+  local name=$1 old=$2 new=$3
+  printf '{"name":%s,"old":%s,"new":%s}\n' "$(j "$name")" "$(j "$old")" "$(j "$new")"
+}
+
+# Join the lines on stdin, each already a JSON value, into an array.
+as_array() { paste -sd, - | sed 's/^/[/; s/$/]/'; }
+
+# Whether the user has edited a config file that now has a .pacnew beside it.
+# pacman records this itself: -Qii marks each backup file MODIFIED or
+# UNMODIFIED against the hash it installed.
+file_edited() {
+  local f=$1 owner
+  owner=$(pacman -Qoq -- "$f" 2>/dev/null | head -1) || return 1
+  [[ -n $owner ]] || return 1
+  pacman -Qii -- "$owner" 2>/dev/null | grep -qE "^MODIFIED[[:space:]]+${f//\//\\/}$"
+}
+
+# --------------------------------------------------------------- verdict ----
+# The dry run the whole design hangs on: it happens before the dropdown is ever
+# opened, so the dropdown already knows whether one click is enough.
+do_verdict() {
+  local checked; checked=$(date +%s)
+
+  if ! make_tmpdb; then
+    emit "{\"ev\":\"verdict\",\"error\":$(j 'could not reach the repositories'),\"checked\":$checked}"
+    return 1
+  fi
+
+  # -- repo packages ---------------------------------------------------------
+  local pac_raw; pac_raw=$(CHECKUPDATES_DB=$tmpdb checkupdates --nocolor 2>/dev/null)
+  local -a pac_names=()
+  local pac_json='[]'
+  if [[ -n $pac_raw ]]; then
+    pac_json=$(while read -r n old _ new; do
+      [[ -n $n ]] || continue
+      pkg_json "$n" "$old" "$new"
+    done <<<"$pac_raw" | as_array)
+    mapfile -t pac_names < <(awk '{print $1}' <<<"$pac_raw")
+  fi
+
+  # -- download size ---------------------------------------------------------
+  # %s is the download size in bytes. This is the number on the button, and it
+  # is the one thing no amount of parsing checkupdates could have produced.
+  local size=0
+  if [[ -n $pac_raw ]]; then
+    size=$(pacman -Sup --print-format '%s' --dbpath "$tmpdb" 2>/dev/null \
+      | awk '{t += $1} END {print t + 0}')
+  fi
+
+  # -- transaction probe -----------------------------------------------------
+  # --print resolves the whole transaction without touching the system, so
+  # replacements, removals and unsatisfiable dependencies all surface here
+  # rather than halfway through the run.
+  local probe=''
+  [[ -n $pac_raw ]] && probe=$(pacman -Su --print --dbpath "$tmpdb" --noconfirm 2>&1 | strip_ansi)
+
+  # -- AUR -------------------------------------------------------------------
+  local aur_json='[]' aur_raw=''
+  local -a aur_names=()
+  if [[ -n $aur_helper ]]; then
+    aur_raw=$("$aur_helper" --color never "${devel_flag[@]}" -Qua </dev/null 2>/dev/null \
+      | sed 's/^ *//; s/ \+/ /g' | grep -vw '\[ignored\]$')
+    if [[ -n $aur_raw ]]; then
+      aur_json=$(while read -r n old _ new; do
+        [[ -n $n ]] || continue
+        pkg_json "$n" "$old" "$new"
+      done <<<"$aur_raw" | as_array)
+      mapfile -t aur_names < <(awk '{print $1}' <<<"$aur_raw")
+    fi
+  fi
+
+  # -- flatpak ---------------------------------------------------------------
+  local fp_json='[]' fp_raw=''
+  if [[ -n $flatpak_ok ]]; then
+    timeout 45 flatpak update --appstream >/dev/null 2>&1
+    fp_raw=$(flatpak remote-ls --updates --cached --columns=name,version 2>/dev/null | tr -s '\t' ' ')
+    if [[ -n $fp_raw ]]; then
+      fp_json=$(while read -r n v; do
+        [[ -n $n ]] || continue
+        pkg_json "$n" "" "$v"
+      done <<<"$fp_raw" | as_array)
+    fi
+  fi
+
+  # -- decisions -------------------------------------------------------------
+  # The escalation trigger list, and nothing else. Anything here turns the
+  # clean path into the wizard; anything not here must not.
+  local -a decisions=()
+  local reboot=false
+  local name
+
+  for name in "${pac_names[@]}"; do
+    if [[ $name =~ $kernel_re ]]; then
+      reboot=true
+      decisions+=("$(printf '{"id":%s,"kind":"kernel","title":%s,"detail":%s,"note":%s}' \
+        "$(j "kernel:$name")" "$(j "$name")" \
+        "$(j "$(awk -v p="$name" '$1==p {print $2" → "$4}' <<<"$pac_raw")")" \
+        "$(j 'kernel · reboot required after')")")
+    elif [[ $name =~ $driver_re ]]; then
+      decisions+=("$(printf '{"id":%s,"kind":"driver","title":%s,"detail":%s,"note":%s}' \
+        "$(j "driver:$name")" "$(j "$name")" \
+        "$(j "$(awk -v p="$name" '$1==p {print $2" → "$4}' <<<"$pac_raw")")" \
+        "$(j 'kernel module · rebuilt against the running kernel')")")
+    fi
+    # A new or rotated signing key arrives as a keyring update, and pacman will
+    # want to import it mid-transaction. Surfacing it in step 1 is the whole
+    # point: the run must never stop to ask.
+    if [[ $name == archlinux-keyring || $name == *-keyring ]]; then
+      decisions+=("$(printf '{"id":%s,"kind":"key","title":%s,"detail":%s,"note":%s}' \
+        "$(j "key:$name")" "$(j 'pgp key import')" "$(j "$name")" \
+        "$(j 'new or rotated signing keys')")")
+    fi
+  done
+
+  # pacman phrases a replacement as ":: Replace jack2 with extra/pipewire-jack?"
+  while read -r old new; do
+    [[ -n $old ]] || continue
+    decisions+=("$(printf '{"id":%s,"kind":"replace","title":%s,"detail":%s,"note":%s}' \
+      "$(j "replace:$old")" "$(j "$old → ${new##*/}")" "$(j '')" \
+      "$(j 'package replacement')")")
+  done < <(grep -oP '^:: Replace \K\S+ with \S+' <<<"$probe" | sed 's/ with / /; s/?$//')
+
+  # A dependency the transaction cannot satisfy, or a repo the local database
+  # has drifted from. Either way the run would have failed; say so first.
+  if grep -q '^error:' <<<"$probe"; then
+    decisions+=("$(printf '{"id":"conflict","kind":"conflict","title":%s,"detail":%s,"note":%s}' \
+      "$(j 'dependency conflict')" \
+      "$(j "$(grep -m3 -E '^(error|::).*' <<<"$probe" | paste -sd$'\n' -)")" \
+      "$(j 'the transaction cannot be prepared as it stands')")")
+  fi
+
+  # An AUR package whose PKGBUILD moved since the copy we built from. This is
+  # the one trigger no helper will answer non-interactively -- paru's diff menu
+  # is a menu -- so we compute it: its clone is what it last built, and -Gp is
+  # what the AUR has now.
+  for name in "${aur_names[@]}"; do
+    local clone="${XDG_CACHE_HOME:-$HOME/.cache}/paru/clone/$name/PKGBUILD"
+    [[ -r $clone ]] || continue
+    local upstream; upstream=$(timeout 20 "$aur_helper" -Gp "$name" 2>/dev/null)
+    [[ -n $upstream ]] || continue
+    if ! diff -q "$clone" <(printf '%s\n' "$upstream") >/dev/null 2>&1; then
+      decisions+=("$(printf '{"id":%s,"kind":"pkgbuild","title":%s,"detail":%s,"note":%s,"diff":true}' \
+        "$(j "pkgbuild:$name")" "$(j "$name")" "$(j 'aur')" \
+        "$(j 'PKGBUILD changed')")")
+    fi
+  done
+
+  # Configs already waiting from a previous run park here too: they are a
+  # decision, and the dropdown should say so before it offers one click.
+  local pacnew; pacnew=$(pacdiff -o 2>/dev/null)
+  if [[ -n $pacnew ]]; then
+    decisions+=("$(printf '{"id":"pacnew","kind":"pacnew","title":%s,"detail":%s,"note":%s}' \
+      "$(j "$(wc -l <<<"$pacnew") config files to review")" \
+      "$(j "$(paste -sd' ' <<<"$pacnew")")" "$(j 'from an earlier update')")")
+  fi
+
+  local dec_json='[]'
+  ((${#decisions[@]})) && dec_json=$(printf '%s\n' "${decisions[@]}" | as_array)
+
+  local clean=true
+  ((${#decisions[@]})) && clean=false
+
+  # -- keep arch-update's state in step ---------------------------------------
+  printf '%s\n' "$pac_raw" | sed '/^$/d' > "$statedir/last_updates_check_packages"
+  printf '%s\n' "$aur_raw" | sed '/^$/d' > "$statedir/last_updates_check_aur"
+  printf '%s\n' "$fp_raw"  | sed '/^$/d' > "$statedir/last_updates_check_flatpak"
+  cat "$statedir"/last_updates_check_{packages,aur,flatpak} > "$statedir/last_updates_check"
+  date "+%s%n%F %T" > "$statedir/last_updates_check_time"
+
+  emit "$(printf '{"ev":"verdict","clean":%s,"checked":%s,"size":%s,"reboot":%s,"sources":[{"key":"pacman","label":"pacman","items":%s},{"key":"aur","label":"aur","items":%s},{"key":"flatpak","label":"flatpak","items":%s}],"decisions":%s}' \
+    "$clean" "$checked" "$size" "$reboot" "$pac_json" "$aur_json" "$fp_json" "$dec_json")"
+}
+
+# ------------------------------------------------------------------- run ----
+# One transaction, streamed. It never prompts: every question was answered in
+# step 1, and what the user declined arrives here as --skip and becomes an
+# --ignore. The only thing that can still interrupt is polkit, and that gets
+# its own event so the wizard can say what it is waiting for.
+do_run() {
+  local -a skip=()
+  while (($#)); do
+    case $1 in
+      --skip) skip+=("$2"); shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  local log="$logdir/$(date +%F).log"
+  local started; started=$(date +%s)
+
+  # Anything the user unticked in step 1. Repo names go to pacman's --ignore;
+  # a declined pacnew or reboot is a step-3 concern and not our business here.
+  local -a ignore=() aur_ignore=()
+  local s
+  for s in ${skip[@]+"${skip[@]}"}; do
+    case $s in
+      # A declined replacement is ignored by its OLD name: that is the package
+      # pacman would have replaced, and holding it holds the replacement.
+      kernel:*|driver:*|key:*|replace:*) ignore+=("${s#*:}") ;;
+      pkgbuild:*) aur_ignore+=("${s#*:}") ;;
+      # pacnew and conflict are not packages; there is nothing to ignore.
+    esac
+  done
+
+  local pac_n aur_n fp_n total
+  pac_n=$(grep -c . "$statedir/last_updates_check_packages" 2>/dev/null); pac_n=${pac_n:-0}
+  aur_n=$(grep -c . "$statedir/last_updates_check_aur" 2>/dev/null); aur_n=${aur_n:-0}
+  fp_n=$(grep -c . "$statedir/last_updates_check_flatpak" 2>/dev/null); fp_n=${fp_n:-0}
+  total=$((pac_n + aur_n + fp_n))
+
+  emit "$(printf '{"ev":"start","total":%s,"log":%s}' "$total" "$(j "$log")")"
+  { printf '=== c7up run %s ===\n' "$(date '+%F %T')"; } >> "$log"
+
+  # `stream` runs in a pipeline, i.e. a subshell, so the running count cannot
+  # come back in a variable. It comes back in a file.
+  local progress; progress=$(mktemp "${TMPDIR:-/tmp}/c7up-progress-XXXXX")
+  echo 0 > "$progress"
+  local failed='' fail_text=''
+
+  # Stream one source's output into the log, the inline log view, and a running
+  # count. pacman's "(9/12) upgrading mesa" is the only progress either half
+  # of this ever offers, so it is what the bar is driven from.
+  stream() {
+    local src=$1 base=$2
+    local line first=1
+    while IFS= read -r line; do
+      line=$(printf '%s' "$line" | strip_ansi | tr -d '\r')
+      [[ -n ${line// } ]] || continue
+      # The first byte out of pkexec is proof the dialog is behind us; the
+      # wizard drops its "waiting for authorisation" state on this.
+      if ((first)); then first=0; emit '{"ev":"auth","state":"granted"}'; fi
+      printf '%s\n' "$line" >> "$log"
+      emit "$(printf '{"ev":"line","source":%s,"text":%s}' "$(j "$src")" "$(j "$line")")"
+      if [[ $line =~ ^\(([0-9]+)/([0-9]+)\)\ (upgrading|installing|removing) ]]; then
+        local n=$((base + ${BASH_REMATCH[1]}))
+        echo "$n" > "$progress"
+        emit "$(printf '{"ev":"progress","done":%s,"total":%s}' "$n" "$total")"
+      fi
+    done
+  }
+
+  # -- repo ------------------------------------------------------------------
+  if ((pac_n > 0)); then
+    emit '{"ev":"phase","source":"pacman","state":"running"}'
+    emit '{"ev":"auth","state":"waiting"}'
+    local t0=$SECONDS
+    if pkexec "$libdir/c7up-root" sync ${ignore[@]+"${ignore[@]}"} 2>&1 | stream pacman 0; then
+      emit "$(printf '{"ev":"phase","source":"pacman","state":"done","secs":%s}' "$((SECONDS - t0))")"
+      : > "$statedir/last_updates_check_packages"
+    else
+      failed=pacman
+      fail_text=$(tail -20 "$log")
+      emit '{"ev":"phase","source":"pacman","state":"failed"}'
+    fi
+  fi
+
+  # -- AUR -------------------------------------------------------------------
+  # Skipped when the repo half failed: an AUR package built against a
+  # half-applied system is exactly the partial upgrade the flow exists to avoid.
+  if [[ -z $failed ]] && ((aur_n > 0)) && [[ -n $aur_helper ]]; then
+    emit '{"ev":"phase","source":"aur","state":"running"}'
+    local t0=$SECONDS
+    local -a aurargs=(--color never "${devel_flag[@]}" -Sua --noconfirm
+                      --sudo "$libdir/c7up-sudo")
+    # paru and yay spell "do not open a menu" differently; pikaur opens none.
+    case $aur_helper in
+      paru) aurargs+=(--skipreview --nocleanafter) ;;
+      yay)  aurargs+=(--nodiffmenu --nocleanmenu --noeditmenu) ;;
+    esac
+    for s in ${aur_ignore[@]+"${aur_ignore[@]}"}; do aurargs+=(--ignore "$s"); done
+    if "$aur_helper" "${aurargs[@]}" </dev/null 2>&1 | stream aur "$pac_n"; then
+      emit "$(printf '{"ev":"phase","source":"aur","state":"done","secs":%s}' "$((SECONDS - t0))")"
+      : > "$statedir/last_updates_check_aur"
+    else
+      failed=aur
+      fail_text=$(tail -20 "$log")
+      emit '{"ev":"phase","source":"aur","state":"failed"}'
+    fi
+  fi
+
+  # -- flatpak ---------------------------------------------------------------
+  if [[ -z $failed ]] && ((fp_n > 0)) && [[ -n $flatpak_ok ]]; then
+    emit '{"ev":"phase","source":"flatpak","state":"running"}'
+    local t0=$SECONDS
+    if flatpak update -y </dev/null 2>&1 | stream flatpak "$((pac_n + aur_n))"; then
+      emit "$(printf '{"ev":"phase","source":"flatpak","state":"done","secs":%s}' "$((SECONDS - t0))")"
+      : > "$statedir/last_updates_check_flatpak"
+    else
+      failed=flatpak
+      fail_text=$(tail -20 "$log")
+      emit '{"ev":"phase","source":"flatpak","state":"failed"}'
+    fi
+  fi
+
+  cat "$statedir"/last_updates_check_{packages,aur,flatpak} > "$statedir/last_updates_check"
+
+  if [[ -n $failed ]]; then
+    # pacman rolls its own transaction back; nothing is left half-applied, and
+    # saying so is the difference between "retry" and "reinstall the machine".
+    emit "$(printf '{"ev":"done","ok":false,"failed":%s,"done":%s,"total":%s,"secs":%s,"log":%s,"error":%s,"actions":%s}' \
+      "$(j "$failed")" "$(cat "$progress")" "$total" "$(( $(date +%s) - started ))" "$(j "$log")" \
+      "$(j "$fail_text")" \
+      "$(printf '[%s,%s,%s]' "$(j 'retry')" "$(j 'open in terminal')" "$(j 'copy error')")")"
+    rm -f "$progress"
+    return 1
+  fi
+
+  # The same marker arch-update's list_news stage reads to decide which news
+  # is new to you. Leaving it unwritten would re-show news you already passed.
+  date +%Y-%m-%d > "$statedir/last_update_run"
+  rm -f "$progress"
+
+  # Step 3 exists only if the run actually produced something to clean up.
+  local pacnew_json services_json reboot=false
+  pacnew_json=$(collect_pacnew)
+  services_json=$(collect_services)
+  [[ -f "/usr/lib/modules/$(uname -r)/vmlinuz" ]] || reboot=true
+
+  emit "$(printf '{"ev":"done","ok":true,"updated":%s,"total":%s,"secs":%s,"log":%s,"pacnew":%s,"services":%s,"reboot":%s}' \
+    "$total" "$total" "$(( $(date +%s) - started ))" "$(j "$log")" \
+    "$pacnew_json" "$services_json" "$reboot")"
+}
+
+# ----------------------------------------------------------------- pager ----
+# The shell hands three things to a terminal -- the log, a PKGBUILD diff and a
+# pacnew merge -- and every one of them used to name a program that a perfectly
+# ordinary Arch install may not have. `less` is not pulled in by base, and a
+# terminal that opens just long enough to print "Failed to launch child: less"
+# is a worse answer than no button at all. So the choice happens here, at the
+# moment of use, and always ends somewhere that exists.
+page() {
+  local pager
+  for pager in ${PAGER:+"$PAGER"} less most more; do
+    command -v "${pager%% *}" >/dev/null || continue
+    # -R so the log's own colours survive; the others are given no flags
+    # because none of them agree on what the flags mean.
+    case ${pager%% *} in
+      less) exec "$pager" -R "$@" ;;
+      *) exec "$pager" "$@" ;;
+    esac
+  done
+  # Nothing at all. cat on its own would flash the terminal shut before any of
+  # it could be read, so hold the window open.
+  cat -- "$@"
+  printf '\n-- no pager installed (try: pacman -S less) -- press enter to close '
+  # `read` returns 1 at EOF, and that would otherwise become c7up's exit
+  # status: showing the log successfully must not report failure.
+  read -r _ || true
+  return 0
+}
+
+# The editor for a pacnew merge. DIFFPROG is pacdiff's own variable and
+# arch-update.conf may set diff_prog; both are the user's choice and win.
+merge_prog() {
+  local p
+  for p in ${DIFFPROG:+"$DIFFPROG"} ${diff_prog:+"$diff_prog"} \
+           meld kdiff3 "nvim -d" "vim -d" vimdiff; do
+    command -v "${p%% *}" >/dev/null && { printf '%s' "$p"; return 0; }
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------- pacnew ----
+collect_pacnew() {
+  local files; files=$(pacdiff -o 2>/dev/null)
+  [[ -n $files ]] || { echo '[]'; return; }
+  local f
+  while IFS= read -r f; do
+    [[ -n $f ]] || continue
+    local target=${f%.pacnew}
+    local changed edited=false
+    changed=$(diff -- "$target" "$f" 2>/dev/null | grep -c '^[<>]')
+    file_edited "$target" && edited=true
+    printf '{"path":%s,"changed":%s,"edited":%s}\n' "$(j "$target")" "${changed:-0}" "$edited"
+  done <<<"$files" | as_array
+}
+
+collect_services() {
+  local out
+  out=$(pkexec "$libdir/c7up-root" check-services 2>/dev/null \
+    | grep '\.service' | cut -f2 -d"'")
+  [[ -n $out ]] || { echo '[]'; return; }
+  while IFS= read -r s; do
+    [[ -n $s ]] || continue
+    j "$s"
+  done <<<"$out" | as_array
+}
+
+# ------------------------------------------------------------------ main ----
+case "${1-}" in
+  verdict) shift; do_verdict "$@" ;;
+  run)     shift; do_run "$@" ;;
+  pacnew)  emit "{\"ev\":\"pacnew\",\"files\":$(collect_pacnew)}" ;;
+  services) emit "{\"ev\":\"services\",\"units\":$(collect_services)}" ;;
+  resolve)
+    shift
+    case "${1-}" in
+      keep) pkexec "$libdir/c7up-root" pacnew-keep "${2-}" ;;
+      take) pkexec "$libdir/c7up-root" pacnew-take "${2-}" ;;
+      # "merge" is a three-pane editor, which is a terminal's job. The wizard
+      # links here and the shell opens it in $TERMINAL.
+      merge)
+        f=${2-}
+        if prog=$(merge_prog); then
+          # The editor runs as the user, on a copy. /etc is root-owned, so a
+          # merge run as the user opens fine and then cannot save -- and
+          # running the editor itself as root would mean handing pkexec an
+          # arbitrary program to exec, which is the one thing c7up-root exists
+          # to refuse. So: edit a copy here, hand the finished bytes to root.
+          work=$(mktemp "${TMPDIR:-/tmp}/c7up-merge-XXXXXX") || exit 16
+          cp -- "$f" "$work"
+          # shellcheck disable=SC2086
+          $prog "$work" "$f.pacnew"
+          if cmp -s -- "$work" "$f"; then
+            printf '\nnothing changed -- %s left as it was\n' "$f"
+            rm -f "$work"
+            exit 0
+          fi
+          printf '\napplying the merged %s...\n' "$f"
+          if pkexec "$libdir/c7up-root" pacnew-write "$f" "$work"; then
+            printf 'done -- the .pacnew has been removed\n'
+          else
+            printf 'could not write %s; your merge is kept at %s\n' "$f" "$work"
+            exit 1
+          fi
+          rm -f "$work"
+          exit 0
+        fi
+        # No merge tool installed anywhere. Showing the difference is still
+        # most of the value, and it beats a terminal that dies on exec.
+        printf 'no merge tool found -- set DIFFPROG, or install one (vim, neovim)\n\n'
+        tmpd=${TMPDIR:-/tmp}/c7up-merge.$$
+        diff -u --label "$f (yours)" --label "$f.pacnew (shipped)" -- "$f" "$f.pacnew" > "$tmpd"
+        page "$tmpd"
+        rm -f "$tmpd"
+        exit 0
+        ;;
+      *) echo 'c7up: resolve keep|take|merge <file>' >&2; exit 2 ;;
+    esac
+    ;;
+  restart) shift; pkexec "$libdir/c7up-root" restart-services "$@" ;;
+  reboot)  pkexec "$libdir/c7up-root" reboot ;;
+  log)
+    shift
+    # Named explicitly, or today's, or the most recent there is -- a run that
+    # crossed midnight, or a shell restarted since, must not leave "view log"
+    # pointing at nothing.
+    f=${1-}
+    [[ -n $f ]] || f=$logdir/$(date +%F).log
+    [[ -r $f ]] || f=$(ls -t "$logdir"/*.log 2>/dev/null | head -1)
+    if [[ -z $f || ! -r $f ]]; then
+      printf 'no update log yet in %s\n' "$logdir"
+      exit 0
+    fi
+    page "$f"
+    ;;
+  aurdiff)
+    shift
+    pkg=${1-}
+    clone="${XDG_CACHE_HOME:-$HOME/.cache}/paru/clone/$pkg/PKGBUILD"
+    out=${TMPDIR:-/tmp}/c7up-aurdiff.$$
+    if [[ -r $clone ]]; then
+      diff -u --label "PKGBUILD (built)" --label "PKGBUILD (aur)" \
+        "$clone" <("$aur_helper" -Gp "$pkg" 2>/dev/null) > "$out"
+    else
+      "$aur_helper" -Gp "$pkg" 2>/dev/null > "$out"
+    fi
+    # Paged when a human is looking at it, plain when something is reading it.
+    if [[ -t 1 ]]; then page "$out"; else cat "$out"; fi
+    rm -f "$out"
+    exit 0
+    ;;
+  ''|-h|--help)
+    sed -n '3,26p' "$0" | sed 's/^# \?//'
+    ;;
+  *) echo "c7up: unknown verb: $1" >&2; exit 2 ;;
+esac

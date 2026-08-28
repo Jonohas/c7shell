@@ -37,17 +37,50 @@ Rectangle {
       onClicked: ScreenshareService.stop()
       Icon { name: "screen-share"; tint: Theme.accentSoft }
     }
+    // The badge is a door now, not a re-check: the dry run behind it already
+    // knows whether one click is enough, so opening it is the whole point.
+    // While a run is going it becomes the thin progress ring the design gives
+    // a dropdown that has been closed over a running update.
     QuickSlot {
+      id: updateSlot
       anchors.verticalCenter: parent.verticalCenter
-      visible: UpdatesService.total > 0
+      visible: UpdatesService.total > 0 || UpdatesService.running
+               || UpdatesService.pacnews.length > 0
+      active: PopoverManager.current === "updates"
       slotColor: UpdatesService.kernelPending ? Theme.accentFill : "transparent"
-      onClicked: UpdatesService.refresh()
-      Icon {
-        name: "package"; size: 13
-        tint: UpdatesService.kernelPending ? Theme.accentSoft : Theme.text3
+      onClicked: PopoverManager.toggle("updates", updateSlot)
+
+      Item {
+        anchors.verticalCenter: parent.verticalCenter
+        width: 13; height: 13
+
+        Icon {
+          anchors.fill: parent
+          visible: !UpdatesService.running
+          name: "package"; size: 13
+          tint: UpdatesService.kernelPending ? Theme.accentSoft : Theme.text3
+        }
+        ProgressRing {
+          anchors.fill: parent
+          visible: UpdatesService.running
+          fraction: UpdatesService.runTotal > 0
+            ? UpdatesService.doneCount / UpdatesService.runTotal : 0
+        }
+
+        // Housekeeping parked by a "later": amber, and it outlives the run
+        // that produced it. Overlaid on the icon rather than placed beside it,
+        // so it does not push the count along.
+        Rectangle {
+          anchors { right: parent.right; top: parent.top; margins: -1 }
+          visible: UpdatesService.pacnews.length > 0 && !UpdatesService.running
+          width: 4; height: 4; radius: 2
+          color: "#e0b341"
+        }
       }
+
       Text {
         anchors.verticalCenter: parent.verticalCenter
+        visible: !UpdatesService.running
         text: `${UpdatesService.total}`
         font { family: Theme.fontMono; pixelSize: 10; weight: 600 }
         color: UpdatesService.kernelPending ? Theme.accentSoft : Theme.text3

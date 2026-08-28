@@ -28,6 +28,7 @@ Item {
       label: "system",
       items: [
         { page: "appearance", label: "appearance" },
+        { page: "system", label: "system" },
         { page: "displays", label: "displays" },
         { page: "audio", label: "audio" },
         { page: "power", label: "power" },

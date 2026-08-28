@@ -304,6 +304,14 @@ else
   add_note 'no Qt/KDE apps here, so plasma-integration was skipped; if you install dolphin or another KDE app later, c7shell-doctor --optional offers it'
 fi
 
+# --- system updates --------------------------------------------------------
+# The bar's update badge is not a nice-to-have that degrades: checkupdates is
+# what makes the dry run behind it possible without root, and pacdiff is the
+# pacnew list the review step is built from. Without pacman-contrib the badge
+# can count nothing at all, so it goes in with the session infrastructure
+# rather than the extras.
+add pacman-contrib
+
 # --- AUR -------------------------------------------------------------------
 # A helper that is installed but does not run is worse than none: pacman keeps
 # it (the AUR packages only ask for `libalpm.so>=14`) while a pacman soname
@@ -323,6 +331,12 @@ if ((want_aur)); then
   # Theme.fontDisplay is "Space Grotesk", which is not in the official repos.
   # Without it fontconfig substitutes another sans and page titles still work.
   add_aur ttf-space-grotesk
+  # The update flow's other half. c7up reads arch-update's config to decide
+  # which AUR helper and which elevation command to use, and writes its state
+  # files, so a terminal `arch-update` and the bar's badge never disagree about
+  # what is pending. checkservices backs the "these want a restart" step after
+  # a run. Both are AUR-only.
+  add_aur arch-update checkservices
 fi
 
 # Drop what is already installed so the plan shows the real change.

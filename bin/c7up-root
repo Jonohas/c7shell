@@ -1,0 +1,135 @@
+#!/bin/bash
+# c7up-root: the only thing c7up runs as root, and the target of the
+# io.crimson7.c7shell.update polkit action.
+#
+# pkexec hands root to a *program*, so that program is the trust boundary: it
+# takes a fixed verb, never a command line. Everything else the update flow
+# does -- the dry run, the AUR build, flatpak, all parsing -- stays unprivileged
+# in c7up. Keep it that way: a verb that forwards arbitrary argv to a shell
+# would make this a root shell for anyone in the wheel group.
+set -euo pipefail
+
+verb=${1-}
+shift || true
+
+# pkexec already sanitises the environment, but pacman reads a few of these and
+# a stale value from the calling session is never what we want.
+export LC_ALL=C
+unset DIFFPROG PAGER EDITOR
+
+die() { printf 'c7up-root: %s\n' "$1" >&2; exit 2; }
+
+# A package name as pacman would accept it, plus the version comparators an
+# --ignore target may carry. No slashes, no spaces, no shell metacharacters.
+check_pkgname() {
+  [[ $1 =~ ^[A-Za-z0-9@._+-]+$ ]] || die "refusing implausible package name: $1"
+}
+
+# Only files pacman itself put a .pacnew next to are resolvable. Anything else
+# -- a relative path, a symlink out of /etc, a path with no .pacnew sibling --
+# is a caller bug at best.
+check_pacnew() {
+  # Test seam, honoured only when this is NOT running as root. In production it
+  # only ever runs as root -- pkexec is the sole way in -- so this branch is
+  # dead code there and cannot widen what root will write to. pkexec also
+  # sanitises the environment, so the variable could not survive the trip even
+  # if the check were wrong.
+  if ((EUID != 0)) && [[ -n ${C7UP_TEST_ROOT:-} ]]; then
+    [[ $1 == "$C7UP_TEST_ROOT"/* ]] || die "not a config path: $1"
+    [[ $1 != *..* ]] || die "path traversal: $1"
+    [[ -f $1.pacnew ]] || die "no pacnew beside $1"
+    return 0
+  fi
+  [[ $1 == /etc/* || $1 == /usr/share/* || $1 == /boot/* ]] || die "not a config path: $1"
+  [[ $1 != *..* ]] || die "path traversal: $1"
+  [[ -f $1.pacnew ]] || die "no pacnew beside $1"
+}
+
+case "$verb" in
+  # The whole repo transaction in one invocation, so the lock is taken once.
+  # --noconfirm is safe *because* c7up already answered every question in the
+  # wizard: the ignores below are the user's step-1 choices.
+  sync)
+    args=(--noconfirm --color never)
+    for pkg; do check_pkgname "$pkg"; args+=(--ignore "$pkg"); done
+    exec pacman -Syu "${args[@]}"
+    ;;
+
+  # What the AUR helper's --sudo shim lands on: paru builds as the user and
+  # then asks its sudo command to install the built packages.
+  pacman)
+    for a; do
+      case "$a" in
+        -U|-S|-Syu|-Su|-D|--asdeps|--asexplicit|--noconfirm|--needed|--color|never|always|auto) ;;
+        /*.pkg.tar.*) [[ -f $a ]] || die "not a built package: $a" ;;
+        -*) die "unexpected pacman flag from the AUR helper: $a" ;;
+        *) check_pkgname "$a" ;;
+      esac
+    done
+    exec pacman "$@" --noconfirm
+    ;;
+
+  # Non-interactive halves of pacdiff: keep mine is just removing the .pacnew,
+  # take new is installing it over the file. "merge" is not here -- it opens an
+  # editor, which is a terminal's job, not root's.
+  pacnew-keep)
+    check_pacnew "${1-}"
+    exec rm -f -- "$1.pacnew"
+    ;;
+  pacnew-take)
+    check_pacnew "${1-}"
+    # Preserve the live file's mode/owner rather than the .pacnew's: pacman
+    # ships those 644 root:root even where the running config is not.
+    cp --preserve=all -- "$1" "$1.c7up-bak"
+    mv -f -- "$1.pacnew" "$1"
+    chmod --reference="$1.c7up-bak" -- "$1"
+    chown --reference="$1.c7up-bak" -- "$1"
+    exec rm -f -- "$1.c7up-bak"
+    ;;
+
+  # The merge's other half. The editor runs as the user on a copy -- root must
+  # never exec a program the caller names, which with auth_admin_keep would be
+  # a root shell for anyone in wheel for five minutes after every update -- and
+  # only the finished bytes come back here.
+  #
+  # This is deliberately no wider than pacnew-take: it writes to a path that
+  # already has a .pacnew beside it, which is exactly the operation the user
+  # authorised, and nothing else.
+  pacnew-write)
+    check_pacnew "${1-}"
+    src=${2-}
+    [[ -f $src && ! -L $src ]] || die "not a regular file: $src"
+    # Same reasoning as pacnew-take: keep the live file's mode and owner rather
+    # than whatever the user's temporary copy picked up.
+    cp --preserve=all -- "$1" "$1.c7up-bak"
+    cat -- "$src" > "$1"
+    chmod --reference="$1.c7up-bak" -- "$1"
+    chown --reference="$1.c7up-bak" -- "$1"
+    rm -f -- "$1.c7up-bak" "$1.pacnew"
+    ;;
+
+  restart-services)
+    (($# > 0)) || die 'no service named'
+    for s; do
+      [[ $s =~ ^[A-Za-z0-9@._-]+\.service$ ]] || die "not a service unit: $s"
+    done
+    exec systemctl restart -- "$@"
+    ;;
+
+  # checkservices needs root to read every unit's open file handles; running it
+  # here rather than under a second prompt keeps step 3 to one authorisation.
+  check-services)
+    exec checkservices -F -P -R \
+      -i gdm.service -i plasmalogin.service -i sddm.service -i lightdm.service \
+      -i lxdm.service -i slim.service -i xdm.service -i greetd.service \
+      -i nodm.service -i ly.service -i lemurs.service
+    ;;
+
+  reboot)
+    exec systemctl reboot
+    ;;
+
+  *)
+    die "unknown verb: ${verb:-<none>}"
+    ;;
+esac

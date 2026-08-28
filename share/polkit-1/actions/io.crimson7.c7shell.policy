@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/software/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>c7shell</vendor>
+  <vendor_url>https://github.com/Jonohas/c7shell</vendor_url>
+
+  <!-- Without an action of our own, pkexec falls back to
+       org.freedesktop.policykit.exec, whose dialog names the binary rather
+       than the task. This one says what is about to happen, and
+       auth_admin_keep means the AUR half of the same run does not ask again.
+       The program it authorises takes a fixed verb, never a command line -
+       see bin/c7up-root. -->
+  <action id="io.crimson7.c7shell.update">
+    <description>Apply system updates</description>
+    <message>Authentication is required to apply system updates</message>
+    <icon_name>system-software-update</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/c7shell/c7up-root</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>

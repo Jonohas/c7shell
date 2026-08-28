@@ -37,6 +37,10 @@ hyprland_version 0.56.1
 
 mkdir -p "$root/usr/lib/hyprpolkitagent" "$root/usr/lib" \
          "$root/usr/share/wayland-sessions" "$root/dev/dri"
+# The update flow: its polkit action and the root half that action authorises.
+mkdir -p "$root/usr/share/polkit-1/actions" "$root/usr/lib/c7shell"
+: > "$root/usr/share/polkit-1/actions/io.crimson7.c7shell.policy"
+: > "$root/usr/lib/c7shell/c7up-root"
 : > "$root/usr/lib/hyprpolkitagent/hyprpolkitagent"
 : > "$root/usr/lib/xdg-desktop-portal-hyprland"
 # The Settings-portal backend, plus a gsettings that reports a preference
@@ -599,5 +603,62 @@ printf '#!/bin/sh\ncase $1 in --version) echo "paru v2.1.0"; exit 0 ;; esac\n' >
 out=$(run 2>&1 || true)
 grep -q 'paru runs' <<<"$out" || fail "a working paru was not reported ok:\n$out"
 rm -f "$bin/paru"
+
+
+# --- an AUR-only package must be routed to the AUR helper -----------------
+# The two lists are written by hand at opposite ends of the file, and getting
+# them out of step is silent until someone picks the entry and pacman answers
+# "target not found". checkservices shipped exactly that way for one commit.
+aur_entries=$(sed -n '/^declare -A aur_only=(/,/^)/p' "$doctor" \
+  | sed -n 's/^ *\[\([a-z0-9._-]\+\)\]=1.*/\1/p')
+while IFS=: read -r _kind _target pkg _desc; do
+  [[ -n $pkg ]] || continue
+  # Not in the repos on this machine and not routed to the AUR = a pick that
+  # cannot work. `pacman -Si` is the same question the picker's pacman -S asks.
+  if ! pacman -Si "$pkg" >/dev/null 2>&1; then
+    grep -qx "$pkg" <<<"$aur_entries" \
+      || fail "optional_entries offers '$pkg', which pacman cannot resolve, but
+  aur_only does not list it -- picking it would fail with 'target not found'"
+  fi
+done < <(sed -n '/^optional_entries=(/,/^)/p' "$doctor" \
+  | sed -n 's/^ *"\(.*\)"$/\1/p')
+
+# --- one package, one line in the picker ----------------------------------
+# checkupdates and pacdiff are both pacman-contrib. Two entries for one package
+# is correct in optional_entries -- they are different missing files with
+# different reasons -- but two numbered LINES in the picker reads as two
+# separate installs, and picking "the other one" would be a no-op.
+dupes=$(sed -n '/^optional_entries=(/,/^)/p' "$doctor" \
+  | sed -n 's/^ *"[a-z]*:[^:]*:\([^:]*\):.*/\1/p' | sort | uniq -d)
+[[ -n $dupes ]] || fail 'no package is offered under two entries any more --
+  drop this check, or it is silently testing nothing'
+pick '' >/dev/null
+for pkg in $dupes; do
+  n=$(grep -cE "^ +[0-9]+\) $pkg " "$tmp/pick.out" || true)
+  ((n == 1)) || fail "$pkg is offered on $n numbered lines, expected 1:\n$(cat "$tmp/pick.out")"
+done
+
+
+# --- the merge tool is a "any one of these" check -------------------------
+# The update wizard's "merge..." works with meld, kdiff3, nvim -d, vim -d or
+# whatever $DIFFPROG names. Nagging somebody who already has vim to install
+# meld is how a checklist teaches people to ignore it.
+out=$(run --quiet 2>&1 || true)
+grep -q 'no merge tool' <<<"$out" \
+  || fail "a machine with no merge tool at all was not warned:\n$out"
+
+stub vim
+out=$(run --quiet 2>&1 || true)
+grep -q 'no merge tool' <<<"$out" \
+  && fail "vim is a merge tool (vim -d), but the doctor still asked for one:\n$out"
+rm -f "$bin/vim"
+
+# $DIFFPROG is the user's own answer and counts too, even if the program it
+# names is not one we would have picked.
+out=$(env -i PATH="$bin" HOME="$tmp" DIFFPROG=my-own-thing \
+        C7SHELL_ROOT="$root" C7SHELL_SHARE="$tmp/share" XDG_CONFIG_HOME="$conf" \
+        /usr/bin/bash "$doctor" --quiet 2>&1 || true)
+grep -q 'no merge tool' <<<"$out" \
+  && fail "DIFFPROG was set but the doctor still asked for a merge tool:\n$out"
 
 echo 'PASS: c7shell-doctor'

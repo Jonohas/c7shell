@@ -104,6 +104,40 @@ grep -q 'no manifest' <<<"$out" || fail "no note about the missing manifest:\n$o
 local_is hypr/hyprland.lua 'v3 entry'
 local_is hypr/hyprland.lua.new 'v4 entry'
 
+# ...and it says so loudly, because a config that is half one version and half
+# another does not degrade: QML resolves imports across the whole tree, so an
+# old shell.qml beside a new module directory fails the entire load and the
+# desktop comes up with no bar at all.
+grep -q 'part one' <<<"$out" || fail "a mixed config was not called out:\n$out"
+grep -q 'take-shipped' <<<"$out" || fail "the way out of a mixed config was not offered:\n$out"
+
+# --- a conflict stays a conflict, and never silently overwrites -----------
+# With no manifest the divergent file is recorded under the SHIPPED hash --
+# deliberately a hash it does not have. That looks redundant and is not: record
+# the hash the file actually has and the next run concludes "untouched since we
+# installed it" and overwrites a real local edit without asking.
+rm -f "$XDG_CONFIG_HOME/hypr/hyprland.lua.new"
+rc=0; out=$("$upgrade" --config-only --no-doctor 2>&1) || rc=$?
+local_is hypr/hyprland.lua 'v3 entry'
+[[ -e $XDG_CONFIG_HOME/hypr/hyprland.lua.new ]] \
+  || fail "the second run silently overwrote a file it had flagged as divergent:\n$out"
+
+# --- --take-shipped is the way out ----------------------------------------
+# The usual case on a machine set up before the manifest existed: the files
+# differ because they are old, not because anybody edited them.
+rc=0; out=$("$upgrade" --config-only --no-doctor --take-shipped 2>&1) || rc=$?
+local_is hypr/hyprland.lua 'v4 entry'
+[[ -e $XDG_CONFIG_HOME/hypr/hyprland.lua.new ]] \
+  && fail "--take-shipped left the .new behind:\n$out"
+ls "$XDG_CONFIG_HOME"/hypr/hyprland.lua.bak-* >/dev/null 2>&1 \
+  || fail "--take-shipped did not back the local file up:\n$out"
+[[ $(cat "$XDG_CONFIG_HOME"/hypr/hyprland.lua.bak-*) == 'v3 entry' ]] \
+  || fail '--take-shipped backed up the wrong content'
+# And the next run is clean, because the manifest now matches reality.
+out=$("$upgrade" --config-only --no-doctor 2>&1) || true
+grep -q 'configs already match' <<<"$out" \
+  || fail "the run after --take-shipped was not clean:\n$out"
+
 # --- the hand-over marker -------------------------------------------------
 # The package half replaces this script, so any step after it belongs to the
 # version just installed. c7shell-upgrade compares upgrade_revision on disk with

@@ -394,7 +394,50 @@ eat local edits by accident.
 | `sddm/themes/c7shell/` | the greeter theme; `Main.qml` wires SDDM's models into `Greeter.qml` |
 | `sddm/themes/c7shell/theme.conf` | greeter settings (wallpaper, user list, lockout) |
 | `share/c7shell-network-dispatcher` | NetworkManager dispatcher script; publishes the connection for the greeter's network pill |
+| `bin/c7up` | the system-update backend: dry run, transaction, pacnew review — NDJSON, unprivileged |
+| `bin/c7up-root` | the only part of it that runs as root; takes a fixed verb, never a command line |
+| `share/polkit-1/actions/io.crimson7.c7shell.policy` | the polkit action that authorises it |
+| `quickshell/c7shell/Modules/Updates/` | the update dropdown's run view, the wizard, the toast |
 | `/etc/sddm.conf.d/10-c7shell.conf` | selects the theme; written by bootstrap/upgrade, not by the package |
+
+## System updates
+
+The package badge in the bar is the whole flow. Behind it a dry run has
+already happened, so by the time you open it, it knows which of two things it
+is:
+
+- **nothing needs a decision** — the dropdown does the update itself, in
+  place. One click, no window, no step counter. Close it and the run keeps
+  going; the badge becomes a progress ring.
+- **something does** — the same button opens a review window instead, holding
+  only the steps that apply. A kernel or driver, a package replacement, a new
+  signing key, a changed AUR `PKGBUILD`, a `.pacnew`, an unsatisfiable
+  dependency: any of those escalates, and nothing else does.
+
+The run never stops to ask a question. Everything answerable is answered
+before it starts, and anything left over — configs to review, a pending
+reboot, services wanting a restart — is collected at the end. "Later" parks it
+in **settings → system** with an amber dot on the badge rather than dropping
+it.
+
+`arch-update` is underneath: c7up reads its config (which AUR helper, which
+elevation command) and writes its state files, so the bar and a terminal run
+of `arch-update` never disagree about what is pending. What `arch-update`
+cannot provide is a parseable interface — every stage of it is a `read -rp`
+against a TTY, and its output is localised, coloured and column-aligned — so
+`bin/c7up` is the machine-readable half. Its header documents the split.
+`arch-update` itself is still one click away: the failure state's "open in
+terminal" runs it.
+
+`c7shell-bootstrap` installs everything this needs; nothing here is a manual
+step.
+
+Elevation goes through one polkit action (`io.crimson7.c7shell.update`,
+`auth_admin_keep`), so a single authorisation covers both the repo half and
+the AUR half of a run. `bin/c7up-root` is the trust boundary and takes a fixed
+verb — the AUR helper's install step is routed through it too, via
+`--sudo bin/c7up-sudo`, rather than a password prompt on a TTY the shell does
+not have.
 
 ## Optional pieces
 
@@ -403,6 +446,18 @@ backlight over DDC/CI), `brightnessctl` (internal panel), `playerctl` (media
 keys), `upower` (battery), `solaar` (Logitech gestures — needs your own
 `~/.config/solaar/rules.yaml`). All are `optdepends`; the shell degrades
 without them.
+
+The update flow's dependencies are not in this list — `c7shell-bootstrap`
+installs them, because the badge is not something the shell degrades
+gracefully without: `pacman-contrib` (`checkupdates` for the rootless dry run,
+`pacdiff` for the pacnew list) from the repos, and `arch-update` (the shared
+config and state) plus `checkservices` (the post-update restart check) from
+the AUR. `--no-aur` drops the last two and the flow still works — what is lost
+is agreement with a terminal `arch-update` about what is pending, and the
+service-restart step.
+
+`flatpak` stays genuinely optional: install it and its updates join the same
+flow, skip it and that source does not appear.
 
 ## Tests
 
@@ -416,6 +471,8 @@ tests/test-lockscreen.sh
 tests/test-packaging.sh
 tests/test-filechooser.sh
 tests/test-wallpaper.sh
+tests/test-c7up.sh
+tests/test-updates.sh
 ```
 
 The two lua suites run from `hypr/`, since the config resolves its own
