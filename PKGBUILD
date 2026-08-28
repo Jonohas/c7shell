@@ -65,6 +65,10 @@ optdepends=(
   'playerctl: media keys (XF86Audio{Next,Prev,Play,Pause}) and the lock screen now-playing line'
   'solaar: Logitech device support, autostarted if present'
   'jq: helper scripting'
+  # AUR-only, so it cannot be a depends=: makepkg resolves dependencies through
+  # pacman alone and an unresolvable name aborts the whole build. Install it
+  # with an AUR helper:  paru -S arch-update
+  'arch-update: applies the updates the bar counts (AUR)'
   'kwallet: secret storage unlocked at login by conf/autostart.lua'
 )
 # lua: tests/test-monitors.lua loads conf/monitors.lua against a stubbed hl.
