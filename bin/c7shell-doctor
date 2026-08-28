@@ -793,6 +793,26 @@ for entry in "${optional_entries[@]}"; do
   fi
 done
 
+# The update wizard's "merge..." for a .pacnew. c7up walks $DIFFPROG, then
+# arch-update.conf's diff_prog, then meld, kdiff3, nvim -d, vim -d -- and with
+# none of them it falls back to showing the diff read-only, which resolves
+# nothing. Any one of these makes the button work, so only the empty case is
+# worth a warning.
+merge_tools=(meld kdiff3 nvim vim vimdiff)
+have_merge=''
+for t in "${merge_tools[@]}"; do command -v "$t" >/dev/null && { have_merge=$t; break; }; done
+if [[ -n $have_merge ]]; then
+  ok "merge tool for pacnew review ($have_merge)"
+elif [[ -n ${DIFFPROG:-} ]]; then
+  ok "merge tool for pacnew review (DIFFPROG=$DIFFPROG)"
+else
+  warn 'no merge tool -- the update wizard can show a pacnew diff but not merge it'
+  # meld rather than vim: this is a graphical desktop, and a three-pane window
+  # is what the wizard's "merge..." promises. vim -d is pacdiff's own default
+  # and works just as well for anyone who wants it.
+  offer meld 'three-pane merge for the update wizard'"'"'s pacnew review'
+fi
+
 # Let the user pick which of the absent optional packages to install. Only
 # ever runs with --optional, and only with a terminal to answer on.
 offer_optional() {

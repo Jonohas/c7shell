@@ -638,4 +638,27 @@ for pkg in $dupes; do
   ((n == 1)) || fail "$pkg is offered on $n numbered lines, expected 1:\n$(cat "$tmp/pick.out")"
 done
 
+
+# --- the merge tool is a "any one of these" check -------------------------
+# The update wizard's "merge..." works with meld, kdiff3, nvim -d, vim -d or
+# whatever $DIFFPROG names. Nagging somebody who already has vim to install
+# meld is how a checklist teaches people to ignore it.
+out=$(run --quiet 2>&1 || true)
+grep -q 'no merge tool' <<<"$out" \
+  || fail "a machine with no merge tool at all was not warned:\n$out"
+
+stub vim
+out=$(run --quiet 2>&1 || true)
+grep -q 'no merge tool' <<<"$out" \
+  && fail "vim is a merge tool (vim -d), but the doctor still asked for one:\n$out"
+rm -f "$bin/vim"
+
+# $DIFFPROG is the user's own answer and counts too, even if the program it
+# names is not one we would have picked.
+out=$(env -i PATH="$bin" HOME="$tmp" DIFFPROG=my-own-thing \
+        C7SHELL_ROOT="$root" C7SHELL_SHARE="$tmp/share" XDG_CONFIG_HOME="$conf" \
+        /usr/bin/bash "$doctor" --quiet 2>&1 || true)
+grep -q 'no merge tool' <<<"$out" \
+  && fail "DIFFPROG was set but the doctor still asked for a merge tool:\n$out"
+
 echo 'PASS: c7shell-doctor'

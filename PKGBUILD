@@ -84,6 +84,11 @@ optdepends=(
   # log and diff views work on a machine with none of them. less is simply the
   # nicest of those, and it is not part of base.
   'less: a scrolling pager for the update log and PKGBUILD diffs'
+  # Any one of meld / kdiff3 / neovim / vim makes the wizard's "merge..." work;
+  # c7up walks them in that order after $DIFFPROG. meld is named here because
+  # this is a graphical desktop and a three-pane window is what the button
+  # promises, but nothing needs it specifically.
+  'meld: three-pane merge for the update wizard'"'"'s pacnew review'
   'kwallet: secret storage unlocked at login by conf/autostart.lua'
 )
 # lua: tests/test-monitors.lua loads conf/monitors.lua against a stubbed hl.

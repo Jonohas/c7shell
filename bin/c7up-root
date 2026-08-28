@@ -29,6 +29,17 @@ check_pkgname() {
 # -- a relative path, a symlink out of /etc, a path with no .pacnew sibling --
 # is a caller bug at best.
 check_pacnew() {
+  # Test seam, honoured only when this is NOT running as root. In production it
+  # only ever runs as root -- pkexec is the sole way in -- so this branch is
+  # dead code there and cannot widen what root will write to. pkexec also
+  # sanitises the environment, so the variable could not survive the trip even
+  # if the check were wrong.
+  if ((EUID != 0)) && [[ -n ${C7UP_TEST_ROOT:-} ]]; then
+    [[ $1 == "$C7UP_TEST_ROOT"/* ]] || die "not a config path: $1"
+    [[ $1 != *..* ]] || die "path traversal: $1"
+    [[ -f $1.pacnew ]] || die "no pacnew beside $1"
+    return 0
+  fi
   [[ $1 == /etc/* || $1 == /usr/share/* || $1 == /boot/* ]] || die "not a config path: $1"
   [[ $1 != *..* ]] || die "path traversal: $1"
   [[ -f $1.pacnew ]] || die "no pacnew beside $1"
@@ -74,6 +85,27 @@ case "$verb" in
     chmod --reference="$1.c7up-bak" -- "$1"
     chown --reference="$1.c7up-bak" -- "$1"
     exec rm -f -- "$1.c7up-bak"
+    ;;
+
+  # The merge's other half. The editor runs as the user on a copy -- root must
+  # never exec a program the caller names, which with auth_admin_keep would be
+  # a root shell for anyone in wheel for five minutes after every update -- and
+  # only the finished bytes come back here.
+  #
+  # This is deliberately no wider than pacnew-take: it writes to a path that
+  # already has a .pacnew beside it, which is exactly the operation the user
+  # authorised, and nothing else.
+  pacnew-write)
+    check_pacnew "${1-}"
+    src=${2-}
+    [[ -f $src && ! -L $src ]] || die "not a regular file: $src"
+    # Same reasoning as pacnew-take: keep the live file's mode and owner rather
+    # than whatever the user's temporary copy picked up.
+    cp --preserve=all -- "$1" "$1.c7up-bak"
+    cat -- "$src" > "$1"
+    chmod --reference="$1.c7up-bak" -- "$1"
+    chown --reference="$1.c7up-bak" -- "$1"
+    rm -f -- "$1.c7up-bak" "$1.pacnew"
     ;;
 
   restart-services)

@@ -462,7 +462,8 @@ page() {
 # arch-update.conf may set diff_prog; both are the user's choice and win.
 merge_prog() {
   local p
-  for p in ${DIFFPROG:+"$DIFFPROG"} ${diff_prog:+"$diff_prog"} vimdiff "nvim -d" "vim -d"; do
+  for p in ${DIFFPROG:+"$DIFFPROG"} ${diff_prog:+"$diff_prog"} \
+           meld kdiff3 "nvim -d" "vim -d" vimdiff; do
     command -v "${p%% *}" >/dev/null && { printf '%s' "$p"; return 0; }
   done
   return 1
@@ -510,9 +511,29 @@ case "${1-}" in
       merge)
         f=${2-}
         if prog=$(merge_prog); then
-          # Unquoted on purpose: "nvim -d" is a program and an argument.
+          # The editor runs as the user, on a copy. /etc is root-owned, so a
+          # merge run as the user opens fine and then cannot save -- and
+          # running the editor itself as root would mean handing pkexec an
+          # arbitrary program to exec, which is the one thing c7up-root exists
+          # to refuse. So: edit a copy here, hand the finished bytes to root.
+          work=$(mktemp "${TMPDIR:-/tmp}/c7up-merge-XXXXXX") || exit 16
+          cp -- "$f" "$work"
           # shellcheck disable=SC2086
-          exec $prog "$f" "$f.pacnew"
+          $prog "$work" "$f.pacnew"
+          if cmp -s -- "$work" "$f"; then
+            printf '\nnothing changed -- %s left as it was\n' "$f"
+            rm -f "$work"
+            exit 0
+          fi
+          printf '\napplying the merged %s...\n' "$f"
+          if pkexec "$libdir/c7up-root" pacnew-write "$f" "$work"; then
+            printf 'done -- the .pacnew has been removed\n'
+          else
+            printf 'could not write %s; your merge is kept at %s\n' "$f" "$work"
+            exit 1
+          fi
+          rm -f "$work"
+          exit 0
         fi
         # No merge tool installed anywhere. Showing the difference is still
         # most of the value, and it beats a terminal that dies on exec.

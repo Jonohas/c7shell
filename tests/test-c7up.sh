@@ -388,4 +388,70 @@ out=$(PAGER=cat runc7up "$barebin" resolve merge "$target" 2>&1)
 [[ $out == *"-b"* && $out == *"+c"* ]] \
   || fail "with no merge tool the difference itself was not shown:\n$out"
 
+# --------------------------------------------------------------------------
+# 12. The merge writes through root, on a copy.
+#     /etc is root-owned, so an editor run as the user opens and then cannot
+#     save. Running the editor AS root is not the fix: with auth_admin_keep
+#     that would be an arbitrary program exec'd as root for five minutes after
+#     every update. The editor stays with the user, only the bytes go up.
+# --------------------------------------------------------------------------
+target=$tmp/merge-target
+printf 'original\n' > "$target"
+printf 'shipped\n' > "$target.pacnew"
+
+# Stands in for the editor: writes a merged result into the working copy it is
+# handed. If c7up passed it the real file this would fail on a root-owned one.
+stub fakemerge 'printf "merged\n" > "$1"'
+# pkexec here just runs what it is given; the real one authenticates first.
+stub pkexec 'exec "$@"'
+mkdir -p "$tmp/lib"
+cp "$here/../bin/c7up-root" "$tmp/lib/c7up-root"
+
+mergerun() {
+  timeout 20 env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp" TERM=dumb DIFFPROG=fakemerge \
+      XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" \
+      XDG_CONFIG_HOME="$tmp/config" TMPDIR="$tmp" C7UP_LIBDIR="$tmp/lib" \
+      C7UP_TEST_ROOT="$tmp" \
+      bash "$c7up" resolve merge "$1" </dev/null 2>&1 || true
+}
+
+out=$(mergerun "$target")
+[[ $(cat "$target") == merged ]] \
+  || fail "the merged result never reached the target file:\n$out\n$(cat "$target")"
+[[ ! -e $target.pacnew ]] || fail "the .pacnew survived a completed merge:\n$out"
+
+# The editor must be handed a COPY, never the live file: that is the whole
+# reason this works on a root-owned path.
+printf 'original\n' > "$target"
+printf 'shipped\n' > "$target.pacnew"
+stub fakemerge 'case "$1" in '"$tmp"'/merge-target) echo "EDITED THE LIVE FILE" >&2; exit 1 ;; esac
+printf "merged\n" > "$1"'
+out=$(mergerun "$target")
+[[ $out != *"EDITED THE LIVE FILE"* ]] \
+  || fail "the editor was pointed at the live file instead of a copy:\n$out"
+
+# A merge the user abandoned without changing anything must not touch /etc, and
+# must not delete the .pacnew -- the review is still outstanding.
+printf 'original\n' > "$target"
+printf 'shipped\n' > "$target.pacnew"
+stub fakemerge 'exit 0'
+out=$(mergerun "$target")
+[[ $(cat "$target") == original ]] || fail "an abandoned merge still wrote:\n$out"
+[[ -e $target.pacnew ]] || fail "an abandoned merge removed the .pacnew:\n$out"
+[[ $out == *"nothing changed"* ]] || fail "an abandoned merge said nothing:\n$out"
+
+# pacnew-write is as narrow as pacnew-take: a path with a .pacnew beside it,
+# and a real file as the source. Anything else is a caller bug at best.
+out=$(bash "$tmp/lib/c7up-root" pacnew-write /etc/../root/.ssh/authorized_keys "$target" 2>&1 || true)
+[[ $out == *"path traversal"* || $out == *"not a config path"* ]] \
+  || fail "pacnew-write accepted a traversal path: $out"
+ln -sf /etc/shadow "$tmp/evil-link"
+# Both halves must exist, or the check under test is not the one that fires.
+printf 'x\n' > "$tmp/fake"
+printf 'y\n' > "$tmp/fake.pacnew"
+out=$(C7UP_TEST_ROOT="$tmp" bash "$tmp/lib/c7up-root" pacnew-write "$tmp/fake" "$tmp/evil-link" 2>&1 || true)
+[[ $out == *"not a regular file"* ]] \
+  || fail "pacnew-write did not reject a symlink as its source: $out"
+[[ $(cat "$tmp/fake") == x ]] || fail 'pacnew-write wrote despite rejecting the source' 
+
 echo 'test-c7up.sh: all checks passed'
