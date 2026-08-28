@@ -475,6 +475,59 @@ out=$(pick a)
 grep -q 'plasma-integration' "$tmp/pick.out" \
   || fail "the offer did not list plasma-integration:\n$(cat "$tmp/pick.out")"
 mv "$tmp/theme-gone2" "$root/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so"
+
+# --- an AUR entry goes to the helper, never to pacman -----------------------
+# `pacman -S arch-update` is not a slow path, it is "target not found": the
+# package only exists in the AUR. So the picker has to split the selection, and
+# the AUR half has to survive there being no helper at all.
+pick ''   # re-render the menu so the entry can be found by number
+arch_n=$(sed -n 's/^ *\([0-9]\{1,\}\)) arch-update .*/\1/p' "$tmp/pick.out" | head -1)
+[[ -n $arch_n ]] || fail "arch-update was not offered:\n$(cat "$tmp/pick.out")"
+
+# no helper installed: pacman is not asked, and the manual route is printed
+out=$(pick "$arch_n")
+[[ $out != *arch-update* ]] || fail "an AUR package was handed to pacman: $out"
+grep -q 'no working AUR helper' "$tmp/pick.out" \
+  || fail "the missing helper was not reported:\n$(cat "$tmp/pick.out")"
+grep -q 'aur.archlinux.org/arch-update.git' "$tmp/pick.out" \
+  || fail "no by-hand route for the skipped AUR package:\n$(cat "$tmp/pick.out")"
+
+# a broken helper is no helper: it must not be run, only reported
+paru_log=$tmp/paru.log
+printf '#!/bin/sh\ncase $1 in --version) echo "paru: error while loading shared libraries: libalpm.so.16" >&2; exit 127 ;; esac\necho "$@" >> "%s"\n' \
+  "$paru_log" > "$bin/paru"
+chmod +x "$bin/paru"
+: > "$paru_log"
+out=$(pick "$arch_n")
+[[ ! -s $paru_log ]] || fail "a broken helper was still used to install: $(cat "$paru_log")"
+grep -q 'no working AUR helper' "$tmp/pick.out" \
+  || fail "a broken helper was treated as usable:\n$(cat "$tmp/pick.out")"
+
+# a working one gets the AUR package, and only the AUR package
+printf '#!/bin/sh\ncase $1 in --version) echo "paru v2.1.0"; exit 0 ;; esac\necho "$@" >> "%s"\n' \
+  "$paru_log" > "$bin/paru"
+: > "$paru_log"
+out=$(pick "$arch_n")
+[[ $(tr -d '\r' < "$paru_log") == '-S --needed -- arch-update' ]] \
+  || fail "paru was not asked for arch-update, got: $(cat "$paru_log")"
+[[ -z $out ]] || fail "an AUR-only pick also ran pacman: $out"
+
+# picking everything splits across both channels rather than failing either
+: > "$paru_log"
+out=$(pick a)
+[[ $out == *kitty* ]] || fail "'a' did not install the repo packages: $out"
+[[ $out != *arch-update* ]] || fail "'a' handed the AUR package to pacman: $out"
+[[ $(tr -d '\r' < "$paru_log") == *arch-update* ]] \
+  || fail "'a' did not install the AUR package: $(cat "$paru_log")"
+rm -f "$bin/paru"
+
+# present on PATH, and it is neither reported missing nor offered
+stub arch-update
+out=$(run --quiet 2>&1 || true)
+grep -q 'arch-update not found' <<<"$out" \
+  && fail "an installed arch-update was still reported missing:\n$out"
+rm -f "$bin/arch-update"
+
 : > "$log"   # the cases below assert on an empty log
 
 # without a terminal the picker says so instead of hanging on a read

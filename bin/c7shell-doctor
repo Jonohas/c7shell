@@ -91,6 +91,16 @@ declare -A companions=(
   [dolphin]='plasma-integration breeze breeze-icons'
 )
 
+# Packages pacman cannot reach, because they only exist in the AUR. The picker
+# routes these to the AUR helper instead of `pacman -S`, which would fail on
+# them with "target not found".
+declare -A aur_only=(
+  [arch-update]=1
+)
+# The first helper the 'aur helper' section below finds actually running. Empty
+# when there is none, or when the only one installed is broken.
+aur_helper=
+
 ok()   { ((quiet)) || printf '  ok    %s\n' "$*"; }
 bad()  { printf '  FAIL  %s\n' "$*" >&2; fail=1; }
 warn() { printf '  warn  %s\n' "$*" >&2; warned=1; }
@@ -661,6 +671,9 @@ for helper in paru yay; do
   command -v "$helper" >/dev/null || continue
   if err=$("$helper" --version 2>&1 >/dev/null); then
     ok "$helper runs"
+    # What --optional installs the AUR entries with. A broken helper is no
+    # helper, so this is only ever set from the branch that just ran one.
+    if [[ -z $aur_helper ]]; then aur_helper=$helper; fi
   elif [[ $err == *libalpm.so* ]]; then
     warn "$helper is broken: ${err%%$'\n'*}"
     note "pacman's libalpm changed soname under it. Rebuild the *source*"
@@ -687,6 +700,10 @@ optional_entries=(
   "cmd:solaar:solaar:Logitech thumb-button gestures, autostarted if present"
   "cmd:jq:jq:helper scripting"
   "file:/usr/lib/pam_kwallet_init:kwallet:secret storage unlocked at login, or kwallet prompts"
+  # AUR, not a repo package: it is installed through aur_only above, and the
+  # PKGBUILD lists it in optdepends= for the same reason. New entries go at the
+  # end -- tests/test-doctor.sh picks packages out of this list by number.
+  "cmd:arch-update:arch-update:applies the updates the bar counts (AUR)"
 )
 
 
@@ -768,12 +785,43 @@ offer_optional() {
     ((seen)) || uniq+=("$c")
   done
 
-  printf '\ninstalling: %s\n' "${uniq[*]}"
-  if as_root pacman -S --needed -- "${uniq[@]}"; then
-    printf '\ninstalled. re-run c7shell-doctor to re-check.\n'
-  else
-    printf 'c7shell-doctor: installing the optional packages failed.\n' >&2
+  # Two channels, because pacman cannot install an AUR package and the helper
+  # must not run as root (makepkg refuses to). Split the pick rather than
+  # sending everything down one of them.
+  local repo=() aur=() failed=0
+  for c in "${uniq[@]}"; do
+    if [[ -n ${aur_only[$c]:-} ]]; then aur+=("$c"); else repo+=("$c"); fi
+  done
+
+  if ((${#repo[@]})); then
+    printf '\ninstalling: %s\n' "${repo[*]}"
+    as_root pacman -S --needed -- "${repo[@]}" || {
+      printf 'c7shell-doctor: installing the optional packages failed.\n' >&2
+      failed=1
+    }
   fi
+
+  if ((${#aur[@]})); then
+    if [[ -n $aur_helper ]]; then
+      printf '\ninstalling from the AUR with %s: %s\n' "$aur_helper" "${aur[*]}"
+      # As the user: an AUR helper builds with makepkg, which will not run under
+      # root, so as_root here would fail the build rather than authorise it.
+      "$aur_helper" -S --needed -- "${aur[@]}" || {
+        printf 'c7shell-doctor: %s could not install: %s\n' "$aur_helper" "${aur[*]}" >&2
+        failed=1
+      }
+    else
+      # Not a failure of the pick: everything from the repos still went in, and
+      # the AUR needs a tool this machine does not have. Say what to run.
+      printf '\nno working AUR helper, so these were skipped: %s\n' "${aur[*]}" >&2
+      for c in "${aur[@]}"; do
+        note "git clone https://aur.archlinux.org/$c.git && cd $c && makepkg -si"
+      done
+      failed=1
+    fi
+  fi
+
+  ((failed)) || printf '\ninstalled. re-run c7shell-doctor to re-check.\n'
 }
 
 if ((fail)) && ((fix)) && ((${#missing_pkgs[@]})); then
