@@ -39,6 +39,14 @@ mkdir -p "$root/usr/lib/hyprpolkitagent" "$root/usr/lib" \
          "$root/usr/share/wayland-sessions" "$root/dev/dri"
 : > "$root/usr/lib/hyprpolkitagent/hyprpolkitagent"
 : > "$root/usr/lib/xdg-desktop-portal-hyprland"
+# The Settings-portal backend, plus a gsettings that reports a preference
+# already exported -- what a set-up machine looks like.
+: > "$root/usr/lib/xdg-desktop-portal-gtk"
+gsettings_scheme() {
+  printf '#!/bin/sh\necho "%s"\n' "$1" > "$bin/gsettings"
+  chmod +x "$bin/gsettings"
+}
+gsettings_scheme "'prefer-dark'"
 : > "$root/usr/lib/pam_kwallet_init"
 printf '[Desktop Entry]\nName=c7shell\nExec=start-hyprland\n' \
   > "$root/usr/share/wayland-sessions/c7shell.desktop"
@@ -143,6 +151,22 @@ out=$(run 2>&1) || fail "an unexported palette should not be fatal:\n$out"
 grep -q 'no C7Shell scheme yet' <<<"$out" || fail "the unexported palette was not reported:\n$out"
 grep -q 'c7shell-theme-export.py' <<<"$out" || fail "no seed command given:\n$out"
 mv "$tmp/kdeglobals-gone" "$conf/kdeglobals"
+
+# without the gtk backend nothing answers the Settings portal, so every app that
+# detects a theme picks light -- required, not cosmetic
+mv "$root/usr/lib/xdg-desktop-portal-gtk" "$tmp/portal-gtk-gone"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "a missing Settings portal backend should fail, got exit $rc"
+grep -q 'xdg-desktop-portal-gtk missing' <<<"$out" || fail "the missing backend was not reported:\n$out"
+mv "$tmp/portal-gtk-gone" "$root/usr/lib/xdg-desktop-portal-gtk"
+
+# the backend can only report what GSettings holds: unset is the state that left
+# apps light, and it names how to set it
+gsettings_scheme "'default'"
+out=$(run 2>&1) || fail "an unset color-scheme should warn, not fail:\n$out"
+grep -q 'no color-scheme preference set' <<<"$out" || fail "the unset preference was not reported:\n$out"
+grep -q 'c7shell-theme-export.py' <<<"$out" || fail "no way to set it given:\n$out"
+gsettings_scheme "'prefer-dark'"
 
 # an install from before the launcher fix is spotted, and names the repair
 printf '[Desktop Entry]\nName=c7shell\nExec=Hyprland\n' \

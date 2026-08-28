@@ -164,11 +164,57 @@ checks all three:
   it the variable above does nothing at all.
 - **`breeze`** — the Qt6 widget style that platform theme draws with.
 
-To export by hand at any time:
+## The theme apps detect
+
+Separate from all of the above, and from the shell's own variant: **Appearance →
+app color scheme** in the settings app is what this desktop *tells other apps*
+it prefers. GTK, Electron, Chromium and libadwaita apps do not read kdeglobals —
+they ask `xdg-desktop-portal` for `org.freedesktop.appearance color-scheme`, and
+a desktop that never answers is read as "no preference", which every one of them
+renders as light. That is why a dark shell used to sit next to a light browser.
+
+The setting writes `colorScheme` into `~/.config/hypr/appearance.json`
+(`dark` by default), and the same export script publishes it where the answer is
+looked up:
+
+- the GSettings key `org.gnome.desktop.interface color-scheme`
+  (`prefer-dark` / `prefer-light`), which the portal reports over the bus;
+- `gtk-application-prefer-dark-theme` in `~/.config/gtk-{3,4}.0/settings.ini`,
+  for GTK apps that never ask the portal. `gtk-theme-name` is left alone — the
+  preference says which face an app should wear, not which theme you run.
+
+Two packages carry it, and `c7shell-doctor` checks both: **`xdg-desktop-portal-gtk`**,
+because `xdg-desktop-portal-hyprland` implements screencast and not `Settings`
+(the shipped `hyprland-portals.conf` already names `gtk` as the fallback, so
+installing it is the whole fix), and `gsettings-desktop-schemas`, which it
+depends on.
+
+The shell's own palette does not follow this setting: picking `light` here makes
+apps light, not the bar. The light *variant* is the card marked "later" on the
+same page.
+
+To export by hand at any time — palette and preference both:
 
 ```bash
 python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py
 ```
+
+## Global menu
+
+Apps that export a menu bar over dbusmenu — dolphin and other Qt/KDE apps —
+show it in the top bar next to the workspaces, and hide their own. That is a
+choice, not a fixture: **settings → topbar → global menu** turns it off, and
+the setting persists in `~/.config/hypr/shell.json`.
+
+The switch is the `com.canonical.AppMenu.Registrar` bus name itself, not just
+the chips in the bar. An app hands its menu bar over precisely because it finds
+that name owned, so a shell that only stopped drawing the export would leave
+dolphin with no menus anywhere. Off tells `c7shell-appmenud` to release the
+name; on tells it to take it back.
+
+A toolkit asks for the registrar once, when a window's menu bar is created, and
+caches the answer — so windows that are already open keep the menu bar they
+started with. Reopen them to see the change.
 
 ## Updating
 
@@ -221,6 +267,7 @@ eat local edits by accident.
 | `quickshell/c7shell/Services/` | brightness, network, bluetooth, audio, notifications, capture |
 | `quickshell/c7shell/bin/screenshare-picker.sh` | xdph `custom_picker_binary` wrapper |
 | `quickshell/c7shell/scripts/c7shell-appmenud.py` | `com.canonical.AppMenu.Registrar` for the global menu |
+| `~/.config/hypr/shell.json` | shell preferences the settings app writes (global menu) |
 
 ## Optional pieces
 

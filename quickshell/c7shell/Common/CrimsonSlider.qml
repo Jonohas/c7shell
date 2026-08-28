@@ -62,6 +62,12 @@ Item {
     // Vertical slop so a 4px track is still grabbable.
     anchors.topMargin: -4
     anchors.bottomMargin: -4
+    // A slider inside a Flickable -- every settings page is one, once the window
+    // is short enough to scroll -- otherwise loses the drag the moment the
+    // pointer wanders a few px up or down: the Flickable decides the gesture was
+    // a flick and steals the grab, and the value freezes mid-drag. Holding the
+    // button is the user saying which one they meant.
+    preventStealing: true
 
     function seek(x) {
       root.moved(Math.max(0, Math.min(1, x / track.width)))

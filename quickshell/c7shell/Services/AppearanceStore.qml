@@ -24,6 +24,11 @@ Singleton {
   // accepting it would persist a variant nothing can render. The card is
   // shown disabled rather than silently doing nothing when picked.
   readonly property string theme: ["dark", "oled"].includes(root.values.theme) ? root.values.theme : "dark"
+  // What the rest of the desktop is told we prefer -- the portal's
+  // org.freedesktop.appearance color-scheme, not a shell palette. The shell
+  // renders `theme` either way; this only decides which face a GTK, Electron
+  // or browser window comes up wearing.
+  readonly property string colorScheme: ["dark", "light"].includes(root.values.colorScheme) ? root.values.colorScheme : "dark"
   readonly property color accent: /^#[0-9a-fA-F]{6}$/.test(root.values.accent) ? root.values.accent : "#e53a44"
   readonly property bool fromWallpaper: root.values.fromWallpaper
 
@@ -37,9 +42,19 @@ Singleton {
   // Active border is the accent (spec §7); only the inactive one is a choice.
   readonly property color inactiveBorder: /^#[0-9a-fA-F]{6}$/.test(root.values.inactiveBorder)
     ? root.values.inactiveBorder : "#595959"
+  // Bar geometry is shell-side only -- no hyprctl, no lua. Top is capped below
+  // the bar's own 36px shadow gutter so the island never outruns the window it
+  // is drawn in; sides are capped at a quarter of a narrow 1366px screen.
+  readonly property int barMarginTop: root.clamp(root.values.barMarginTop, 0, 32)
+  readonly property int barMarginSide: root.clamp(root.values.barMarginSide, 0, 80)
   readonly property bool animationsEnabled: root.values.animationsEnabled
   readonly property real animationSpeed: root.clamp(root.values.animationSpeed, 0.25, 4)
   readonly property string wallpaper: root.values.wallpaper
+  // The cursor name reaches a directory lookup, two config files and an argv
+  // element in the exporter, so it is held to a plain theme name here too.
+  readonly property string cursorTheme: /^[A-Za-z0-9._-]+$/.test(root.values.cursorTheme)
+    ? root.values.cursorTheme : "Adwaita"
+  readonly property int cursorSize: root.clamp(root.values.cursorSize, 8, 128)
 
   function clamp(v, lo, hi) {
     const n = Number(v)
@@ -66,7 +81,7 @@ Singleton {
 
     onFileChanged: file.reload()
     onAdapterUpdated: file.writeAdapter()
-    onLoaded: { apply.restart(); kdeExport.restart() }
+    onLoaded: { apply.restart(); desktopExport.restart() }
     // Write the defaults out so hyprland has something to read on its next
     // config load, instead of both sides silently disagreeing.
     onLoadFailed: err => { if (err === FileViewError.FileNotFound) file.writeAdapter() }
@@ -75,6 +90,7 @@ Singleton {
       id: adapter
 
       property string theme: "dark"
+      property string colorScheme: "dark"
       property string accent: "#e53a44"
       property bool fromWallpaper: false
       property int rounding: 19
@@ -84,10 +100,16 @@ Singleton {
       property int blurPasses: 3
       property real inactiveOpacity: 1.0
       property int borderWidth: 2
+      property int barMarginTop: 10
+      property int barMarginSide: 12
       property string inactiveBorder: "#595959"
       property bool animationsEnabled: true
       property real animationSpeed: 1.0
       property string wallpaper: ""
+      // Not exposed in the settings app yet; they live here so a hand-edit
+      // survives the next write instead of being dropped from the JSON.
+      property string cursorTheme: "Adwaita"
+      property int cursorSize: 24
     }
   }
 
@@ -108,19 +130,29 @@ Singleton {
   onBorderWidthChanged: apply.restart()
   onAnimationsEnabledChanged: apply.restart()
   onAnimationSpeedChanged: apply.restart()
-  onAccentChanged: { apply.restart(); kdeExport.restart() }
-  onThemeChanged: kdeExport.restart()
+  onAccentChanged: { apply.restart(); desktopExport.restart() }
+  onThemeChanged: desktopExport.restart()
+  onColorSchemeChanged: desktopExport.restart()
+  // The exporter is what carries a cursor change to kcminputrc, both GTK
+  // settings.ini files and `hyprctl setcursor`; the compositor's own env is
+  // read by conf/environment.lua at config load.
+  onCursorThemeChanged: desktopExport.restart()
+  onCursorSizeChanged: desktopExport.restart()
   onWallpaperChanged: wallpaperApply.restart()
 
-  // Qt and KDE apps take their colours from ~/.config/kdeglobals, which nothing
-  // in this session kept in step with appearance.json -- so the shell went green
-  // and dolphin stayed crimson. scripts/c7shell-theme-export.py rewrites the
-  // C7Shell scheme from this store's own accent and variant, then emits the
-  // signal plasma-integration repaints on. Only accent and theme move it; the
-  // geometry sliders have nothing to export.
+  // The rest of the desktop does not read appearance.json: Qt and KDE apps take
+  // their colours from ~/.config/kdeglobals, and everything that asks "is this a
+  // dark desktop?" -- GTK, Electron, browsers -- asks the settings portal, which
+  // answers out of GSettings. Nothing kept either in step, so the shell went
+  // green while dolphin stayed crimson, and every app that detects a scheme came
+  // up light. scripts/c7shell-theme-export.py writes both from this store, then
+  // emits the signal plasma-integration repaints on. Only accent, theme and
+  // colorScheme move it; the geometry sliders have nothing to export.
   //
-  // Needs QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua): under qt6ct KDE
-  // apps read neither kdeglobals nor qt6ct's palette and come up stock light.
+  // The Qt half needs QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua):
+  // under qt6ct KDE apps read neither kdeglobals nor qt6ct's palette and come up
+  // stock light. The portal half needs an xdg-desktop-portal backend that
+  // implements Settings (xdg-desktop-portal-gtk; xdph does not).
   //
   // Resolved off this file, not off $HOME: the packaged shell lives in
   // /usr/share/c7shell, and a hardcoded ~/.config path would silently export
@@ -129,16 +161,16 @@ Singleton {
     Qt.resolvedUrl("../scripts/c7shell-theme-export.py").toString().replace(/^file:\/\//, "")
 
   Timer {
-    id: kdeExport
+    id: desktopExport
     interval: 250
     onTriggered: {
-      if (kdeGlobals.running) { kdeExport.restart(); return }
-      kdeGlobals.exec(["python3", root.exporter])
+      if (exportProc.running) { desktopExport.restart(); return }
+      exportProc.exec(["python3", root.exporter])
     }
   }
 
   Process {
-    id: kdeGlobals
+    id: exportProc
     // The script reads appearance.json itself rather than taking argv, so a
     // hand-edit lands the same way a settings click does.
     stderr: StdioCollector {}
