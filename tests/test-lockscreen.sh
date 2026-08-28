@@ -214,6 +214,40 @@ sys.exit(0 if d[:8] == b"\x89PNG\r\n\x1a\n" and (w, h) == (1920, 1080)
          and d[24] == 8 and d[25] == 6 else 1)
 PYCHK
 
+# A HiDPI monitor. hyprlock lays widgets out in buffer pixels, not logical ones
+# (CSessionLockSurface sets size = logical * scale), so a scale-2 panel has a
+# 2560x1600 viewport. Sizing the overlay in logical units drew it at half scale,
+# centred, covering a quarter of the screen -- and every earlier case here used
+# scale 1, where the two are the same number and the bug is invisible.
+printf '#!/bin/sh\ncat <<JSON\n[{"name":"DP-1","width":2560,"height":1600,"scale":2.0}]\nJSON\n' \
+  > "$lockdir/bin/hyprctl"
+runlock >/dev/null || fail "a scale-2 monitor broke c7shell-lock:\n$(cat "$lockdir/err")"
+grep -qE '^\s*size = 1600$' "$gen" \
+  || fail "a scale-2 monitor is sized in logical units, so the overlay covers part of the screen:\n$(grep -E '^\s*size' "$gen")"
+png=$(grep -oE '/[^ ]*\.png' "$gen" | head -1)
+python3 - "$png" <<'PYCHK' || fail 'the scale-2 overlay is not authored at the monitor pixel size'
+import struct, sys
+d = open(sys.argv[1], "rb").read()
+sys.exit(0 if struct.unpack(">II", d[16:24]) == (2560, 1600) else 1)
+PYCHK
+# The grid is in the same units as the type in hyprlock.conf, so it does not
+# change with the monitor's scale factor.
+python3 - "$png" <<'PYCHK' || fail 'the grid step moved with the monitor scale'
+import zlib, struct, sys
+d = open(sys.argv[1], "rb").read()
+w, h = struct.unpack(">II", d[16:24])
+i, idat = 8, b""
+while i < len(d):
+    ln = struct.unpack(">I", d[i:i+4])[0]
+    if d[i+4:i+8] == b"IDAT": idat += d[i+8:i+8+ln]
+    i += 12 + ln
+raw = zlib.decompress(idat)
+stride = w * 4 + 1
+def alpha(x, y): return raw[y*stride + 1 + x*4 + 3]
+# 56 mockup px at 1.2 = 67; a line there and none at 66 or 68.
+sys.exit(0 if alpha(67, 40) > 0 and alpha(66, 40) == 0 and alpha(68, 40) == 0 else 1)
+PYCHK
+
 # Two monitors of different sizes get one image block each -- the whole reason
 # this runs at lock time instead of shipping one asset.
 printf '#!/bin/sh\ncat <<JSON\n[{"name":"DP-1","width":1920,"height":1080,"scale":1.0},{"name":"HDMI-A-1","width":2560,"height":1440,"scale":1.0}]\nJSON\n' \

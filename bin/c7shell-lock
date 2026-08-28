@@ -13,6 +13,13 @@ grid into a different cell size on every machine. That is why this is a program
 that runs at lock time rather than a file shipped in the package: it is the only
 moment the monitor list is known.
 
+Those numbers are the monitor's PIXELS, not its logical size. hyprlock lays
+widgets out in buffer coordinates -- CSessionLockSurface::configure sets
+`size = size_ * POUTPUT->scale` and COutput::getViewport returns that -- so on a
+2560x1600 panel at scale 2 the viewport is 2560x1600, not 1280x800. Sizing the
+overlay in logical units drew it at half scale, centred, covering a quarter of
+the screen.
+
 Everything here is best-effort. A lock screen that does not appear is far worse
 than one without decoration, so any failure at all -- no hyprctl, no monitors,
 an unwritable cache, a malformed config -- falls through to running hyprlock
@@ -56,9 +63,11 @@ def png(width, height, rows):
     )
 
 
-def overlay(width, height, scale):
+def overlay(width, height):
     """The grid and the glow, as RGBA scanlines with a PNG filter byte."""
-    step = max(1, round(GRID_PX * SCALE * scale))
+    # Physical pixels, like everything else hyprlock lays out: the grid has to
+    # match the type in hyprlock.conf, which is authored in the same units.
+    step = max(1, round(GRID_PX * SCALE))
     ga = GRID_ALPHA
     gr, gg, gb = GRID_RGB
     cr, cg, cb = GLOW_RGB
@@ -145,19 +154,21 @@ def main():
         os.makedirs(cache, exist_ok=True)
         blocks = []
         for name, w, h, s in mons:
-            # Authored at the monitor's real pixels so the grid stays a hairline,
-            # and sized in the logical units hyprlock lays widgets out in.
-            path = os.path.join(cache, f"lock-overlay-{name}-{w}x{h}@{s}.png")
+            # Authored at, and sized in, the monitor's real pixels.
+            path = os.path.join(cache, f"lock-overlay-{name}-{w}x{h}.png")
             if not os.path.exists(path):
                 tmp = path + ".tmp"
                 with open(tmp, "wb") as f:
-                    f.write(overlay(w, h, s))
+                    f.write(overlay(w, h))
                 os.replace(tmp, path)
             blocks.append(
                 "image {\n"
                 f"    monitor = {name}\n"
                 f"    path = {path}\n"
-                f"    size = {int(min(w / s, h / s))}\n"
+                # The viewport is in pixels, so this is too: with the PNG at the
+                # monitor's own size, min(w, h) makes hyprlock's
+                # max(size/tex.x, size/tex.y) come out at exactly 1.
+                f"    size = {min(w, h)}\n"
                 "    position = 0, 0\n"
                 "    halign = center\n"
                 "    valign = center\n"
