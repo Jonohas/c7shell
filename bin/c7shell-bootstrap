@@ -209,10 +209,18 @@ fi
 # --- session infrastructure ------------------------------------------------
 # qt6-wayland: every Qt app, the shell included, needs the wayland platform
 # plugin or it falls back to xcb and finds no X server.
-# polkit: hyprpolkitagent is the agent, but the daemon it talks to is separate.
+# polkit: the shell registers as the session's authentication agent itself
+#   (bin/c7-authd), but the daemon it registers with, and the setuid helper it
+#   runs the PAM conversation through, both come from here.
+# python-gobject: that agent is Python, and drives PAM through libpolkit-agent's
+#   GObject bindings. Without it c7-authd exits at startup and every password
+#   prompt on the machine falls back to hyprpolkitagent's dialog. (The app-menu
+#   daemon needs it too, which is why it was already pulled in as a dependency
+#   of the package -- but this list is what a machine is set up with, and the
+#   prompt is not something to leave to a transitive dependency.)
 # xdg-utils: the shell opens captures and launcher results with xdg-open.
 # xdg-user-dirs: the capture service writes into ~/Pictures and ~/Videos.
-add qt6-wayland polkit xdg-utils xdg-user-dirs
+add qt6-wayland polkit python-gobject xdg-utils xdg-user-dirs
 
 # wireplumber is a session manager, not a sound server: without the pipewire
 # daemons under it, every volume keybind and the audio OSD do nothing.

@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""SUDO_ASKPASS helper: routes a terminal sudo to the shell's password prompt.
+
+`sudo -A` runs this with the prompt as argv[1] and reads the password from our
+stdout. We hand the request to bin/c7-authd over its unix socket, it raises the
+same 280px panel every other caller gets, and the answer comes back here.
+
+The panel names the command and the process that asked for it, which is the
+whole reason this exists rather than sudo reading a TTY: a password box that
+appears over your desktop with no way to see what it is for is exactly the
+shape of a phishing prompt. So the command line is not taken from the caller's
+word for it -- it is read out of /proc for the sudo process that is our own
+parent, and the daemon checks SO_PEERCRED on top of that.
+
+Exit status is sudo's contract: 0 with the password on stdout, non-zero to
+abort the authentication. Never echoes, never logs, and the password is written
+once and not kept.
+"""
+
+import json
+import os
+import socket
+import sys
+
+# sudo options that swallow the next argument; without these the command shown
+# would start with the value of -u and read as a different command entirely.
+VALUE_OPTS = {"-u", "-g", "-p", "-C", "-h", "-r", "-t", "-T", "-U", "-D", "-R",
+              "--user", "--group", "--prompt", "--close-from", "--host",
+              "--role", "--type", "--command-timeout", "--other-user",
+              "--chdir", "--chroot"}
+
+SHELLS = {"bash", "zsh", "fish", "sh", "dash", "ksh", "tcsh", "csh", "nu"}
+
+
+def socket_path():
+    base = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return os.environ.get("C7_AUTHD_SOCKET") or os.path.join(base, "c7shell", "askpass.sock")
+
+
+def proc_field(pid, name):
+    try:
+        with open(f"/proc/{pid}/{name}", "rb") as fh:
+            return fh.read()
+    except OSError:
+        return b""
+
+
+def comm(pid):
+    return proc_field(pid, "comm").decode("utf-8", "replace").strip()
+
+
+def ppid(pid):
+    """Parent pid from /proc/<pid>/stat, read past the comm field.
+
+    comm is parenthesised and may itself contain spaces and brackets, so the
+    split has to be on the LAST ')' -- splitting on whitespace picks the wrong
+    field for a process called "foo bar" and reports a parent that does not
+    exist.
+    """
+    raw = proc_field(pid, "stat").decode("utf-8", "replace")
+    tail = raw.rpartition(")")[2].split()
+    try:
+        return int(tail[1])
+    except (IndexError, ValueError):
+        return 0
+
+
+def cmdline(pid):
+    return [a for a in proc_field(pid, "cmdline").split(b"\0") if a]
+
+
+def sudo_command(pid):
+    """The command sudo was asked to run, as a display string."""
+    argv = [a.decode("utf-8", "replace") for a in cmdline(pid)]
+    if not argv:
+        return ""
+    rest = argv[1:]
+    out = []
+    skip = False
+    for i, arg in enumerate(rest):
+        if skip:
+            skip = False
+            continue
+        if not out and arg.startswith("-"):
+            if arg in VALUE_OPTS:
+                skip = True
+            continue
+        out.append(arg)
+    return " ".join(out)
+
+
+def find_asker(start):
+    """Walk up past sudo and past the shell it was typed into.
+
+    "asked by foot · pid 41207" means the terminal, not the shell: a person
+    recognises the window that is in front of them, and every sudo in every
+    terminal would otherwise say "bash".
+    """
+    pid = start
+    for _ in range(12):
+        pid = ppid(pid)
+        if pid <= 1:
+            return 0, ""
+        name = comm(pid)
+        if name and name != "sudo" and name not in SHELLS:
+            return pid, name
+    return 0, ""
+
+
+def main():
+    prompt = sys.argv[1] if len(sys.argv) > 1 else "Password:"
+
+    sudo_pid = os.getppid()
+    if comm(sudo_pid) != "sudo":
+        # Someone other than sudo ran us. Refuse rather than raise a root
+        # password prompt on behalf of a caller we cannot describe -- the
+        # design's first rule, enforced at the only place that can see it.
+        print("c7-askpass: not called by sudo; refusing to prompt", file=sys.stderr)
+        return 1
+
+    asker_pid, asker = find_asker(sudo_pid)
+    request = {
+        "prompt": prompt,
+        "command": sudo_command(sudo_pid),
+        "asker": asker,
+        "askerPid": asker_pid,
+    }
+
+    path = socket_path()
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(path)
+    except OSError as err:
+        print(f"c7-askpass: no prompt available at {path} ({err.strerror}).\n"
+              f"Is c7shell running? Use `sudo` without -A to type into this "
+              f"terminal instead.", file=sys.stderr)
+        return 1
+
+    with sock:
+        sock.sendall((json.dumps(request) + "\n").encode())
+        buf = b""
+        while b"\n" not in buf:
+            chunk = sock.recv(4096)
+            if not chunk:
+                return 1
+            buf += chunk
+        try:
+            reply = json.loads(buf.split(b"\n", 1)[0])
+        except ValueError:
+            return 1
+
+    if not reply.get("ok"):
+        return 1
+    # sudo reads one line and strips the newline itself.
+    sys.stdout.write(reply.get("secret", "") + "\n")
+    sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
