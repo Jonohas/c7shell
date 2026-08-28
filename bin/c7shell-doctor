@@ -675,6 +675,26 @@ if [[ -n $virtual_gpu ]]; then
       note 'writes beside it'
     fi
   fi
+
+  # The third thing it breaks. hyprpaper draws through hyprtoolkit, which has no
+  # software path: it commits a dmabuf for every wallpaper, aquamarine cannot
+  # import it for want of that same DRM renderer, and the compositor drops the
+  # connection -- hyprtoolkit then aborts rather than exiting. So hyprpaper is
+  # not merely wallpaper-less on these machines, it SIGABRTs on the first
+  # request of the session and is gone. Nothing reports that: the setting is
+  # saved, the picker works, and the desktop simply never changes.
+  #
+  # conf/gpu.lua leaves hyprpaper out of autostart here and has the shell paint
+  # the wallpaper instead. Same reasoning as the hyprlock check above -- the
+  # ~/.config copy is the one that runs, and no package upgrade rewrites it.
+  gpu_conf=$conf/hypr/conf/gpu.lua
+  if [[ -f $gpu_conf ]]; then
+    ok "$virtual_gpu: the shell paints the wallpaper (hyprpaper cannot here)"
+  else
+    warn "$virtual_gpu: hyprpaper is autostarted, and it aborts on the first wallpaper -- the wallpaper setting does nothing"
+    note 'your ~/.config copy predates the fix. To take the new version:'
+    note '  c7shell-upgrade --config-only'
+  fi
 fi
 
 section 'aur helper'

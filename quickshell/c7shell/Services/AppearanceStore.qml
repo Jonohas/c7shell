@@ -221,6 +221,13 @@ Singleton {
     stderr: StdioCollector {}
   }
 
+  // Who paints the wallpaper. hypr/conf/environment.lua exports this after
+  // hypr/conf/gpu.lua decides -- on a virtual GPU hyprpaper is not merely
+  // unable to draw, it SIGABRTs on the first request and conf/autostart.lua
+  // does not start it there, so Modules/Wallpaper draws instead. Unset means
+  // hyprpaper, which keeps a shell run outside the session behaving as before.
+  readonly property bool shellDrawsWallpaper: Quickshell.env("C7SHELL_WALLPAPER") === "shell"
+
   // This hyprpaper (0.8.4) implements exactly one request — `wallpaper`, taking
   // [mon],[path],[fit_mode]. `preload` is rejected as an invalid request, and
   // is not needed: a bare wallpaper request loads the file itself (verified —
@@ -232,6 +239,9 @@ Singleton {
     interval: 200
     onTriggered: {
       if (root.wallpaper === "" || paper.running) return
+      // Nothing to push when the shell is the one drawing it: the window in
+      // Modules/Wallpaper is bound to the same value and has already changed.
+      if (root.shellDrawsWallpaper) return
       paper.exec(["hyprctl", "hyprpaper", "wallpaper", `,${root.wallpaper}`])
     }
   }

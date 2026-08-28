@@ -94,9 +94,11 @@ check() {
   # skip themselves when the tool is not installed (in a clean chroot, neither
   # is).
   for t in tests/*.sh; do "$t"; done
-  # From hypr/, because monitors.lua resolves its own require("conf/...")
-  # relative to the working directory.
-  cd hypr && lua ../tests/test-monitors.lua
+  # From hypr/, because these resolve their own require("conf/...") relative to
+  # the working directory.
+  cd hypr
+  lua ../tests/test-monitors.lua
+  lua ../tests/test-gpu.lua
 }
 
 package() {

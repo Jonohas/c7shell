@@ -212,6 +212,33 @@ To export by hand at any time — palette and preference both:
 python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py
 ```
 
+### Where the wallpaper comes from
+
+hyprpaper draws it, except on a virtual GPU, where it cannot: hyprpaper renders
+through hyprtoolkit, which has no software path and commits a dmabuf for every
+wallpaper. `aquamarine` cannot build a DRM renderer to import that buffer —
+
+```
+CDRMRenderer(drm): Can't create renderer, no matching devices found
+drm: initMgpu: no renderer
+```
+
+— the compositor drops the connection, and hyprtoolkit aborts on the way out
+rather than exiting. So hyprpaper is not merely wallpaper-less on those
+machines: it **SIGABRTs on the first wallpaper request of the session** and is
+gone, which looks exactly like a setting that saves and does nothing.
+`LIBGL_ALWAYS_SOFTWARE` does not help — the buffer is allocated on the device
+the compositor advertises, not by GL.
+
+`hypr/conf/gpu.lua` decides which it is (the same `vmwgfx` / `vboxvideo` /
+`virtio_gpu` test that picks llvmpipe for clients). On a virtual GPU
+`conf/autostart.lua` leaves hyprpaper out, `conf/environment.lua` exports
+`C7SHELL_WALLPAPER=shell`, and the shell paints the wallpaper itself on the
+background layer — it renders with llvmpipe and the compositor imports its
+buffers happily, which the bar has been proof of all along. Everywhere else
+nothing changes and the shell maps no window at all. `c7shell-doctor` reports
+which one is in force.
+
 ## Global menu
 
 Apps that export a menu bar over dbusmenu — dolphin and other Qt/KDE apps —
@@ -388,4 +415,12 @@ tests/test-greeter.sh
 tests/test-lockscreen.sh
 tests/test-packaging.sh
 tests/test-filechooser.sh
+tests/test-wallpaper.sh
+```
+
+The two lua suites run from `hypr/`, since the config resolves its own
+`require("conf/...")` relative to the working directory:
+
+```bash
+cd hypr && lua ../tests/test-monitors.lua && lua ../tests/test-gpu.lua
 ```

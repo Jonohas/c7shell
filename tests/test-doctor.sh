@@ -161,6 +161,18 @@ grep -q 'already waiting in hyprlock.conf.new' <<<"$out" \
 rm -f "$conf/hypr/hyprlock.conf.new"
 printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 
+# The third thing it breaks: hyprpaper SIGABRTs on the first wallpaper request,
+# so conf/gpu.lua leaves it out of autostart and the shell paints instead. A
+# ~/.config copy from before that has no gpu.lua, which is the whole check --
+# the wallpaper setting on such a machine saves fine and does nothing.
+out=$(run 2>&1) || fail "vmwgfx with no gpu.lua should warn, not fail:\n$out"
+grep -q 'hyprpaper is autostarted' <<<"$out" || fail "the dead hyprpaper was not reported:\n$out"
+grep -q 'c7shell-upgrade' <<<"$out" || fail "no way to fix it given:\n$out"
+
+: > "$conf/hypr/conf/gpu.lua"
+out=$(run 2>&1) || fail "vmwgfx with gpu.lua should pass:\n$out"
+grep -q 'the shell paints the wallpaper' <<<"$out" || fail "no wallpaper backend line:\n$out"
+
 # a real GPU is none of this machine's business, even with the same old copy
 printf 'DRIVER=amdgpu\n' > "$drm/uevent"
 printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"

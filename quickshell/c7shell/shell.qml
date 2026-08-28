@@ -10,9 +10,14 @@ import qs.Modules.Popovers
 import qs.Modules.Osd
 import qs.Modules.Power
 import qs.Modules.Settings
+import qs.Modules.Wallpaper
 import qs.Services
 
 Scope {
+  // First, and on the background layer: on most machines this is nothing at
+  // all -- hyprpaper owns the wallpaper and Wallpaper.qml maps no windows.
+  Wallpaper {}
+
   Bar {}
   CommandWindow {}
   CaptureOverlay {}

@@ -5,6 +5,7 @@
 -- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Environment-variables/
 
 local a = require("conf/appearance")
+local gpu = require("conf/gpu")
 
 -- appearance.json is hand-editable, so these are untrusted: the name becomes a
 -- directory lookup and an argv element, the size an env value. Anything that is
@@ -55,24 +56,14 @@ hl.env("QT_QPA_PLATFORMTHEME", "kde")
 -- hl.env only reaches the processes Hyprland spawns, so this is the clients'
 -- renderer, not the compositor's -- Hyprland keeps the fallback path that
 -- already works for it.
-local function on_virtual_gpu()
-    for card = 0, 3 do
-        local f = io.open(("/sys/class/drm/card%d/device/uevent"):format(card))
-        if f then
-            local uevent = f:read("*a")
-            f:close()
-            -- vmwgfx is the one confirmed broken here; the other virtual GPUs
-            -- are listed because they are software or paravirtual to begin
-            -- with, so there is no hardware path to lose.
-            if uevent:match("DRIVER=vmwgfx") or uevent:match("DRIVER=vboxvideo")
-                or uevent:match("DRIVER=virtio_gpu") then
-                return true
-            end
-        end
-    end
-    return false
+if gpu.virtual() then
+    hl.env("LIBGL_ALWAYS_SOFTWARE", "1")
 end
 
-if on_virtual_gpu() then
-    hl.env("LIBGL_ALWAYS_SOFTWARE", "1")
+-- Which program owns the wallpaper, for the shell to read at startup:
+-- conf/gpu.lua explains why hyprpaper cannot be it on a virtual GPU, and
+-- conf/autostart.lua does not start it there. Unset means hyprpaper, so a shell
+-- run outside this session keeps the behaviour it always had.
+if gpu.wallpaper_backend() == "shell" then
+    hl.env("C7SHELL_WALLPAPER", "shell")
 end
