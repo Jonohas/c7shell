@@ -29,6 +29,7 @@ Scope {
   WifiPopover {}
   BluetoothPopover {}
   CalendarPopover {}
+  MediaPopover {}
   UpdatesDropdown {}
 
   // One instance, like every other popover: it anchors to whichever bar's

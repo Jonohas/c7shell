@@ -29,6 +29,10 @@ Scope {
         || (win.kind === "mic" && (win.payload?.muted ?? false))
       readonly property bool slider: win.kind === "volume" || win.kind === "mute"
         || win.kind === "brightness"
+      // 15b's track-change pill. The only kind whose content is not a glyph, a
+      // label and a number, so it gets its own layout rather than another
+      // branch inside the one below.
+      readonly property bool track: win.kind === "track"
 
       // modelData, not win.screen: a PanelWindow's `screen` is re-resolved when
       // the window is mapped, so reading it from a binding that also decides
@@ -60,7 +64,9 @@ Scope {
           bottomMargin: 64
         }
         width: 320
-        height: 44   // 13px padding + an 18px glyph + 13px
+        // 13px padding + an 18px glyph + 13px. The track pill is taller because
+        // its art tile is 34 and it carries two lines of text: 9 + 34 + 9.
+        height: win.track ? 52 : 44
         radius: Theme.radiusPanel
         glassAlpha: Theme.glassAlphaBar   // mock 4a: rgba(15,15,19,.78)
         border.color: win.off ? Theme.accentBorder : Theme.hairlineStrong
@@ -68,8 +74,86 @@ Scope {
         opacity: OsdManager.showing ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
+        // -- the track-change pill (15b) ------------------------------------
+        // art · title / artist · a state glyph. No scrubber and no transport:
+        // this is feedback for something that already happened, and the window
+        // is click-through, so a control on it could not be pressed anyway.
+        Item {
+          anchors {
+            fill: parent
+            leftMargin: 9; rightMargin: 12
+            topMargin: 9; bottomMargin: 9
+          }
+          visible: win.track
+
+          Rectangle {
+            id: trackArt
+            anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+            width: 34; height: 34
+            radius: 8
+            color: Theme.surface07
+            border.width: 1
+            border.color: Theme.hairline
+            clip: true
+
+            // Drawn under the art, not swapped for it: a player that hands out
+            // no art at all is the common case, not an error.
+            Icon {
+              anchors.centerIn: parent
+              name: "music"
+              size: 15
+              tint: Theme.text3
+            }
+
+            Image {
+              anchors.fill: parent
+              source: win.payload?.artUrl ?? ""
+              fillMode: Image.PreserveAspectCrop
+              // Only once it has actually loaded, so a stale or 404 art url
+              // leaves the placeholder rather than Qt's broken-image glyph.
+              visible: status === Image.Ready
+              asynchronous: true
+              sourceSize: Qt.size(68, 68)
+            }
+          }
+
+          Icon {
+            id: trackGlyph
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+            name: "play"
+            size: 13
+            tint: Theme.text2
+          }
+
+          Column {
+            anchors {
+              left: trackArt.right; leftMargin: 11
+              right: trackGlyph.left; rightMargin: 11
+              verticalCenter: parent.verticalCenter
+            }
+            spacing: 2
+
+            Text {
+              width: parent.width
+              elide: Text.ElideRight
+              text: win.payload?.title ?? ""
+              font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
+              color: Theme.text
+            }
+            Text {
+              width: parent.width
+              elide: Text.ElideRight
+              visible: text !== ""
+              text: win.payload?.artist ?? ""
+              font { family: Theme.fontMono; pixelSize: 9; weight: 400 }
+              color: Theme.text3
+            }
+          }
+        }
+
         Item {
           id: content
+          visible: !win.track
           anchors {
             fill: parent
             leftMargin: 18; rightMargin: 18

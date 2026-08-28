@@ -219,6 +219,7 @@ need_qml Quickshell.Services.Pipewire     quickshell 'volume control and the aud
 need_qml Quickshell.Services.UPower       quickshell 'the battery indicator'
 need_qml Quickshell.Services.SystemTray   quickshell 'the system tray'
 need_qml Quickshell.Services.Notifications quickshell 'the notification daemon'
+need_qml Quickshell.Services.Mpris        quickshell 'the media pill, its tray popover and the track-change OSD'
 need_qml QtQuick.Effects qt6-declarative 'shadows and blur across the shell'
 need_qml QtQuick.Shapes  qt6-declarative 'the ring and arc indicators'
 

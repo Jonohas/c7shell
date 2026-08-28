@@ -43,7 +43,11 @@ grep -qE '^\s*fade_on_empty\s*=\s*true' "$conf" \
 # which looks exactly like "nothing is playing" and is why it is pinned here.
 info=$here/../bin/c7shell-lock-info
 [[ -x $info ]] || fail 'bin/c7shell-lock-info is missing or not executable -- the lock screen loses its now-playing and status lines'
-for arg in media status; do
+# media and media-source are the two halves of design 15b's card -- a title
+# line and a dimmer "paused · spotify" under it. One label cannot carry two
+# sizes, so a card that lost one half would silently render as a bare title or
+# a bare state with nothing above it.
+for arg in media media-source status; do
   grep -qE "cmd\[[^]]*\]\s*c7shell-lock-info $arg\b" "$conf" \
     || fail "no label calls c7shell-lock-info $arg"
 done
@@ -51,7 +55,7 @@ done
 # It is called every two seconds behind a lock screen, so "prints nothing" is
 # the only acceptable way for it to have nothing to say: a non-zero exit or a
 # stray error message would be drawn as the track title.
-for arg in media status; do
+for arg in media media-source status; do
   out=$("$info" "$arg" 2>"$tmp/err") \
     || fail "c7shell-lock-info $arg exited non-zero; hyprlock would draw nothing and log noise"
   [[ -s $tmp/err ]] && fail "c7shell-lock-info $arg wrote to stderr:\n$(cat "$tmp/err")"
@@ -137,6 +141,89 @@ PATH=$stubbin:$PATH C7SHELL_ROOT=$fakeroot "$info" status | grep -q 'notificatio
 qs_returns 'error: no such target'
 PATH=$stubbin:$PATH C7SHELL_ROOT=$fakeroot "$info" status | grep -qi 'error\|notification' \
   && fail 'an IPC error was drawn on the lock screen'
+rm -rf "$stubbin"
+
+# The card's two lines have to appear and disappear together: a title with no
+# state under it, or a state with no title over it, is a half-drawn card. Both
+# read the same player through the same helper, so the only way they can
+# disagree is if one of them grows its own idea of what counts as playing.
+playerctl_stub() {
+  mkdir -p "$stubbin"
+  printf '#!/bin/sh\n%s\n' "$1" > "$stubbin/playerctl"
+  chmod +x "$stubbin/playerctl"
+}
+stubbin=$tmp/stub
+
+# Nothing on the bus at all: playerctl exits 1, and both lines stay empty.
+playerctl_stub 'exit 1'
+for arg in media media-source; do
+  [[ -z $(PATH=$stubbin:$PATH "$info" "$arg") ]] \
+    || fail "c7shell-lock-info $arg drew something with no player on the bus"
+done
+
+# Playing, with everything filled in.
+playerctl_stub '
+case "$1" in
+  status) echo Playing ;;
+  metadata) case "$3" in
+      *title*) echo "Ipsissimus" ;;
+      *artist*) echo "Cindytalk" ;;
+      *playerName*) echo "spotify" ;;
+    esac ;;
+esac'
+PATH=$stubbin:$PATH "$info" media | grep -q 'Ipsissimus — Cindytalk' \
+  || fail "the title line does not carry title and artist: $(PATH=$stubbin:$PATH "$info" media)"
+PATH=$stubbin:$PATH "$info" media | grep -q 'playing' \
+  && fail 'the state leaked into the title line -- it belongs on the second one'
+PATH=$stubbin:$PATH "$info" media-source | grep -qx 'playing · spotify' \
+  || fail "the source line is not \"<state> · <player>\": $(PATH=$stubbin:$PATH "$info" media-source)"
+
+# Paused is still a card: it is what the mockup draws, and the media key is the
+# one control the lock screen has.
+playerctl_stub '
+case "$1" in
+  status) echo Paused ;;
+  metadata) case "$3" in
+      *title*) echo "Ipsissimus" ;;
+      *playerName*) echo "spotify" ;;
+    esac ;;
+esac'
+PATH=$stubbin:$PATH "$info" media-source | grep -q '^paused' \
+  || fail 'a paused player is not reported as paused'
+PATH=$stubbin:$PATH "$info" media | grep -q 'Ipsissimus' \
+  || fail 'a paused player lost its title line'
+
+# Stopped is a player that is open and idle. Both lines go, together.
+playerctl_stub 'case "$1" in status) echo Stopped ;; esac'
+for arg in media media-source; do
+  [[ -z $(PATH=$stubbin:$PATH "$info" "$arg") ]] \
+    || fail "c7shell-lock-info $arg drew a card for a stopped player"
+done
+
+# A player with a state but no title is a browser tab or a notification sound.
+# Neither line may draw, or the card would be a lone "playing · firefox".
+playerctl_stub '
+case "$1" in
+  status) echo Playing ;;
+  metadata) case "$3" in *playerName*) echo "firefox" ;; esac ;;
+esac'
+for arg in media media-source; do
+  [[ -z $(PATH=$stubbin:$PATH "$info" "$arg") ]] \
+    || fail "c7shell-lock-info $arg drew a card for a player with no title"
+done
+
+# hyprlock parses label text as pango markup, so a track called "Q&A" is a
+# markup error rather than a title.
+playerctl_stub '
+case "$1" in
+  status) echo Playing ;;
+  metadata) case "$3" in
+      *title*) echo "Q&A <live>" ;;
+      *playerName*) echo "mpv" ;;
+    esac ;;
+esac'
+PATH=$stubbin:$PATH "$info" media | grep -q '&amp;A &lt;live&gt;' \
+  || fail "the title line does not escape pango markup: $(PATH=$stubbin:$PATH "$info" media)"
 rm -rf "$stubbin"
 
 "$info" bogus >/dev/null 2>&1 && fail 'c7shell-lock-info accepted an unknown argument'

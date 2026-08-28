@@ -91,6 +91,15 @@ Scope {
           anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
           spacing: 8
 
+          // 15b: immediately left of the tray. It hides itself when nothing is
+          // registered on MPRIS, and Row drops an invisible child's spacing
+          // with it, so the bar closes up rather than holding the gap.
+          MediaPill {
+            id: media
+            anchors.verticalCenter: parent.verticalCenter
+            open: PopoverManager.current === "media"
+            onClicked: PopoverManager.toggle("media", media)
+          }
           TrayPill { anchors.verticalCenter: parent.verticalCenter }
           StatusPill { anchors.verticalCenter: parent.verticalCenter }
           PowerButton {
