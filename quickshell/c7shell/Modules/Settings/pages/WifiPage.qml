@@ -81,7 +81,41 @@ SettingsPage {
         onTriggered: NetworkService.connected?.disconnect()
       }
     }
+
+    // Sits in the radio card because that is what it switches -- all of them,
+    // through rfkill, which is also what the laptop's own airplane key throws.
+    // So this row and the Fn key mean the same thing, and unlike the wi-fi
+    // toggle above it can undo a block the key made.
+    SettingsRow {
+      width: parent.width
+      visible: AirplaneService.hasWifi || AirplaneService.hasBt
+      hoverable: false
+      leadingSize: 15
+      title: "airplane mode"
+      subtitle: AirplaneService.enabled
+        ? `${root.radioNames} off · wired networking untouched`
+        : `switches ${root.radioNames} off`
+
+      leading: Icon {
+        size: 15
+        name: "plane"
+        tint: AirplaneService.enabled ? Theme.accentSoft : Theme.text3
+      }
+
+      TogglePill {
+        anchors.verticalCenter: parent.verticalCenter
+        checked: AirplaneService.enabled
+        onToggled: AirplaneService.setEnabled(!AirplaneService.enabled)
+      }
+    }
   }
+
+  // Named rather than assumed: a desktop with a wi-fi card and no bluetooth
+  // adapter would otherwise be promised bluetooth it does not have.
+  readonly property string radioNames: [
+    AirplaneService.hasWifi ? "wi-fi" : "",
+    AirplaneService.hasBt ? "bluetooth" : "",
+  ].filter(s => s !== "").join(" and ")
 
   // -- everything else -------------------------------------------------------
   Item {

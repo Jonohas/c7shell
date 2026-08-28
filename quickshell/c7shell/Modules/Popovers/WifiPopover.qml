@@ -175,6 +175,36 @@ GlassPopover {
     bottomPadding: 4
   }
 
+  // The master switch for every radio, not just this one. It sits under the
+  // list rather than over the header because the header is this panel's title:
+  // above it, "airplane mode" reads as the name of the popover. It is also the
+  // only control here that can come back out of a block the Fn key made -- the
+  // wi-fi toggle above cannot, which is why both are on screen at once.
+  Item {
+    width: parent.width
+    visible: AirplaneService.hasWifi || AirplaneService.hasBt
+    implicitHeight: 17
+
+    Icon {
+      id: planeIcon
+      anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+      name: "plane"
+      size: 12
+      tint: AirplaneService.enabled ? Theme.accentSoft : Theme.alpha(Theme.text, 0.45)
+    }
+    Text {
+      anchors { left: planeIcon.right; leftMargin: 8; verticalCenter: parent.verticalCenter }
+      text: "airplane mode"
+      font { family: Theme.fontMono; pixelSize: 12; weight: 600 }
+      color: Theme.text
+    }
+    TogglePill {
+      anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+      checked: AirplaneService.enabled
+      onToggled: AirplaneService.setEnabled(!AirplaneService.enabled)
+    }
+  }
+
   PopoverFooter {
     width: parent.width
     leftIcon: "refresh"

@@ -92,6 +92,18 @@ Rectangle {
       onClicked: CaptureService.toggle()
       Icon { name: "scan"; tint: CaptureService.overlayOpen ? Theme.accentSoft : Theme.text }
     }
+    // Airplane mode has no popover of its own: the slot only exists while every
+    // radio is off, and the one thing to do from there is come back out. It
+    // sits ahead of the radio slots because it is the reason they look the way
+    // they do -- and it appears however the radios went down, the Fn key
+    // included, since the service derives the mode rather than storing it.
+    QuickSlot {
+      anchors.verticalCenter: parent.verticalCenter
+      visible: AirplaneService.enabled
+      slotColor: Theme.accentFill
+      onClicked: AirplaneService.setEnabled(false)
+      Icon { name: "plane"; tint: Theme.accentSoft }
+    }
     QuickSlot {
       id: netSlot
       anchors.verticalCenter: parent.verticalCenter
