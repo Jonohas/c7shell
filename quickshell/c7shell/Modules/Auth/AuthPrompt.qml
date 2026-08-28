@@ -266,24 +266,22 @@ Item {
           }
         }
 
+        // Name only. The mockup has a group chip beside it ("alex  wheel");
+        // see user_name() in bin/c7-authd for why there is nothing truthful to
+        // put there -- polkit resolves its identities to a user before the
+        // agent sees them, so the group that made this user eligible is not
+        // something we are told, and guessing one next to a password field
+        // asserts a reason we cannot check.
         Text {
           anchors {
             left: avatar.right; leftMargin: 9
-            right: groupLabel.left; rightMargin: 8
+            right: parent.right; rightMargin: 11
             verticalCenter: parent.verticalCenter
           }
           text: root.request?.user ?? ""
           font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
           color: Theme.alpha(Theme.text, 0.7)
           elide: Text.ElideRight
-        }
-
-        Text {
-          id: groupLabel
-          anchors { right: parent.right; rightMargin: 11; verticalCenter: parent.verticalCenter }
-          text: root.request?.group ?? ""
-          font { family: Theme.fontMono; pixelSize: 9; weight: 400 }
-          color: Theme.text3
         }
       }
 

@@ -35,7 +35,7 @@ Window {
     detail: "Install 23 packages",
     actionId: "org.archlinux.pamac.commit",
     command: "", proc: "pamac", pid: 4110,
-    user: "alex", group: "wheel", root: true
+    user: "alex", root: true
   })
 
   readonly property var sudoReq: ({
@@ -43,7 +43,7 @@ Window {
     title: "Run as root", detail: "Password:", actionId: "",
     command: "systemctl restart bluetooth",
     proc: "foot", pid: 41207,
-    user: "alex", group: "wheel", root: true
+    user: "alex", root: true
   })
 
   AuthPrompt {
@@ -72,7 +72,7 @@ Window {
     // ------------------------------------------------------------------ 1 --
     // The event machine, in the order the daemon actually emits it.
     root.feed({ ev: "ready", polkit: true, askpass: "/run/x.sock",
-                user: "alex", group: "wheel" })
+                user: "alex" })
     check(AuthService.ready, "ready did not mark the service ready")
     check(AuthService.polkitOk, "ready did not record the polkit registration")
 

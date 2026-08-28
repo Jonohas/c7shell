@@ -102,26 +102,25 @@ def default_socket():
     return os.environ.get("C7_AUTHD_SOCKET") or os.path.join(runtime_dir(), "askpass.sock")
 
 
-def user_label(uid):
-    """name + primary group, for the identity row."""
+def user_name(uid):
+    """The name to show in the identity row.
+
+    Just the name. The design's mockup puts a group beside it ("alex  wheel"),
+    and an earlier version of this filled that in by looking up whether the user
+    was in wheel or sudo -- which reads as "this is why you may answer this
+    prompt" while actually being a fact about the account that has nothing to do
+    with the request. polkit hands the agent its identities already resolved to
+    unix-user, so the group that made the user eligible is not something we are
+    told; inferring one and printing it next to a password field is asserting
+    something we cannot check.
+
+    If polkit ever does offer a unix-group identity, that group IS the reason
+    and would be worth showing. It does not today.
+    """
     try:
-        ent = pwd.getpwuid(uid)
+        return pwd.getpwuid(uid).pw_name
     except KeyError:
-        return str(uid), ""
-    try:
-        group = grp.getgrgid(ent.pw_gid).gr_name
-    except KeyError:
-        group = ""
-    # "wheel" is what the row in the design shows, and it is the group that
-    # actually explains why this user may answer an admin prompt -- so prefer
-    # it over the primary group, which on Arch is the uninformative "c7".
-    try:
-        for admin in ("wheel", "sudo"):
-            if ent.pw_name in grp.getgrnam(admin).gr_mem:
-                return ent.pw_name, admin
-    except KeyError:
-        pass
-    return ent.pw_name, group
+        return str(uid)
 
 
 def proc_name(pid):
@@ -182,9 +181,8 @@ class Daemon:
         sys.stdout.flush()
 
     def ready(self):
-        name, group = user_label(os.getuid())
         self.emit(ev="ready", polkit=self.polkit_ok,
-                  askpass=self.sock_path, user=name, group=group)
+                  askpass=self.sock_path, user=user_name(os.getuid()))
 
     # ----------------------------------------------------------------- queue --
     def push(self, req):
@@ -367,7 +365,6 @@ class Daemon:
             log(f"refusing {action_id}: no identity this session can authenticate as")
             invocation.return_value(None)
             return
-        name, group = user_label(uid)
         pid = details.get("polkit.subject-pid") or details.get("polkit.caller-pid")
         req = Request(
             "polkit",
@@ -379,8 +376,7 @@ class Daemon:
             program=details.get("program", ""),
             proc=proc_name(pid) if pid else "",
             pid=int(pid) if pid and pid.isdigit() else 0,
-            user=name,
-            group=group,
+            user=user_name(uid),
             root=uid == 0 or details.get("user") == "root" or action_id.startswith("org.freedesktop.policykit.exec"),
         )
         req.identity = identity
@@ -528,7 +524,6 @@ class Daemon:
         GLib.idle_add(self._askpass_request, conn, peer_pid, msg)
 
     def _askpass_request(self, conn, peer_pid, msg):
-        name, group = user_label(os.getuid())
         command = str(msg.get("command", ""))[:512]
         asker = str(msg.get("asker", ""))[:64] or proc_name(msg.get("askerPid", 0))
         req = Request(
@@ -539,8 +534,7 @@ class Daemon:
             command=command,
             proc=asker,
             pid=int(msg.get("askerPid") or peer_pid or 0),
-            user=name,
-            group=group,
+            user=user_name(os.getuid()),
             root=True,
         )
         req.conn = conn

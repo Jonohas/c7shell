@@ -24,7 +24,6 @@ Singleton {
   // whole design is against.
   property bool polkitOk: false
   property string userName: ""
-  property string userGroup: ""
 
   // -- the queue -------------------------------------------------------------
   // Head first, exactly as the daemon ordered it.
@@ -98,7 +97,6 @@ Singleton {
       root.ready = true
       root.polkitOk = ev.polkit === true
       root.userName = ev.user ?? ""
-      root.userGroup = ev.group ?? ""
       root.attempts = 0
       if (!root.polkitOk)
         console.warn("auth: another polkit agent holds the registration; "

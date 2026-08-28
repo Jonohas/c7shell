@@ -131,6 +131,16 @@ $(cat "$tmp/askpass.err")"
 [[ $(cat "$tmp/secret.out") == hunter2 ]] \
   || fail "the secret did not reach sudo: got $(cat "$tmp/secret.out")"
 
+# The identity row names the user and stops there. It carried a "wheel" chip
+# once, filled in by looking up the account's group membership -- which reads
+# next to a password field as "this is why you may answer this", while being a
+# fact about the account and not about the request. polkit resolves identities
+# to a user before the agent sees them, so there is no group to report; putting
+# one there again would be asserting a reason nothing checked.
+grep -q '"group"' "$out" \
+  && fail "an event carries a group field again:\n$(grep '\"group\"' "$out")"
+grep -q '"user":' "$out" || fail "no event names the user authenticating:\n$(cat "$out")"
+
 # --- 3. the secret is never written anywhere it could be read -------------
 # Not to stderr, not to the event stream. This is the one assertion in the file
 # that is about a leak rather than a behaviour, so it is checked over the whole
