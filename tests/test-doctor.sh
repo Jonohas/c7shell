@@ -24,7 +24,8 @@ for helper in grep head date stat; do ln -s "$(command -v "$helper")" "$bin/$hel
 stub() { printf '#!/bin/sh\nexit 0\n' > "$bin/$1"; chmod +x "$bin/$1"; }
 
 required_cmds=(hyprctl start-hyprland qs hypridle hyprlock hyprpaper hyprpicker grim
-               wf-recorder wl-copy notify-send wpctl bluetoothctl nmcli systemctl)
+               wf-recorder wl-copy notify-send wpctl bluetoothctl nmcli systemctl
+               c7-authd c7-askpass)
 for cmd in "${required_cmds[@]}"; do stub "$cmd"; done
 # Every python import the appmenu daemon needs is reported present.
 stub python3
@@ -42,6 +43,10 @@ mkdir -p "$root/usr/share/polkit-1/actions" "$root/usr/lib/c7shell"
 : > "$root/usr/share/polkit-1/actions/io.crimson7.c7shell.policy"
 : > "$root/usr/lib/c7shell/c7up-root"
 : > "$root/usr/lib/hyprpolkitagent/hyprpolkitagent"
+# The setuid helper every polkit agent -- ours included -- authenticates
+# through. Shipped by polkit, not by us.
+mkdir -p "$root/usr/lib/polkit-1"
+: > "$root/usr/lib/polkit-1/polkit-agent-helper-1"
 : > "$root/usr/lib/xdg-desktop-portal-hyprland"
 # The Settings-portal backend, plus a gsettings that reports a preference
 # already exported -- what a set-up machine looks like.
@@ -77,7 +82,13 @@ mkdir -p "$conf/hypr" "$conf/quickshell/c7shell" "$tmp/share"
 # Without this hyprlock will not start, which takes SUPER+L, the power menu's
 # lock row and the idle lock with it -- see the lock screen cases below.
 printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
-: > "$conf/quickshell/c7shell/shell.qml"
+# A shell.qml that draws the password prompt, and an autostart that has stopped
+# starting hyprpolkitagent -- what a machine looks like after the config half of
+# the upgrade has actually landed. The two cases where it has not are asserted
+# further down.
+printf 'import Quickshell\nScope { AuthWindow {} }\n' > "$conf/quickshell/c7shell/shell.qml"
+mkdir -p "$conf/hypr/conf"
+printf 'hl.exec_cmd("/usr/lib/pam_kwallet_init")\n' > "$conf/hypr/conf/autostart.lua"
 
 run() {
   env -i PATH="$bin" HOME="$tmp" \
@@ -660,5 +671,80 @@ out=$(env -i PATH="$bin" HOME="$tmp" DIFFPROG=my-own-thing \
         /usr/bin/bash "$doctor" --quiet 2>&1 || true)
 grep -q 'no merge tool' <<<"$out" \
   && fail "DIFFPROG was set but the doctor still asked for a merge tool:\n$out"
+
+# --- the password prompt's own dependencies -------------------------------
+# A missing Polkit typelib is the failure that looks like nothing at all:
+# c7-authd exits at startup, the shell retries and falls back, and the prompt
+# that appears is hyprpolkitagent's. So it has to be a FAIL with a package
+# named, not a warning buried in the optional list.
+python_probe() {
+  # Stands in for python3. $1 is the exit status the typelib import gets.
+  printf '#!/bin/sh\ncat >/dev/null\nexit %s\n' "$1" > "$bin/python3"
+  chmod +x "$bin/python3"
+}
+
+python_probe 0
+out=$(run --quiet 2>&1 || true)
+grep -q 'PolkitAgent typelibs' <<<"$out" \
+  && fail "a working typelib import was still reported as a problem:\n$out"
+
+python_probe 1
+out=$(run --quiet 2>&1 || true)
+grep -q 'Polkit/PolkitAgent GObject typelibs are missing' <<<"$out" \
+  || fail "a machine that cannot import PolkitAgent was not told:\n$out"
+# And it has to name what to install, or the report is a dead end.
+grep -q 'python-gobject' <<<"$out" \
+  || fail "the typelib failure named no package to install:\n$out"
+python_probe 0
+
+# The setuid helper is polkit's, not ours, and every agent authenticates
+# through it -- including the fallback, so losing it breaks both paths at once.
+mv "$root/usr/lib/polkit-1/polkit-agent-helper-1" "$tmp/helper.away"
+out=$(run --quiet 2>&1 || true)
+grep -q 'polkit-agent-helper-1' <<<"$out" \
+  || fail "the missing setuid PAM helper was not reported:\n$out"
+mv "$tmp/helper.away" "$root/usr/lib/polkit-1/polkit-agent-helper-1"
+
+# The sudo.conf line is advice, never an edit: /etc/sudo.conf belongs to the
+# sudo package. The doctor prints it and stops there.
+out=$(run --quiet 2>&1 || true)
+grep -q 'Path askpass /usr/bin/c7-askpass' <<<"$out" \
+  || fail "the doctor never says how to route terminal sudo through the prompt:\n$out"
+mkdir -p "$root/etc"
+printf 'Path askpass /usr/bin/c7-askpass\n' > "$root/etc/sudo.conf"
+out=$(run --quiet 2>&1 || true)
+grep -q 'Path askpass /usr/bin/c7-askpass' <<<"$out" \
+  && fail "the doctor still suggested a sudo.conf line that is already there:\n$out"
+rm -f "$root/etc/sudo.conf"
+
+# --- the half-upgraded machine ---------------------------------------------
+# c7shell-upgrade installs the package and refreshes ~/.config as two separate
+# halves, and the second one deliberately does not overwrite a file you edited.
+# So a machine can end up with c7-authd installed and a shell.qml that never
+# instantiates AuthWindow: the shell registers as the polkit agent and then
+# draws nothing for it, which leaves pkexec waiting on a window that does not
+# exist. Worse than not being the agent at all, and silent.
+printf 'import Quickshell\nScope { Bar {} }\n' > "$conf/quickshell/c7shell/shell.qml"
+out=$(run --quiet 2>&1 || true)
+grep -q 'no AuthWindow' <<<"$out" \
+  || fail "a config too old to draw the password prompt was not reported:\n$out"
+grep -q 'c7shell-upgrade --config-only' <<<"$out" \
+  || fail "the stale-config report does not say how to fix it:\n$out"
+printf 'import Quickshell\nScope { AuthWindow {} }\n' > "$conf/quickshell/c7shell/shell.qml"
+out=$(run --quiet 2>&1 || true)
+grep -q 'no AuthWindow' <<<"$out" \
+  && fail "a config that does draw the prompt was still reported as stale:\n$out"
+
+# The other half of the same split: autostart.lua still launching the old
+# agent. Not broken -- two agents simply cannot both hold the registration --
+# so a note, not a failure.
+printf 'hl.exec_cmd("/usr/lib/pam_kwallet_init & /usr/lib/hyprpolkitagent/hyprpolkitagent")\n' \
+  > "$conf/hypr/conf/autostart.lua"
+out=$(run --quiet 2>&1 || true)
+grep -q 'still starts hyprpolkitagent' <<<"$out" \
+  || fail "an autostart still launching the old agent was not mentioned:\n$out"
+grep -q 'FAIL.*hyprpolkitagent' <<<"$out" \
+  && fail "still starting the old agent was reported as a failure; it is not:\n$out"
+printf 'hl.exec_cmd("/usr/lib/pam_kwallet_init")\n' > "$conf/hypr/conf/autostart.lua"
 
 echo 'PASS: c7shell-doctor'
