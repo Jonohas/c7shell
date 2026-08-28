@@ -300,15 +300,19 @@ SettingsPage {
       Text {
         id: browse
         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-        text: "browse →"
+        // The portal can take a second to start its backend the first time; a
+        // button that looks like it did nothing gets clicked again.
+        text: AppearanceStore.browsing ? "opening…" : "browse →"
         font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
-        color: Theme.accentSoft
+        color: AppearanceStore.browsing ? Theme.text3 : Theme.accentSoft
 
         MouseArea {
           anchors.fill: parent
           anchors.margins: -4
-          // No GUI file picker in phase 1 — the field below is the picker.
-          onClicked: pathField.forceActiveFocus()
+          // The desktop's own file dialog, through xdg-desktop-portal -- the
+          // same one every other app here opens (README, "The file picker").
+          // The store owns the process, as it owns every other one on this page.
+          onClicked: AppearanceStore.browseWallpaper()
         }
       }
     }

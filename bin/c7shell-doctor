@@ -388,6 +388,33 @@ else
   warn 'xdg-desktop-portal-kde missing -- file pickers fall back to the gtk one, which matches nothing (package: xdg-desktop-portal-kde)'
 fi
 
+# The portal reads hyprland-portals.conf once, when it starts. A copy written
+# after that -- by c7shell-setup, or by an upgrade -- is not in force: the
+# routing above keeps answering out of whatever the file said at boot, so
+# FileChooser quietly stays on the gtk backend and every picker on the machine,
+# the settings app's wallpaper browse included, is the one that matches nothing.
+# Nothing else reports this; the config is correct on disk and the desktop looks
+# fine, which is exactly why it is worth a line here.
+portals=$conf/xdg-desktop-portal/hyprland-portals.conf
+if [[ -f $portals ]] && command -v systemctl >/dev/null \
+   && command -v date >/dev/null && command -v stat >/dev/null; then
+  started=$(systemctl --user show xdg-desktop-portal.service \
+              -p ActiveEnterTimestamp --value 2>/dev/null || true)
+  # Empty on a machine where the portal has never run, and the socket starts it
+  # on demand -- neither is something to report.
+  if [[ -n $started ]]; then
+    started_at=$(date -d "$started" +%s 2>/dev/null || true)
+    written_at=$(stat -c %Y "$portals" 2>/dev/null || true)
+    if [[ -n $started_at && -n $written_at ]] && ((written_at > started_at)); then
+      warn 'xdg-desktop-portal started before the portal config was written, so the'
+      note 'FileChooser routing is not in force yet and pickers still come from gtk'
+      note 'systemctl --user restart xdg-desktop-portal'
+    else
+      ok 'the running portal is newer than its config'
+    fi
+  fi
+fi
+
 # ...and the backend can only report what GSettings holds. Unset means "no
 # preference", which is what left every app light in the first place.
 if command -v gsettings >/dev/null; then
