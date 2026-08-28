@@ -127,6 +127,12 @@ package() {
   # a copy shipped beside the config would arrive without its execute bit --
   # c7shell-upgrade writes new files with a shell redirect. PATH solves both.
   install -Dm755 bin/c7shell-lock-info "$pkgdir/usr/bin/c7shell-lock-info"
+  # What SUPER+L, the power menu and hypridle actually run. It draws the glow
+  # and the grid the design doc puts behind the lock screen -- an image sized to
+  # the monitor, which is something only a program running at lock time can
+  # author -- and then execs hyprlock. Any failure falls through to plain
+  # hyprlock, so the lock screen never depends on the decoration working.
+  install -Dm755 bin/c7shell-lock "$pkgdir/usr/bin/c7shell-lock"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
 
