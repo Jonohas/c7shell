@@ -604,4 +604,38 @@ out=$(run 2>&1 || true)
 grep -q 'paru runs' <<<"$out" || fail "a working paru was not reported ok:\n$out"
 rm -f "$bin/paru"
 
+
+# --- an AUR-only package must be routed to the AUR helper -----------------
+# The two lists are written by hand at opposite ends of the file, and getting
+# them out of step is silent until someone picks the entry and pacman answers
+# "target not found". checkservices shipped exactly that way for one commit.
+aur_entries=$(sed -n '/^declare -A aur_only=(/,/^)/p' "$doctor" \
+  | sed -n 's/^ *\[\([a-z0-9._-]\+\)\]=1.*/\1/p')
+while IFS=: read -r _kind _target pkg _desc; do
+  [[ -n $pkg ]] || continue
+  # Not in the repos on this machine and not routed to the AUR = a pick that
+  # cannot work. `pacman -Si` is the same question the picker's pacman -S asks.
+  if ! pacman -Si "$pkg" >/dev/null 2>&1; then
+    grep -qx "$pkg" <<<"$aur_entries" \
+      || fail "optional_entries offers '$pkg', which pacman cannot resolve, but
+  aur_only does not list it -- picking it would fail with 'target not found'"
+  fi
+done < <(sed -n '/^optional_entries=(/,/^)/p' "$doctor" \
+  | sed -n 's/^ *"\(.*\)"$/\1/p')
+
+# --- one package, one line in the picker ----------------------------------
+# checkupdates and pacdiff are both pacman-contrib. Two entries for one package
+# is correct in optional_entries -- they are different missing files with
+# different reasons -- but two numbered LINES in the picker reads as two
+# separate installs, and picking "the other one" would be a no-op.
+dupes=$(sed -n '/^optional_entries=(/,/^)/p' "$doctor" \
+  | sed -n 's/^ *"[a-z]*:[^:]*:\([^:]*\):.*/\1/p' | sort | uniq -d)
+[[ -n $dupes ]] || fail 'no package is offered under two entries any more --
+  drop this check, or it is silently testing nothing'
+pick '' >/dev/null
+for pkg in $dupes; do
+  n=$(grep -cE "^ +[0-9]+\) $pkg " "$tmp/pick.out" || true)
+  ((n == 1)) || fail "$pkg is offered on $n numbered lines, expected 1:\n$(cat "$tmp/pick.out")"
+done
+
 echo 'PASS: c7shell-doctor'

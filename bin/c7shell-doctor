@@ -79,6 +79,9 @@ as_root() {
 offer_pkgs=()
 offer_desc=()
 offer() {
+  # One line per package, not per missing file: checkupdates and pacdiff both
+  # come from pacman-contrib, and listing it twice under two numbers would read
+  # as two separate installs.
   local p
   for p in ${offer_pkgs[@]+"${offer_pkgs[@]}"}; do [[ $p == "$1" ]] && return 0; done
   offer_pkgs+=("$1"); offer_desc+=("$2")
@@ -94,8 +97,11 @@ declare -A companions=(
 # Packages pacman cannot reach, because they only exist in the AUR. The picker
 # routes these to the AUR helper instead of `pacman -S`, which would fail on
 # them with "target not found".
+# Every AUR-only name in optional_entries below has to appear here too;
+# tests/test-doctor.sh checks that the two stay in step.
 declare -A aur_only=(
   [arch-update]=1
+  [checkservices]=1
 )
 # The first helper the 'aur helper' section below finds actually running. Empty
 # when there is none, or when the only one installed is broken.
@@ -765,6 +771,10 @@ optional_entries=(
   # c7up degrades to more, then to cat, so this really is optional -- but the
   # update log and PKGBUILD diffs are much easier to read in a real pager.
   "cmd:less:less:a scrolling pager for the update log and PKGBUILD diffs"
+  # The third source the update flow knows about. With it installed, flatpak
+  # updates are counted and applied in the same run as the repo and AUR ones;
+  # without it that row simply does not appear.
+  "cmd:flatpak:flatpak:flatpak apps in the same update flow as pacman and the AUR"
 )
 
 
