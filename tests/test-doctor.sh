@@ -104,6 +104,47 @@ rc=0; out=$(run 2>&1) || rc=$?
 grep -q 'no GPU driver' <<<"$out" || fail "no GPU complaint:\n$out"
 : > "$root/dev/dri/card0"
 
+# A virtual GPU whose ~/.config copy predates the llvmpipe fallback. This is
+# the case that used to pass every check while the session came up empty, so
+# it is worth pinning down in all four directions.
+drm=$root/sys/class/drm/card0/device
+mkdir -p "$drm"
+env_lua=$conf/hypr/conf/environment.lua
+mkdir -p "$(dirname -- "$env_lua")"
+
+# vmwgfx is reproduced end to end, so an old copy there is a failure
+printf 'DRIVER=vmwgfx\n' > "$drm/uevent"
+printf 'hl.env("QT_QPA_PLATFORMTHEME", "kde")\n' > "$env_lua"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "vmwgfx with no llvmpipe fallback should fail, got exit $rc"
+grep -q 'no llvmpipe fallback' <<<"$out" || fail "no fallback complaint:\n$out"
+grep -q 'c7shell-upgrade' <<<"$out" || fail "no upgrade hint:\n$out"
+
+# ...and once c7shell-upgrade has parked the new version, say so instead
+printf 'hl.env("LIBGL_ALWAYS_SOFTWARE", "1")\n' > "$env_lua.new"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "a parked .new does not make the live file work, got exit $rc"
+grep -q 'already waiting' <<<"$out" || fail "no merge hint for the .new:\n$out"
+rm -f "$env_lua.new"
+
+# the fallback present is the fixed machine, and passes
+printf 'hl.env("LIBGL_ALWAYS_SOFTWARE", "1")\n' > "$env_lua"
+out=$(run 2>&1) || fail "vmwgfx with the fallback should pass:\n$out"
+grep -q 'falls back to llvmpipe' <<<"$out" || fail "no llvmpipe ok line:\n$out"
+
+# the other virtual GPUs are pre-empted, not confirmed broken: warn, don't fail
+printf 'DRIVER=virtio_gpu\n' > "$drm/uevent"
+printf 'hl.env("QT_QPA_PLATFORMTHEME", "kde")\n' > "$env_lua"
+out=$(run 2>&1) || fail "virtio_gpu without the fallback should warn, not fail:\n$out"
+grep -q 'no llvmpipe fallback' <<<"$out" || fail "no virtio_gpu warning:\n$out"
+
+# a real GPU is none of this machine's business, even with the same old copy
+printf 'DRIVER=amdgpu\n' > "$drm/uevent"
+out=$(run 2>&1) || fail "a real GPU should not be touched by the check:\n$out"
+grep -q 'llvmpipe' <<<"$out" && fail "the check fired on a real GPU:\n$out"
+
+rm -rf "$root/sys" "$conf/hypr/conf"
+
 # configs still in /usr/share: a failure normally, the next step with --setup-pending
 mv "$conf/hypr" "$tmp/hypr-gone"
 rc=0; out=$(run 2>&1) || rc=$?
