@@ -9,9 +9,10 @@ trap 'rm -rf -- "$tmp"' EXIT
 
 export C7SHELL_SHARE=$tmp/share
 export XDG_CONFIG_HOME=$tmp/conf
-mkdir -p "$C7SHELL_SHARE"/{hypr,quickshell/c7shell}
+mkdir -p "$C7SHELL_SHARE"/{hypr,quickshell/c7shell,xdg-desktop-portal}
 echo v1 > "$C7SHELL_SHARE/hypr/hyprland.lua"
 echo v1 > "$C7SHELL_SHARE/quickshell/c7shell/shell.qml"
+echo v1 > "$C7SHELL_SHARE/xdg-desktop-portal/hyprland-portals.conf"
 printf 'custom_picker_binary = $HOME/.config/quickshell/c7shell/bin/x.sh\n' \
   > "$C7SHELL_SHARE/hypr/xdph.conf"
 # stands in for scripts/c7shell-theme-export.py: writes kdeglobals where the
@@ -34,6 +35,7 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 "$setup" >/dev/null
 [[ $(cat "$XDG_CONFIG_HOME/hypr/hyprland.lua") == v1 ]] || fail 'hypr not installed'
 [[ $(cat "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml") == v1 ]] || fail 'quickshell not installed'
+[[ $(cat "$XDG_CONFIG_HOME/xdg-desktop-portal/hyprland-portals.conf") == v1 ]] || fail 'portal config not installed'
 
 # the palette is seeded, so Qt apps match without touching a setting first
 grep -q 'ColorScheme=C7Shell' "$XDG_CONFIG_HOME/kdeglobals" \

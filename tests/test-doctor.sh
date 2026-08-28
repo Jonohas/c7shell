@@ -42,6 +42,8 @@ mkdir -p "$root/usr/lib/hyprpolkitagent" "$root/usr/lib" \
 # The Settings-portal backend, plus a gsettings that reports a preference
 # already exported -- what a set-up machine looks like.
 : > "$root/usr/lib/xdg-desktop-portal-gtk"
+# The FileChooser backend the shipped portals.conf routes to.
+: > "$root/usr/lib/xdg-desktop-portal-kde"
 gsettings_scheme() {
   printf '#!/bin/sh\necho "%s"\n' "$1" > "$bin/gsettings"
   chmod +x "$bin/gsettings"
@@ -203,6 +205,13 @@ rc=0; out=$(run 2>&1) || rc=$?
 ((rc == 1)) || fail "a missing Settings portal backend should fail, got exit $rc"
 grep -q 'xdg-desktop-portal-gtk missing' <<<"$out" || fail "the missing backend was not reported:\n$out"
 mv "$tmp/portal-gtk-gone" "$root/usr/lib/xdg-desktop-portal-gtk"
+
+# without the kde backend the portal falls back to the gtk picker on its own,
+# so the doctor warns instead of failing
+mv "$root/usr/lib/xdg-desktop-portal-kde" "$tmp/portal-kde-gone"
+out=$(run 2>&1) || fail "a missing FileChooser backend should warn, not fail:\n$out"
+grep -q 'xdg-desktop-portal-kde missing' <<<"$out" || fail "the missing kde backend was not reported:\n$out"
+mv "$tmp/portal-kde-gone" "$root/usr/lib/xdg-desktop-portal-kde"
 
 # the backend can only report what GSettings holds: unset is the state that left
 # apps light, and it names how to set it

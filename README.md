@@ -161,9 +161,21 @@ looked up:
 
 Two packages carry it, and `c7shell-doctor` checks both: **`xdg-desktop-portal-gtk`**,
 because `xdg-desktop-portal-hyprland` implements screencast and not `Settings`
-(the shipped `hyprland-portals.conf` already names `gtk` as the fallback, so
-installing it is the whole fix), and `gsettings-desktop-schemas`, which it
-depends on.
+(the `hyprland-portals.conf` that c7shell-setup puts in
+`~/.config/xdg-desktop-portal` names `gtk` as the fallback, so installing it is
+the whole fix), and `gsettings-desktop-schemas`, which it depends on.
+
+## The file picker
+
+The "open file" dialog most apps show is not theirs: they ask
+`xdg-desktop-portal` for a `FileChooser`, and whichever backend answers draws
+it. Left to the `gtk` fallback above, that is the GTK picker — which looks
+nothing like dolphin (`SUPER+E`). The shipped
+`~/.config/xdg-desktop-portal/hyprland-portals.conf` routes `FileChooser` to
+the `kde` backend instead: the KDE file dialog, with the same KIO places
+sidebar and the same kdeglobals palette as dolphin. That backend is
+**`xdg-desktop-portal-kde`**, a package dependency; without it the portal
+falls back to the gtk picker on its own, and `c7shell-doctor` warns.
 
 The shell's own palette does not follow this setting: picking `light` here makes
 apps light, not the bar. The light *variant* is the card marked "later" on the
