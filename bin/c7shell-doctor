@@ -591,6 +591,38 @@ if [[ -n $virtual_gpu ]]; then
       note 'it writes beside it, then log back in'
     fi
   fi
+
+  # The second thing a virtual GPU breaks, and the one nothing else notices.
+  # hyprlock takes a copy of the screen at startup -- for the screenshot
+  # background and for the fade, which is on by default -- and its default route
+  # is a GBM buffer over zwp_linux_dmabuf_v1. aquamarine cannot build a DRM
+  # renderer on a virtual GPU, so the compositor rejects the buffer and kills the
+  # connection; hyprlock aborts before drawing anything. SUPER+L does nothing,
+  # the power menu's lock row does nothing, and hypridle's before_sleep_cmd fails
+  # the same way, so the machine suspends unlocked. general:screencopy_mode = 1
+  # is the shm route, which is the one grim uses and the one that works here.
+  lock_conf=$conf/hypr/hyprlock.conf
+  if [[ ! -f $lock_conf ]]; then
+    # Reported by the lock screen section above; nothing to add.
+    :
+  elif grep -qE '^[[:space:]]*screencopy_mode[[:space:]]*=[[:space:]]*1' "$lock_conf"; then
+    ok "$virtual_gpu: hyprlock.conf takes the screen copy through shm"
+  else
+    if [[ $virtual_gpu == vmwgfx ]]; then
+      bad "$virtual_gpu: hyprlock.conf has no screencopy_mode = 1 -- hyprlock aborts on the dmabuf copy, so nothing locks and the machine suspends unlocked"
+    else
+      warn "$virtual_gpu: hyprlock.conf has no screencopy_mode = 1 -- if SUPER+L does nothing, this is why"
+    fi
+    if [[ -f $lock_conf.new ]] && grep -qE '^[[:space:]]*screencopy_mode[[:space:]]*=[[:space:]]*1' "$lock_conf.new"; then
+      note 'the new version is already waiting in hyprlock.conf.new --'
+      note 'merge it into hyprlock.conf; the next lock picks it up'
+    else
+      note 'your ~/.config copy predates the fix. To take the new version:'
+      note '  c7shell-upgrade --config-only'
+      note 'if that reports hyprlock.conf kept, merge the hyprlock.conf.new it'
+      note 'writes beside it'
+    fi
+  fi
 fi
 
 section 'aur helper'
