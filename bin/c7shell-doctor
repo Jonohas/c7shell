@@ -515,6 +515,62 @@ else
   warn '/dev/dri/renderD128 missing -- no render node, expect software rendering at best'
 fi
 
+# A virtual GPU can advertise 3D and still hand Qt a context it cannot render
+# into. On VMware's vmwgfx that is confirmed fatal: aquamarine walks its EGL
+# context down until Hyprland itself comes up, but quickshell renders nothing
+# into the context it is given, attaches an invalid buffer -- "invalid
+# arguments for wl_surface.attach" -- and dies, taking the bar, the launcher
+# and every popup with it. What is left is a cursor on an empty screen, which
+# looks exactly like a config error and passes every other check in here,
+# because nothing is missing.
+#
+# conf/environment.lua answers this by pointing clients at llvmpipe. That file
+# lives in the user's ~/.config copy, and no package upgrade rewrites those --
+# an install made before the fix landed keeps the old copy and keeps failing.
+# So check the copy that is actually read, not the one under $share.
+# Parsed with the shell's own read rather than sed or grep: this runs before
+# anything has verified the PATH, and a doctor that dies on a missing tool is
+# worse than useless.
+virtual_gpu=
+for uevent in "$root"/sys/class/drm/card*/device/uevent; do
+  [[ -r $uevent ]] || continue
+  while IFS= read -r line; do
+    case $line in
+      DRIVER=vmwgfx|DRIVER=vboxvideo|DRIVER=virtio_gpu)
+        virtual_gpu=${line#DRIVER=}; break 2 ;;
+    esac
+  done < "$uevent"
+done
+
+if [[ -n $virtual_gpu ]]; then
+  env_lua=$conf/hypr/conf/environment.lua
+  if [[ ! -f $env_lua ]]; then
+    # No ~/.config copy at all; the "user config" section already reported it.
+    :
+  elif grep -q LIBGL_ALWAYS_SOFTWARE "$env_lua"; then
+    ok "$virtual_gpu: environment.lua falls back to llvmpipe"
+  else
+    # vmwgfx is the one reproduced end to end, so it is a failure there and a
+    # warning on the others -- vboxvideo and virtio_gpu are pre-empted by the
+    # same fallback, but a working session on them is not out of the question
+    # and this should not fail a machine that is fine.
+    if [[ $virtual_gpu == vmwgfx ]]; then
+      bad "$virtual_gpu: environment.lua has no llvmpipe fallback -- quickshell will die at startup and the session comes up empty"
+    else
+      warn "$virtual_gpu: environment.lua has no llvmpipe fallback -- if the session comes up empty, this is why"
+    fi
+    if [[ -f $env_lua.new ]] && grep -q LIBGL_ALWAYS_SOFTWARE "$env_lua.new"; then
+      note "the new version is already waiting in conf/environment.lua.new --"
+      note "merge it into conf/environment.lua and log back in"
+    else
+      note 'your ~/.config copy predates the fix. To take the new version:'
+      note '  c7shell-upgrade --config-only'
+      note 'if that reports environment.lua kept, merge the conf/environment.lua.new'
+      note 'it writes beside it, then log back in'
+    fi
+  fi
+fi
+
 section 'aur helper'
 # An AUR helper links libalpm, but the AUR packages only declare
 # `libalpm.so>=14` -- so pacman happily keeps one installed across a soname
