@@ -62,6 +62,7 @@ plan() {
   local pci=$1; shift
   : > "$log"
   env -i PATH="$bin" HOME="$tmp" USER=tester \
+    C7SHELL_ROOT="${C7SHELL_ROOT:-$tmp/root}" \
     STUB_LOG="$log" STUB_LSPCI="$pci" \
     STUB_INSTALLED="${STUB_INSTALLED:-linux}" \
     STUB_UNKNOWN="${STUB_UNKNOWN:-}" STUB_ENABLED="${STUB_ENABLED:-}" \
@@ -214,5 +215,41 @@ grep -q 'paru-bin' <<<"$out" && fail "paru-bin is prebuilt against one libalpm, 
 working_paru
 out=$(plan "$AMD")
 grep -q 'already installed' <<<"$out" || fail "a working paru was rebuilt anyway:\n$out"
+
+# --- the greeter theme ----------------------------------------------------
+# The theme files ship with the package; selecting them is a write to
+# /etc/sddm.conf.d, which only the bootstrap does.
+dropin='/etc/sddm.conf.d/10-c7shell.conf'
+
+out=$(plan "$AMD")
+grep -q "$dropin" <<<"$out" || fail "the sddm theme drop-in is not in the plan:\n$out"
+grep -q 'Current=c7shell' <<<"$out" || fail "the drop-in does not select the c7shell theme:\n$out"
+# Without it the greeter's kernel/battery line is silently empty, so the
+# drop-in has to carry it.
+grep -q 'GreeterEnvironment=QML_XHR_ALLOW_FILE_READ=1' <<<"$out" \
+  || fail "the drop-in does not let the greeter read /proc:\n$out"
+
+# --no-greeter-theme: sddm still installed and enabled, theme left alone
+out=$(plan "$AMD" --no-greeter-theme)
+grep -q '\bsddm\b' <<<"$out" || fail "--no-greeter-theme dropped sddm itself:\n$out"
+grep -q "$dropin" <<<"$out" && fail "--no-greeter-theme still wrote the drop-in:\n$out"
+
+# --no-greeter takes the theme with it
+out=$(plan "$AMD" --no-greeter)
+grep -q "$dropin" <<<"$out" && fail "--no-greeter still wrote the drop-in:\n$out"
+
+# A machine that already selected another theme is warned before it is replaced
+mkdir -p "$tmp/root/etc/sddm.conf.d"
+printf '[Theme]\nCurrent=breeze\n' > "$tmp/root/etc/sddm.conf"
+out=$(plan "$AMD")
+grep -q 'currently "breeze"' <<<"$out" || fail "replacing an existing theme was not reported:\n$out"
+grep -q "$dropin" <<<"$out" || fail "the drop-in is not planned over an existing theme:\n$out"
+
+# ...and once it is ours, there is nothing left to do
+printf '[Theme]\nCurrent=c7shell\n' > "$tmp/root$dropin"
+rm -f "$tmp/root/etc/sddm.conf"
+out=$(plan "$AMD")
+grep -q "$dropin" <<<"$out" && fail "the drop-in was rewritten when it was already correct:\n$out"
+rm -rf "$tmp/root"
 
 echo 'PASS: c7shell-bootstrap'

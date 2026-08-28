@@ -43,6 +43,7 @@ What the bootstrap decides for you, and how to override it:
 | --- | --- |
 | GPU | `lspci` detection → `mesa` plus `vulkan-intel` / `vulkan-radeon`, or `nvidia-open-dkms` + `nvidia-utils` + the headers of every installed kernel, and `/etc/modprobe.d/c7shell-nvidia.conf` setting `nvidia_drm modeset=1`. A pre-Turing card (GTX 10xx and older) is reported, not guessed at — `nvidia-open-dkms` does not support it. `--no-drivers` opts out. |
 | Greeter | `sddm`, enabled but not started, so it takes over at the next boot. If gdm/lightdm/greetd is already enabled it says so and enables nothing — two display managers fight over the seat and neither comes up. `--no-greeter` opts out. |
+| Greeter theme | `/etc/sddm.conf.d/10-c7shell.conf` selecting the `c7shell` theme (and letting the greeter read `/proc` for its kernel and battery readout). The theme's QML ships with the package; only the selection is a write to `/etc`, which is why it lives here. An existing theme is named in the plan before it is replaced; `--no-greeter-theme` keeps it. |
 | Audio | `pipewire`, `pipewire-pulse`, `pipewire-alsa`, `wireplumber` + the user units. `wireplumber` is a session manager, not a sound server: without the daemons under it the volume keys do nothing. |
 | Network | `NetworkManager` and `bluetooth` enabled — unless `systemd-networkd` or `iwd` is already driving the network, in which case it warns instead of stacking two managers on one link. |
 | Fonts, icons | `ttf-jetbrains-mono` (`Theme.fontMono`), `noto-fonts`, `noto-fonts-emoji`, `hicolor`/`adwaita`/`breeze` icon themes for the launcher's real app icons. |
@@ -191,6 +192,93 @@ A toolkit asks for the registrar once, when a window's menu bar is created, and
 caches the answer — so windows that are already open keep the menu bar they
 started with. Reopen them to see the change.
 
+## Lock screen
+
+`SUPER+L`, the power menu's lock row and hypridle's 5-minute idle timeout all
+run `hyprlock`, configured by `hypr/hyprlock.conf` — near-black, one centered
+field, crimson accent, the desktop blurred behind it, so it reads as the same
+surface as the greeter.
+
+That file is **not optional**. hyprlock refuses to start without a config
+(`Config path error: Could not find config`) and searches only
+`XDG_CONFIG_HOME`, `HOME`, `XDG_CONFIG_DIRS` and `/etc/xdg` — the copy the
+hyprlock package leaves in `/usr/share/hypr` is never found. Without it `SUPER+L`
+appears to do nothing, and less visibly, hypridle's `lock_cmd` and
+`before_sleep_cmd` fail too, so the machine idles and suspends **unlocked**.
+`c7shell-doctor` fails on that, naming the consequence, and
+`tests/test-lockscreen.sh` has hyprlock itself validate the file (against a
+Wayland display that does not exist, so it parses the config and dies on the
+connection instead of locking your screen) — which is what catches a key being
+renamed under it on a hyprlock upgrade.
+
+If a lock screen ever does come up wrong, `Ctrl+Alt+F2` to a TTY and
+`pkill hyprlock` is the way out.
+
+## Greeter
+
+The login screen is an SDDM Qt/QML theme in `sddm/themes/c7shell`, drawn from
+the same tokens as the shell: near-black ground with two crimson glows and a
+56px grid, one glass card with the avatar, the password field and a caps-lock
+line, a user list and a session picker as side panels, and the shell's pill bar
+along the bottom (session · layout · network · battery · sleep / reboot /
+shutdown).
+Reboot and shutdown are hold-to-confirm, the same 600 ms as the shell's power
+menu. `Up`/`Down` moves through the users, `F1` cycles the session, `F2` the
+keyboard layout, `Esc` clears the field. Three failed attempts add a 30-second
+cooldown.
+
+The network pill needs a hand: the greeter is QML with no D-Bus binding,
+running as the `sddm` user before any session exists, so it cannot ask
+NetworkManager what it is connected to. The package installs
+`/usr/lib/NetworkManager/dispatcher.d/50-c7shell-greeter`, which NetworkManager
+runs as root on every connection change — including before login — to publish
+the connection name to `/run/c7shell/network` (mode 644). The greeter polls that
+file. Delete the script and the pill simply never appears; nothing else changes,
+and nothing is exposed that `nmcli dev` would not already tell any local user.
+The name is NetworkManager's profile name, which for a wifi network added the
+usual way is its SSID.
+
+It is installed to `/usr/share/sddm/themes/c7shell` by the package — not copied
+into `~/.config`, because the greeter runs as the `sddm` user before any session
+exists and cannot read your home directory. Selecting it is a line in
+`/etc/sddm.conf.d`, written by `c7shell-bootstrap` on a fresh machine and by
+`c7shell-upgrade` on an existing one. `c7shell-upgrade` leaves another theme
+alone if one is already configured and says so; `c7shell-doctor` reports which
+theme is selected either way.
+
+One trap worth knowing if you fork the theme: `metadata.desktop` must declare
+`QtVersion=6`. sddm builds the greeter path as `/usr/bin/sddm-greeter` +
+`-qt<n>` from that key, so without it the theme is handed to the *Qt5* greeter —
+which Arch ships, but whose Qt5 libraries are only an optdepend of sddm. It
+exits 127 and the login screen is a black rectangle, with the reason only in
+`journalctl -u sddm`. `tests/test-greeter.sh` asserts the key, and
+`c7shell-doctor` checks the binary the selected theme implies can actually load.
+
+Per-machine settings live in `theme.conf` (or any `[Theme]`-adjacent drop-in in
+`/etc/sddm.conf.d`):
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `background` | *(empty)* | Wallpaper behind the card. Empty means the generated backdrop. Point it at the file hyprpaper uses for a continuous boot → desktop image — it has to be readable by the `sddm` user, so under `/usr/share`, not in `$HOME`. |
+| `grid` | `true` | The 56px grid. Ignored when a wallpaper is set. |
+| `userList` | `auto` | `auto` shows the user panel on a multi-account machine, `always` always, `never` only when you click "switch user". |
+| `allowManualLogin` | `false` | An "other…" row for an account SDDM does not list. |
+| `maxAttempts`, `cooldownSeconds` | `3`, `30` | The greeter's own lockout, separate from and looser than `pam_faillock`'s. |
+
+To see it without logging out:
+
+```bash
+qml6 tests/greeter-preview.qml                       # the resting state
+qml6 tests/greeter-preview.qml -- --failed --sessions # failed auth, picker open
+qml6 tests/greeter-preview.qml -- --typed 7            # the dot row and caret
+```
+
+The theme keeps SDDM's context objects out of everything but `Main.qml`, so
+`Greeter.qml` takes plain properties and the preview can feed it mock models.
+`tests/test-greeter.sh` renders every state offscreen and fails on any QML
+warning — SDDM's own greeter swallows them, so a broken binding there is
+invisible until someone tries to log in.
+
 ## Updating
 
 ```bash
@@ -232,12 +320,17 @@ eat local edits by accident.
 | `hypr/hyprland.lua` | entry point; requires each `conf/*.lua` module |
 | `hypr/conf/binds.lua` | keybinds — media keys and brightness route through the shell's IPC |
 | `hypr/conf/autostart.lua` | starts the appmenu daemon, `qs`, hyprpaper, hypridle, solaar |
+| `hypr/hyprlock.conf` | the lock screen; mandatory, hyprlock will not start without it |
 | `hypr/xdph.conf` | points xdph's screencopy picker at the shell's own picker |
 | `quickshell/c7shell/shell.qml` | shell entry point |
 | `quickshell/c7shell/Services/` | brightness, network, bluetooth, audio, notifications, capture |
 | `quickshell/c7shell/bin/screenshare-picker.sh` | xdph `custom_picker_binary` wrapper |
 | `quickshell/c7shell/scripts/c7shell-appmenud.py` | `com.canonical.AppMenu.Registrar` for the global menu |
 | `~/.config/hypr/shell.json` | shell preferences the settings app writes (global menu) |
+| `sddm/themes/c7shell/` | the greeter theme; `Main.qml` wires SDDM's models into `Greeter.qml` |
+| `sddm/themes/c7shell/theme.conf` | greeter settings (wallpaper, user list, lockout) |
+| `share/c7shell-network-dispatcher` | NetworkManager dispatcher script; publishes the connection for the greeter's network pill |
+| `/etc/sddm.conf.d/10-c7shell.conf` | selects the theme; written by bootstrap/upgrade, not by the package |
 
 ## Optional pieces
 
@@ -254,4 +347,6 @@ tests/test-setup.sh
 tests/test-doctor.sh
 tests/test-bootstrap.sh
 tests/test-upgrade.sh
+tests/test-greeter.sh
+tests/test-lockscreen.sh
 ```

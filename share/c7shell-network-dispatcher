@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# NetworkManager dispatcher script: publish the current connection where the
+# sddm greeter can read it.
+#
+# The greeter's bottom bar names the network the machine is on, the way the
+# shell's bar does -- but the greeter is QML with no D-Bus binding, running as
+# the sddm user before any session exists, so it cannot ask NetworkManager
+# anything. It can read a file. NetworkManager runs this as root on every
+# connection change, including before anyone logs in, so what the greeter reads
+# is live rather than a leftover from the last session.
+#
+# Nothing here is disclosed that a local user could not already get from
+# `nmcli dev`: NetworkManager's read-only D-Bus API is open to every user.
+#
+# Installed to /usr/lib/NetworkManager/dispatcher.d rather than /etc: it is a
+# program, not configuration. Delete it and the greeter drops the network pill;
+# nothing else changes.
+#
+# NetworkManager calls this as: <script> <interface> <action>, with the
+# connection in the environment. Deliberately no nmcli: NetworkManager blocks
+# waiting for its dispatcher scripts, and a script that calls back into it can
+# deadlock -- which is why the profile name comes from $CONNECTION_ID.
+set -eu
+
+iface=${1:-}
+action=${2:-}
+# Overridable only so the test suite can exercise this without root.
+out=${C7SHELL_NETWORK_FILE:-/run/c7shell/network}
+
+case $action in
+  up|down|dhcp4-change|dhcp6-change|connectivity-change) ;;
+  # pre-up/pre-down and the rest say nothing new about a settled connection.
+  *) exit 0 ;;
+esac
+
+# Wireless or wired, from the interface itself: NetworkManager exposes no
+# variable for it, and the greeter draws a different icon for each.
+kind=wired
+[[ -n $iface && -d /sys/class/net/$iface/wireless ]] && kind=wireless
+
+name=${CONNECTION_ID:-}
+state=down
+if [[ $action != down ]]; then
+  state=up
+  # A wired interface with no carrier is "connected" to nothing worth naming.
+  if [[ -r /sys/class/net/$iface/carrier ]] \
+     && [[ $(< "/sys/class/net/$iface/carrier") == 0 ]]; then
+    state=down
+  fi
+fi
+
+# Loopback and NetworkManager's own internal devices are not networks a person
+# is "on"; naming them in the greeter would be noise.
+case $iface in
+  lo|""|veth*|docker*|virbr*|br-*|tun*|tap*|wg*) exit 0 ;;
+esac
+
+install -d -m 755 -- "${out%/*}"
+
+# Written whole and renamed into place: the greeter polls this file, and a
+# half-written one would blink an empty pill.
+tmp=$(mktemp "${out%/*}/.network.XXXXXX")
+{
+  printf 'state=%s\n' "$state"
+  printf 'kind=%s\n' "$kind"
+  printf 'iface=%s\n' "$iface"
+  # The profile name, which for a wifi network added normally is its SSID.
+  printf 'name=%s\n' "$name"
+} > "$tmp"
+chmod 644 "$tmp"
+mv -f "$tmp" "$out"

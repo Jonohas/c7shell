@@ -68,6 +68,9 @@ done
 
 mkdir -p "$conf/hypr" "$conf/quickshell/c7shell" "$tmp/share"
 : > "$conf/hypr/hyprland.lua"
+# Without this hyprlock will not start, which takes SUPER+L, the power menu's
+# lock row and the idle lock with it -- see the lock screen cases below.
+printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 : > "$conf/quickshell/c7shell/shell.qml"
 
 run() {
@@ -178,6 +181,107 @@ printf '[Desktop Entry]\nName=c7shell\nExec=start-hyprland\n' \
   > "$root/usr/share/wayland-sessions/c7shell.desktop"
 out=$(run --quiet 2>&1 || true)
 grep -q 'execs Hyprland directly' <<<"$out" && fail "a current session entry still warned:\n$out"
+
+# --- the lock screen -------------------------------------------------------
+# hyprlock refuses to start without a config, and nothing in the session says
+# so: the symptom is SUPER+L doing nothing and -- quietly -- the machine
+# suspending unlocked, because hypridle's before_sleep_cmd fails the same way.
+mv "$conf/hypr/hyprlock.conf" "$tmp/lock-gone"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "a missing hyprlock config should fail, got exit $rc:\n$out"
+grep -q 'suspends unlocked' <<<"$out" || fail "the consequence was not spelled out:\n$out"
+grep -q 'c7shell-upgrade' <<<"$out" || fail "no way to get the config named:\n$out"
+
+# The shipped copy changes the advice from "update the package" to "run upgrade,
+# it adds the file"
+mkdir -p "$tmp/share/hypr"
+: > "$tmp/share/hypr/hyprlock.conf"
+rc=0; out=$(run 2>&1) || rc=$?
+grep -q 'adds it as a new file' <<<"$out" || fail "the shipped config was not offered:\n$out"
+mv "$tmp/lock-gone" "$conf/hypr/hyprlock.conf"
+
+# grace is a CLI flag in hyprlock 0.9, not a config key: in the file it is a
+# config error that stops hyprlock starting, and on a before-sleep lock it would
+# unlock the screen on resume.
+printf 'general {\n    grace = 5\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+out=$(run 2>&1) || fail "a stray grace should warn, not fail:\n$out"
+grep -q 'sets grace' <<<"$out" || fail "grace in the config was not reported:\n$out"
+printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+
+# --- the greeter theme -----------------------------------------------------
+# The theme QML comes with the package; the selection is a drop-in in
+# /etc/sddm.conf.d that c7shell-bootstrap or c7shell-upgrade writes. Every
+# state here is a warning: a machine may run another display manager and the
+# session works regardless.
+out=$(run 2>&1) || fail "an sddm-less machine should not fail:\n$out"
+grep -q 'sddm is not installed' <<<"$out" || fail "no note about the unused theme:\n$out"
+
+stub sddm   # sddm here, theme not: the package needs rebuilding
+out=$(run 2>&1) || fail "a missing theme should not fail:\n$out"
+grep -q 'themes/c7shell is not' <<<"$out" || fail "the missing theme was not reported:\n$out"
+grep -q 'c7shell-upgrade' <<<"$out" || fail "no repair command for the missing theme:\n$out"
+
+mkdir -p "$root/usr/share/sddm/themes/c7shell" "$root/etc/sddm.conf.d" "$root/usr/bin"
+: > "$root/usr/share/sddm/themes/c7shell/Main.qml"
+theme_meta=$root/usr/share/sddm/themes/c7shell/metadata.desktop
+printf '[SddmGreeterTheme]\nName=c7shell\nQtVersion=6\nMainScript=Main.qml\n' > "$theme_meta"
+# The binary sddm derives from QtVersion, and an ldd that reports its libraries
+# resolve -- what a machine that will actually show a login screen looks like.
+: > "$root/usr/bin/sddm-greeter-qt6"; chmod +x "$root/usr/bin/sddm-greeter-qt6"
+printf '#!/bin/sh\nexit 0\n' > "$bin/ldd"; chmod +x "$bin/ldd"
+out=$(run 2>&1) || fail "an unselected theme should not fail:\n$out"
+grep -q 'no sddm theme is selected' <<<"$out" || fail "the unselected theme was not reported:\n$out"
+
+printf '[Theme]\nCurrent=breeze\n' > "$root/etc/sddm.conf"
+out=$(run 2>&1) || fail "another theme should not fail:\n$out"
+grep -q 'set to the "breeze" theme' <<<"$out" || fail "another theme was not reported:\n$out"
+
+# Selected, but without the greeter environment the kernel and battery readouts
+# are silently empty -- worth saying, since nothing else shows it.
+printf '[Theme]\nCurrent=c7shell\n' > "$root/etc/sddm.conf.d/10-c7shell.conf"
+rm -f "$root/etc/sddm.conf"
+out=$(run 2>&1) || fail "a selected theme should not fail:\n$out"
+grep -q 'uses the c7shell greeter theme' <<<"$out" || fail "the selection was not recognised:\n$out"
+grep -q 'QML_XHR_ALLOW_FILE_READ' <<<"$out" || fail "the missing greeter env was not reported:\n$out"
+
+printf '[Theme]\nCurrent=c7shell\n\n[General]\nGreeterEnvironment=QML_XHR_ALLOW_FILE_READ=1\n' \
+  > "$root/etc/sddm.conf.d/10-c7shell.conf"
+out=$(run 2>&1) || fail "a fully configured greeter should not fail:\n$out"
+grep -q 'may read /proc' <<<"$out" || fail "the greeter env was not recognised:\n$out"
+grep -q 'greeter binary sddm-greeter-qt6 runs' <<<"$out" || fail "the greeter binary was not checked:\n$out"
+
+# The network pill's only source: nothing publishes the connection without it,
+# and "my greeter shows no wifi" has no other explanation.
+stub nmcli
+out=$(run 2>&1) || fail "a missing dispatcher should not fail:\n$out"
+grep -q 'greeter shows no network' <<<"$out" || fail "the missing dispatcher was not reported:\n$out"
+mkdir -p "$root/usr/lib/NetworkManager/dispatcher.d"
+: > "$root/usr/lib/NetworkManager/dispatcher.d/50-c7shell-greeter"
+chmod +x "$root/usr/lib/NetworkManager/dispatcher.d/50-c7shell-greeter"
+out=$(run 2>&1) || fail "a present dispatcher should not fail:\n$out"
+grep -q 'greeter network readout' <<<"$out" || fail "the dispatcher was not recognised:\n$out"
+
+# The black-screen case, and the reason this is checked at all: sddm builds the
+# greeter path as sddm-greeter + (QtVersion ? "-qt<n>" : ""), so a theme that
+# declares nothing gets handed to the Qt5 greeter -- present on Arch, but its
+# Qt5 libraries are only an optdepend of sddm. It exits 127 and the login screen
+# is black, with the reason only in sddm's journal. A failure, not a warning:
+# this machine will not let anyone in.
+printf '[SddmGreeterTheme]\nName=c7shell\nMainScript=Main.qml\n' > "$theme_meta"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "a greeter binary that is not installed should fail, got exit $rc:\n$out"
+grep -q 'black screen' <<<"$out" || fail "the black screen was not predicted:\n$out"
+
+# Same, for a binary that is there but cannot load its libraries
+: > "$root/usr/bin/sddm-greeter"; chmod +x "$root/usr/bin/sddm-greeter"
+printf '#!/bin/sh\necho "\tlibQt5Quick.so.5 => not found"\n' > "$bin/ldd"; chmod +x "$bin/ldd"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "an unloadable greeter binary should fail, got exit $rc:\n$out"
+grep -q 'cannot start' <<<"$out" || fail "the unloadable binary was not reported:\n$out"
+grep -q 'declares no QtVersion' <<<"$out" || fail "the missing QtVersion was not named:\n$out"
+
+printf '[SddmGreeterTheme]\nName=c7shell\nQtVersion=6\nMainScript=Main.qml\n' > "$theme_meta"
+printf '#!/bin/sh\nexit 0\n' > "$bin/ldd"; chmod +x "$bin/ldd"
 
 # --- the optional-package picker -------------------------------------------
 # It needs a terminal to prompt on, so drive it through a pty with `script`.

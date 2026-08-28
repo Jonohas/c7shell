@@ -29,7 +29,22 @@ dry=0
 do_package=1
 do_config=1
 do_doctor=1
+do_greeter=1
 force=0
+
+# The greeter theme lives outside both halves above: the QML ships with the
+# package (under /usr/share/sddm/themes, so a rebuild updates it), but selecting
+# it is a line in /etc/sddm.conf.d that no package may write. An install from
+# before the theme existed has the files and not the selection, which is exactly
+# the gap this step closes.
+# Bumped whenever a step is added after the package half below. That half
+# replaces this very script, so on the upgrade that introduces a step it is the
+# *old* code that would run it -- see the hand-over after the package step.
+upgrade_revision=2
+
+etc_root=${C7SHELL_ROOT:-}
+sddm_dropin=$etc_root/etc/sddm.conf.d/10-c7shell.conf
+sddm_theme_dir=${C7SHELL_SDDM_THEMES:-$etc_root/usr/share/sddm/themes}/c7shell
 
 usage() {
   cat <<USAGE
@@ -43,6 +58,7 @@ must not do the second (the configs are yours to edit).
       --package-only   rebuild and reinstall the package, leave ~/.config alone
       --config-only    refresh ~/.config from $share, don't touch the package
       --no-doctor      skip the c7shell-doctor run at the end
+      --no-greeter     don't touch the sddm greeter theme selection
   -f, --force          rebuild even when the installed version is current
   -h, --help           this text
 
@@ -50,6 +66,7 @@ Files you edited are never overwritten: the new shipped version is written
 beside them as <file>.new and reported.
 
 env: C7SHELL_REPO   (default $repo)
+     C7SHELL_ROOT   prefix for the /etc and /usr paths touched (test hook)
      C7SHELL_BRANCH (default main)
      C7SHELL_SHARE  (default /usr/share/c7shell)
      C7SHELL_CACHE  (default \$XDG_CACHE_HOME/c7shell)
@@ -59,12 +76,17 @@ exit: 0 up to date, 1 something went wrong, 4 updated but files need merging
 USAGE
 }
 
+# The flags that still mean something to the half after the package step, kept
+# for the hand-over below.
+pass_on=()
+
 while (($#)); do
   case $1 in
     -n|--dry-run) dry=1 ;;
     --package-only) do_config=0 ;;
     --config-only) do_package=0 ;;
-    --no-doctor) do_doctor=0 ;;
+    --no-doctor) do_doctor=0; pass_on+=(--no-doctor) ;;
+    --no-greeter) do_greeter=0; pass_on+=(--no-greeter) ;;
     -f|--force) force=1 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'c7shell-upgrade: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -137,6 +159,28 @@ if ((do_package)); then
       printf '  would: (cd %s && C7SHELL_BRANCH=%s ./install.sh --no-bootstrap)\n' "$src" "$branch"
     else
       ( cd "$src" && C7SHELL_BRANCH=$branch C7SHELL_SKIP_DOCTOR=1 ./install.sh --no-bootstrap )
+    fi
+  fi
+
+  # Everything after this point is code that the step above just replaced. On
+  # the upgrade that introduces a step -- the sddm theme selection was the first
+  # one -- the version running here predates it, so the step silently does not
+  # happen and the machine ends up half upgraded: new files, old side effects.
+  # So hand over to the version just installed, once, for the rest of the run.
+  #
+  # bash keeps reading this script from the file descriptor it opened, and pacman
+  # replaces files by rename, so the running copy stays intact either way; this
+  # is about which *steps* exist, not about the read.
+  if ((dry == 0)) && ((do_config)) && [[ -z ${C7SHELL_HANDOVER:-} ]]; then
+    installed=$(command -v c7shell-upgrade || true)
+    if [[ -n $installed && -x $installed ]]; then
+      # Read the marker out of the file on disk, not out of this process.
+      new_rev=$(sed -n 's/^upgrade_revision=\([0-9]\+\)$/\1/p' "$installed" | head -1)
+      if [[ -n $new_rev ]] && ((new_rev > upgrade_revision)); then
+        info "c7shell-upgrade grew a step in this version; continuing with the new one"
+        # --config-only: the package half is done, and repeating it would loop.
+        C7SHELL_HANDOVER=1 exec "$installed" --config-only ${pass_on[@]+"${pass_on[@]}"}
+      fi
     fi
   fi
 fi
@@ -247,6 +291,89 @@ if ((do_config)); then
 fi
 
 # ---------------------------------------------------------------------------
+# the greeter theme
+# ---------------------------------------------------------------------------
+
+greeter_note=''
+
+sddm_theme_current() {
+  # Last Current= wins: sddm.conf first, then the drop-ins in name order.
+  local f line value=''
+  for f in "$etc_root"/etc/sddm.conf "$etc_root"/etc/sddm.conf.d/*.conf; do
+    [[ -f $f ]] || continue
+    while IFS= read -r line; do
+      [[ $line =~ ^[[:space:]]*Current[[:space:]]*=[[:space:]]*(.*)$ ]] || continue
+      value=${BASH_REMATCH[1]}
+      value=${value%"${value##*[![:space:]]}"}
+    done < "$f"
+  done
+  printf '%s' "$value"
+}
+
+# Same body c7shell-bootstrap writes; keep the two in step.
+sddm_dropin_body() {
+  cat <<'CONF'
+# Written by c7shell-upgrade. Delete this file (or add a drop-in that sorts
+# after it) to go back to another greeter theme.
+[Theme]
+Current=c7shell
+
+[General]
+# The greeter's hostname line reads the kernel version out of /proc/version and
+# the battery out of /sys, both through QML's XMLHttpRequest -- which refuses
+# file:// reads unless this is set. Without it the greeter still comes up; the
+# line just loses everything but the session name.
+GreeterEnvironment=QML_XHR_ALLOW_FILE_READ=1
+CONF
+}
+
+as_root() {
+  if ((dry)); then printf '  would run (root): %s\n' "$*"; return 0; fi
+  if command -v sudo >/dev/null; then sudo "$@"
+  elif command -v doas >/dev/null; then doas "$@"
+  else
+    warn "need root to run: $*"
+    return 1
+  fi
+}
+
+if ((do_greeter)); then
+  step 'greeter theme'
+  current=$(sddm_theme_current)
+  # By path, not by `command -v`: the whole step is prefixed by C7SHELL_ROOT so
+  # it can be exercised against a fake tree, and /usr/share/sddm/themes proves
+  # nothing -- this package creates it whether sddm is installed or not.
+  if [[ ! -x $etc_root/usr/bin/sddm && ! -x $etc_root/usr/bin/sddm-greeter-qt6 ]]; then
+    # A machine on gdm or greetd has no use for the selection, and dropping a
+    # file in /etc/sddm.conf.d for a display manager that is not installed is
+    # just litter.
+    info 'sddm is not installed -- the greeter theme is not selected'
+  elif [[ ! -d $sddm_theme_dir ]]; then
+    # No theme on disk: either sddm is not installed here, or the package this
+    # machine has predates the theme and the package half was skipped.
+    info "no $sddm_theme_dir -- nothing to select"
+    ((do_package)) || info 'run without --config-only to rebuild the package first'
+  elif [[ $current == c7shell ]] && [[ -f $sddm_dropin ]]; then
+    info 'sddm already uses the c7shell theme'
+  elif [[ -n $current && $current != c7shell ]] && [[ ! -f $sddm_dropin ]]; then
+    # Somebody chose that theme; an upgrade is not the place to overrule it.
+    warn "sddm is set to the \"$current\" theme, leaving it alone"
+    info 'to switch, write the drop-in yourself or run: c7shell-bootstrap'
+    greeter_note="sddm still uses the \"$current\" theme"
+  else
+    info "selecting the c7shell theme in $sddm_dropin"
+    as_root mkdir -p "$etc_root/etc/sddm.conf.d"
+    if ((dry)); then
+      printf '  would write %s\n' "$sddm_dropin"
+    else
+      sddm_dropin_body | as_root tee "$sddm_dropin" >/dev/null \
+        || warn "could not write $sddm_dropin"
+    fi
+    greeter_note='the new greeter theme appears at the next boot (or after: sudo systemctl restart sddm)'
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 
 if ((do_doctor)) && ((dry == 0)) && command -v c7shell-doctor >/dev/null; then
   step 'checking the requirements'
@@ -255,6 +382,7 @@ fi
 
 step 'summary'
 ((do_config)) && info "added $added, updated $updated, removed $removed, kept ${#conflicts[@]}"
+if [[ -n $greeter_note ]]; then info "$greeter_note"; fi
 if ((${#conflicts[@]})); then
   printf '\nThese files you had edited, and the shipped version changed too. Yours is\nuntouched; the new one is beside it as <file>.new:\n\n'
   for rel in "${conflicts[@]}"; do printf '  %s\n' "$conf/$rel"; done

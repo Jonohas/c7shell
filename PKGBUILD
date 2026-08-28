@@ -37,6 +37,10 @@ depends=(
   'xdg-desktop-portal-gtk'
 )
 optdepends=(
+  # Not a depends=: the greeter is system state that c7shell-bootstrap sets up,
+  # and a machine running gdm or greetd installs this package just as happily.
+  # The theme under /usr/share/sddm/themes is inert without it.
+  'sddm: the greeter the c7shell theme styles'
   'kitty: terminal bound to SUPER+Q'
   'dolphin: file manager bound to SUPER+E'
   # QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua) only means something
@@ -75,7 +79,12 @@ check() {
   cd "$srcdir/$pkgname"
   # Every one of these stubs the machine it tests (pacman, lspci, systemctl,
   # $HOME), so they are safe to run mid-build and mean the package cannot be
-  # built out of a tree whose scripts are broken.
+  # built out of a tree whose scripts are broken. The two exceptions still are:
+  # test-greeter.sh renders the sddm theme with qml6 offscreen, and
+  # test-lockscreen.sh has hyprlock validate its own config against a Wayland
+  # display that does not exist -- neither can touch a running session, and both
+  # skip themselves when the tool is not installed (in a clean chroot, neither
+  # is).
   for t in tests/*.sh; do "$t"; done
   # From hypr/, because monitors.lua resolves its own require("conf/...")
   # relative to the working directory.
@@ -112,6 +121,25 @@ package() {
   install -Dm755 bin/c7shell-upgrade "$pkgdir/usr/bin/c7shell-upgrade"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
+
+  # The sddm greeter theme. It cannot travel with the configs above: sddm runs
+  # the greeter as its own user before any session exists, so the QML has to sit
+  # in /usr/share where that user can read it -- c7shell-setup copies nothing
+  # here. Selecting the theme is a line in /etc/sddm.conf.d, which a package must
+  # not write; c7shell-bootstrap does it on a fresh machine and c7shell-upgrade
+  # on an existing one.
+  install -dm755 "$pkgdir/usr/share/sddm/themes"
+  cp -a sddm/themes/c7shell "$pkgdir/usr/share/sddm/themes/"
+  chmod -R u=rwX,go=rX "$pkgdir/usr/share/sddm/themes/c7shell"
+
+  # What the greeter's network pill reads. The greeter is QML with no D-Bus
+  # binding, running as the sddm user before any session exists, so it cannot
+  # ask NetworkManager what it is connected to -- this runs as root on every
+  # connection change and writes the answer where the greeter can read it.
+  # /usr/lib, not /etc/NetworkManager/dispatcher.d: it is a program, and
+  # NetworkManager has read both directories since 1.36.
+  install -Dm755 share/c7shell-network-dispatcher \
+    "$pkgdir/usr/lib/NetworkManager/dispatcher.d/50-c7shell-greeter"
 
   # The settings window is a launchable app, so its entry and icon go where
   # every launcher already looks. They also travel inside the shipped config
