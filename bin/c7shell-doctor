@@ -221,6 +221,10 @@ need_cmd hypridle  hypridle  'idle timeouts, autostarted'
 need_cmd hyprlock  hyprlock  'the lock screen (SUPER+L, hypridle)'
 need_cmd hyprpaper hyprpaper 'the wallpaper, autostarted'
 need_cmd hyprpicker hyprpicker 'the colour picker in the settings app'
+need_file /usr/share/polkit-1/actions/io.crimson7.c7shell.policy c7shell \
+  'the update flow'"'"'s polkit action -- without it applying updates from the bar cannot elevate'
+need_file /usr/lib/c7shell/c7up-root c7shell \
+  'the root half of the update flow, reached only through that polkit action'
 need_file /usr/lib/hyprpolkitagent/hyprpolkitagent hyprpolkitagent \
   'the polkit agent, started by conf/autostart.lua by absolute path'
 need_cmd grim        grim         'screenshots'
@@ -750,7 +754,14 @@ optional_entries=(
   # AUR, not a repo package: it is installed through aur_only above, and the
   # PKGBUILD lists it in optdepends= for the same reason. New entries go at the
   # end -- tests/test-doctor.sh picks packages out of this list by number.
-  "cmd:arch-update:arch-update:applies the updates the bar counts (AUR)"
+  "cmd:arch-update:arch-update:shared config and state for the update flow (AUR)"
+  # The update flow's own dependencies. checkupdates is what makes the dry run
+  # rootless (it syncs into a temporary database), and pacdiff is the pacnew
+  # list step 3 is built from -- without pacman-contrib the badge can count
+  # nothing and the wizard has no step 3.
+  "cmd:checkupdates:pacman-contrib:the rootless update check the bar's badge is built on"
+  "cmd:pacdiff:pacman-contrib:the pacnew list the update wizard reviews"
+  "cmd:checkservices:checkservices:the post-update service restart check"
 )
 
 

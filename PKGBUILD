@@ -65,10 +65,21 @@ optdepends=(
   'playerctl: media keys (XF86Audio{Next,Prev,Play,Pause}) and the lock screen now-playing line'
   'solaar: Logitech device support, autostarted if present'
   'jq: helper scripting'
-  # AUR-only, so it cannot be a depends=: makepkg resolves dependencies through
-  # pacman alone and an unresolvable name aborts the whole build. Install it
-  # with an AUR helper:  paru -S arch-update
-  'arch-update: applies the updates the bar counts (AUR)'
+  # AUR-only, so it cannot be a depends= even though the update flow now leans
+  # on it hard: makepkg resolves dependencies through pacman alone and an
+  # unresolvable name aborts the whole build. Install it with an AUR helper:
+  #   paru -S arch-update
+  # Without it the bar still counts updates and c7up still applies them -- what
+  # is lost is the shared config (which AUR helper, which elevation command)
+  # and the state directory the two halves agree through.
+  'arch-update: shared config and state for the update flow (AUR)'
+  # What c7up shells out to. pacman-contrib carries checkupdates and pacdiff:
+  # the rootless sync the whole dry run is built on, and the pacnew list step 3
+  # is built on.
+  'pacman-contrib: the rootless update check (checkupdates) and pacnew list (pacdiff)'
+  'paru: AUR updates in the same flow as the repo ones'
+  'flatpak: flatpak updates in the same flow'
+  'checkservices: the "these services want a restart" step after an update'
   'kwallet: secret storage unlocked at login by conf/autostart.lua'
 )
 # lua: tests/test-monitors.lua loads conf/monitors.lua against a stubbed hl.
@@ -145,6 +156,25 @@ package() {
   # author -- and then execs hyprlock. Any failure falls through to plain
   # hyprlock, so the lock screen never depends on the decoration working.
   install -Dm755 bin/c7shell-lock "$pkgdir/usr/bin/c7shell-lock"
+
+  # The update flow's backend. c7up is the unprivileged half -- the dry run,
+  # all the parsing, the NDJSON the shell binds to -- and is on PATH because
+  # the shell, the wizard's "view diff" and the pacnew "merge…" all invoke it
+  # by name. The other two are reached only through pkexec and have no business
+  # on anyone's PATH.
+  install -Dm755 bin/c7up "$pkgdir/usr/bin/c7up"
+  # The trust boundary: it takes a fixed verb, never a command line, and the
+  # polkit action below names it by absolute path.
+  install -Dm755 bin/c7up-root "$pkgdir/usr/lib/c7shell/c7up-root"
+  # What the AUR helper's --sudo lands on, so paru's install step goes through
+  # the same authorisation as the repo half instead of a password prompt on a
+  # TTY the shell does not have.
+  install -Dm755 bin/c7up-sudo "$pkgdir/usr/lib/c7shell/c7up-sudo"
+  # auth_admin_keep, so one authorisation covers the repo half and the AUR half
+  # of the same run. Without this pkexec falls back to its generic action,
+  # whose dialog names a binary rather than the task.
+  install -Dm644 share/polkit-1/actions/io.crimson7.c7shell.policy \
+    "$pkgdir/usr/share/polkit-1/actions/io.crimson7.c7shell.policy"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
 

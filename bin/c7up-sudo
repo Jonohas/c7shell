@@ -1,0 +1,10 @@
+#!/bin/bash
+# c7up-sudo: what the AUR helper is pointed at with --sudo.
+#
+# paru builds as the user and then runs `<sudo> pacman -U ...` to install what
+# it built. Left as real sudo that is a password prompt on a TTY the shell does
+# not have, and the run stalls invisibly. Routing it through the same polkit
+# action as the repo half means the authorisation the user already gave in step
+# 1 covers it (auth_admin_keep), and the wizard's "waiting for authorisation"
+# state covers the case where it has expired.
+exec pkexec /usr/lib/c7shell/c7up-root pacman "$@"

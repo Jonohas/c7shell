@@ -12,13 +12,15 @@ Window {
   visible: true
   width: 100; height: 100
 
+  // Throws rather than calling Qt.exit(): Qt.exit() only *schedules* the exit,
+  // so the enclosing function runs on and prints the PASS line regardless of
+  // what the check found. Every assertion here was inert until this changed.
   function check(cond, msg) {
-    if (cond) return
-    console.error("ASSERT-FAILED: " + msg)
-    Qt.exit(1)
+    if (!cond) throw new Error(msg)
   }
 
   Component.onCompleted: {
+    try {
     OsdManager.show("workspace", { value: 3, hint: "super+3" })
     check(OsdManager.showing, "show() did not raise the pill")
     check(OsdManager.kind === "workspace", "show() did not set kind")
@@ -36,17 +38,26 @@ Window {
 
     // Arm the expiry test: the hideTimer fires 1200ms after this show().
     OsdManager.show("workspace", { value: 5 })
+    } catch (e) {
+      console.error("ASSERT-FAILED: " + e.message)
+      Qt.exit(1)
+    }
   }
 
   Timer {
     interval: 2000   // past the 1200ms hideTimer
     running: true
     onTriggered: {
+      try {
       root.check(!OsdManager.showing, "the hide timer never fired")
       root.check(OsdManager.kind === "workspace",
         "timer expiry reset kind to '" + OsdManager.kind + "' -- the fade-out now renders the fallback audio glyph")
       console.log("OSD-TEST-PASS")
       Qt.exit(0)
+      } catch (e) {
+        console.error("ASSERT-FAILED: " + e.message)
+        Qt.exit(1)
+      }
     }
   }
 }

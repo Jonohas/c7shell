@@ -37,6 +37,10 @@ hyprland_version 0.56.1
 
 mkdir -p "$root/usr/lib/hyprpolkitagent" "$root/usr/lib" \
          "$root/usr/share/wayland-sessions" "$root/dev/dri"
+# The update flow: its polkit action and the root half that action authorises.
+mkdir -p "$root/usr/share/polkit-1/actions" "$root/usr/lib/c7shell"
+: > "$root/usr/share/polkit-1/actions/io.crimson7.c7shell.policy"
+: > "$root/usr/lib/c7shell/c7up-root"
 : > "$root/usr/lib/hyprpolkitagent/hyprpolkitagent"
 : > "$root/usr/lib/xdg-desktop-portal-hyprland"
 # The Settings-portal backend, plus a gsettings that reports a preference
