@@ -59,13 +59,21 @@ for arg in media status; do
   (($(wc -l <<<"$out") <= 1)) || fail "c7shell-lock-info $arg printed more than one line:\n$out"
 done
 
-# A machine with no battery must lose the field rather than report 0%, and one
-# with a battery must show it. Neither is reproducible on the test machine, so
-# both are staged under C7SHELL_ROOT.
+# The battery field. Matched on type rather than on a BAT* name, because the
+# name is not standardised -- BAT0, BAT1, CMB0 and macsmc-battery all occur, and
+# globbing BAT* reports nothing at all on the machines using the others. None of
+# this is reproducible on the test machine, so every case is staged under
+# C7SHELL_ROOT.
 fakeroot=$tmp/root
-mkdir -p "$fakeroot/sys/class/power_supply/BAT0"
-printf '62\n' > "$fakeroot/sys/class/power_supply/BAT0/capacity"
-printf 'Discharging\n' > "$fakeroot/sys/class/power_supply/BAT0/status"
+supply=$fakeroot/sys/class/power_supply
+battery() {
+  rm -rf "$supply"; mkdir -p "$supply/$1"
+  printf 'Battery\n' > "$supply/$1/type"
+  printf '%s\n' "$2" > "$supply/$1/capacity"
+  printf '%s\n' "$3" > "$supply/$1/status"
+}
+
+battery BAT0 62 Discharging
 C7SHELL_ROOT=$fakeroot "$info" status | grep -q '62%' \
   || fail 'a battery at 62% does not reach the status line'
 # Both fields present means they have to be separated. ${parts[*]} with a
@@ -75,15 +83,62 @@ if [[ -n $(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | grep -v 
   C7SHELL_ROOT=$fakeroot "$info" status | grep -q ' · 62%' \
     || fail "the status fields are not joined with the mockup's separator: $(C7SHELL_ROOT=$fakeroot "$info" status)"
 fi
-printf 'Charging\n' > "$fakeroot/sys/class/power_supply/BAT0/status"
+
+battery BAT0 62 Charging
 C7SHELL_ROOT=$fakeroot "$info" status | grep -q '62% charging' \
   || fail 'a charging battery is not reported as charging'
-rm -rf "$fakeroot/sys/class/power_supply/BAT0"
-C7SHELL_ROOT=$fakeroot "$info" status | grep -q '%' \
-  && fail 'a machine with no battery still prints a percentage'
 
-# An unknown argument is a bug in hyprlock.conf, and it should be loud when a
-# human runs it rather than silently printing a blank line forever.
+# The whole point of matching on type: a laptop whose battery is not called BAT*
+# still gets a reading.
+battery CMB0 41 Discharging
+C7SHELL_ROOT=$fakeroot "$info" status | grep -q '41%' \
+  || fail 'a battery named CMB0 is not found -- the check is still globbing BAT*'
+battery macsmc-battery 88 Discharging
+C7SHELL_ROOT=$fakeroot "$info" status | grep -q '88%' \
+  || fail 'a battery named macsmc-battery is not found'
+
+# A wireless mouse registers as a power supply too, with type=Battery and
+# scope=Device. Reporting its charge as the machine's would be worse than
+# reporting nothing.
+battery hidpp_battery_0 12 Discharging
+printf 'Device\n' > "$supply/hidpp_battery_0/scope"
+C7SHELL_ROOT=$fakeroot "$info" status | grep -q '12%' \
+  && fail "a peripheral's battery was reported as the machine's"
+
+# Mains is not a battery at all.
+rm -rf "$supply"; mkdir -p "$supply/ACAD"
+printf 'Mains\n' > "$supply/ACAD/type"
+printf '1\n' > "$supply/ACAD/online"
+C7SHELL_ROOT=$fakeroot "$info" status | grep -q '%' \
+  && fail 'a machine with only mains power still prints a percentage'
+rm -rf "$supply"
+
+# The notification count comes from the shell over IPC, because hyprlock cannot
+# speak D-Bus. Stubbed here: the real one needs a running shell, and what is
+# under test is that the count is parsed and worded, not that quickshell works.
+stubbin=$tmp/stub
+mkdir -p "$stubbin"
+qs_returns() { printf '#!/bin/sh\nprintf %%s "%s"\n' "$1" > "$stubbin/qs"; chmod +x "$stubbin/qs"; }
+
+qs_returns 3
+PATH=$stubbin:$PATH C7SHELL_ROOT=$fakeroot "$info" status | grep -q '3 notifications' \
+  || fail "the notification count does not reach the status line: $(PATH=$stubbin:$PATH "$info" status)"
+# The mockup's badge reads "3 notifications"; one is not "1 notifications".
+qs_returns 1
+PATH=$stubbin:$PATH C7SHELL_ROOT=$fakeroot "$info" status | grep -q '1 notification$' \
+  || fail 'a single notification is not worded in the singular'
+# Nothing waiting is not a field that says zero.
+qs_returns 0
+PATH=$stubbin:$PATH C7SHELL_ROOT=$fakeroot "$info" status | grep -q 'notification' \
+  && fail 'zero notifications still prints a field'
+# A shell that is not running, or one too old to have the handler, answers with
+# something that is not a number. That is a missing field, not an error on the
+# lock screen.
+qs_returns 'error: no such target'
+PATH=$stubbin:$PATH C7SHELL_ROOT=$fakeroot "$info" status | grep -qi 'error\|notification' \
+  && fail 'an IPC error was drawn on the lock screen'
+rm -rf "$stubbin"
+
 "$info" bogus >/dev/null 2>&1 && fail 'c7shell-lock-info accepted an unknown argument'
 
 # hyprlock copies the screen at startup -- for the screenshot background and for

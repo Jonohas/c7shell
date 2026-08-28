@@ -71,17 +71,45 @@ status() {
     [[ -n $name ]] && parts+=("$(escape "$(clip "$name" 22)")")
   fi
 
-  # Desktops and virtual machines have no BAT* at all -- the line just loses a
-  # field rather than reporting 0%.
-  local bat
-  for bat in "$root"/sys/class/power_supply/BAT*; do
-    [[ -r $bat/capacity ]] || continue
+  # The machine's own battery. Matched on type rather than on a BAT* name: the
+  # name is not standardised (BAT0, BAT1, CMB0, macsmc-battery all occur), and
+  # globbing for BAT* silently reports nothing on the laptops that use another.
+  #
+  # `scope` is what separates the machine's battery from a peripheral's. A
+  # wireless mouse or keyboard registers here too, with type=Battery and
+  # scope=Device -- without that second test the lock screen would happily
+  # announce the mouse's charge as the laptop's.
+  #
+  # Desktops and virtual machines have neither, and the line just loses a field
+  # rather than reporting 0%.
+  local supply
+  for supply in "$root"/sys/class/power_supply/*; do
+    [[ -r $supply/type && -r $supply/capacity ]] || continue
+    [[ $(<"$supply/type") == Battery ]] || continue
+    [[ -r $supply/scope && $(<"$supply/scope") == Device ]] && continue
     local cap charge
-    cap=$(<"$bat/capacity")
-    charge=$(cat "$bat/status" 2>/dev/null)
+    cap=$(<"$supply/capacity")
+    charge=$(cat "$supply/status" 2>/dev/null)
     if [[ $charge == Charging ]]; then parts+=("$cap% charging"); else parts+=("$cap%"); fi
     break
   done
+
+  # How many notifications are waiting, from the shell that owns
+  # org.freedesktop.Notifications. hyprlock cannot speak D-Bus, so the count
+  # comes over the shell's IPC socket -- the count only, never the contents:
+  # what they say stays hidden while the screen is locked.
+  #
+  # Timed out because this runs behind a lock screen every 30 seconds: a wedged
+  # shell must cost the line a field, not hang the label forever.
+  if command -v qs >/dev/null; then
+    local n
+    n=$(timeout 2 qs -c c7shell ipc call notifications count 2>/dev/null)
+    # Anything that is not a plain number is a shell that is not running, an
+    # older shell with no such handler, or an error string -- all "no field".
+    if [[ $n =~ ^[0-9]+$ ]] && ((n > 0)); then
+      if ((n == 1)); then parts+=("1 notification"); else parts+=("$n notifications"); fi
+    fi
+  fi
 
   ((${#parts[@]})) || return 0
   # Joined by hand: ${parts[*]} with IFS would use only the first character of
