@@ -165,7 +165,7 @@ Singleton {
     root.screens = rows
     root.probed = true
     for (let i = 0; i < rows.length; i++)
-      if (rows[i].kind === "ddc") root.enqueueRead(i)
+      if (root.readable(rows[i])) root.enqueueRead(i)
   }
 
   Process {
@@ -232,6 +232,42 @@ Singleton {
   readonly property int focusedRow: root.rowFor(Hyprland.focusedMonitor?.name ?? "")
   readonly property int percentage: root.percent(root.focusedRow)
 
+  // -- backends ---------------------------------------------------------------
+  // One entry per way of driving a panel, keyed by a row's `kind`. Everything
+  // downstream -- the queue, the OSD, the keys, the settings page -- is
+  // mechanism-blind and only reaches hardware through this table, so a monitor
+  // that needs yet another method costs one entry here plus discovery that
+  // emits rows naming it (see probe()).
+  //   readCommand   argv that prints the row's current level, or null when
+  //                 something else keeps the row current -- logind rows are
+  //                 watched via sysfs below, so polling them is wasted work.
+  //                 Also gates the retry paths: only rows that can be asked
+  //                 are worth re-asking.
+  //   parseRead     readCommand's stdout -> { value, max }, or null to keep
+  //                 the row untouched
+  //   writeCommand  argv that sets an absolute level in the row's own units
+  readonly property var backends: ({
+    ddc: {
+      readCommand: s => ["ddcutil", "--bus", s.dev, "--brief", "getvcp", "10"],
+      // "VCP 10 C <current> <max>"
+      parseRead: text => {
+        const f = text.trim().split(/\s+/)
+        return f.length < 5 ? null : { value: parseInt(f[3]), max: parseInt(f[4]) }
+      },
+      writeCommand: (s, v) => ["ddcutil", "--bus", s.dev, "--noverify", "setvcp", "10", `${v}`],
+    },
+    logind: {
+      readCommand: null,
+      parseRead: null,
+      writeCommand: (s, v) => ["busctl", "call", "org.freedesktop.login1",
+                               "/org/freedesktop/login1/session/auto",
+                               "org.freedesktop.login1.Session", "SetBrightness", "ssu",
+                               "backlight", s.dev, `${v}`],
+    },
+  })
+
+  function readable(s) { return s && root.backends[s.kind].readCommand !== null }
+
   // -- the i2c queue ----------------------------------------------------------
   // One process, one job at a time, reads and writes in the same line. ddcutil's
   // own flock gives up after 3s under contention and the value lands garbage --
@@ -283,17 +319,10 @@ Singleton {
       const s = root.screens[job.row]
       if (!s) return   // the row went away under a re-probe
 
+      const b = root.backends[s.kind]
       io.job = job
       root.jobStarted = Date.now()
-      if (job.read)
-        io.exec(["ddcutil", "--bus", s.dev, "--brief", "getvcp", "10"])
-      else if (s.kind === "ddc")
-        io.exec(["ddcutil", "--bus", s.dev, "--noverify", "setvcp", "10", `${job.value}`])
-      else
-        io.exec(["busctl", "call", "org.freedesktop.login1",
-                 "/org/freedesktop/login1/session/auto",
-                 "org.freedesktop.login1.Session", "SetBrightness", "ssu",
-                 "backlight", s.dev, `${job.value}`])
+      io.exec(job.read ? b.readCommand(s) : b.writeCommand(s, job.value))
     }
   }
 
@@ -303,14 +332,13 @@ Singleton {
     property var job: null
 
     stdout: StdioCollector {
-      // "VCP 10 C <current> <max>"
       onStreamFinished: {
         if (!io.job || !io.job.read) return
-        const f = text.trim().split(/\s+/)
-        if (f.length < 5) return
         const i = io.job.row
-        if (!root.screens[i]) return
-        root.update(i, { value: parseInt(f[3]), max: parseInt(f[4]), error: "", tries: 0 })
+        const s = root.screens[i]
+        if (!s) return
+        const r = root.backends[s.kind].parseRead(text)
+        if (r) root.update(i, { value: r.value, max: r.max, error: "", tries: 0 })
       }
     }
     stderr: StdioCollector { id: ioErr }
@@ -323,7 +351,7 @@ Singleton {
       if (code === 0 && status === 0) return
       const s = root.screens[job?.row]
       if (!s) return
-      const why = ioErr.text.trim().split("\n").pop() || `ddcutil exited ${code}`
+      const why = ioErr.text.trim().split("\n").pop() || `the ${s.kind} backend exited ${code}`
 
       if (job.read) {
         // "Display not found" is not a fault -- it is the panel being
@@ -345,7 +373,7 @@ Singleton {
       root.fail(`${s.label} did not change`, why)
       // The shown value is now a guess about hardware that refused. Re-read the
       // truth rather than leave the UI lying about it.
-      if (s.kind === "ddc") { root.update(job.row, { tries: 0 }); reread.restart() }
+      if (root.readable(s)) { root.update(job.row, { tries: 0 }); reread.restart() }
     }
   }
 
@@ -355,7 +383,7 @@ Singleton {
     onTriggered: {
       for (let i = 0; i < root.screens.length; i++) {
         const s = root.screens[i]
-        if (s.kind === "ddc" && s.tries < 2) root.enqueueRead(i)
+        if (root.readable(s) && s.tries < 2) root.enqueueRead(i)
       }
     }
   }
@@ -421,7 +449,7 @@ Singleton {
       root.fail(`${s.label} brightness unavailable`,
         s.error || "the panel has not reported a level yet")
       // Still trying is worth one more attempt on the key press itself.
-      if (s.kind === "ddc") { root.update(i, { tries: 0 }); reread.restart() }
+      if (root.readable(s)) { root.update(i, { tries: 0 }); reread.restart() }
       return
     }
     root.step(i, dir)
