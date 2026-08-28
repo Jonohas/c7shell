@@ -109,11 +109,35 @@ hl.window_rule({
 --                the layer window's bottom edge.
 --
 -- Keep it in (0.65, 0.78) when adding surfaces; new glass must stay >= 0.7 and new
--- shadows <= 0.65 or one of the two halves breaks.
+-- shadows <= 0.65 or one of the two halves breaks. The password prompt is the
+-- one surface that cannot live inside that split -- see the rule at the bottom
+-- of this file.
 hl.layer_rule({
     name  = "c7shell-blur",
     match = { namespace = "^c7shell.*" },
     blur         = true,
     blur_popups  = true,   -- reaches the global menu dropdown (xdg-popup of the bar layer)
     ignore_alpha = 0.7,
+})
+
+-- The password prompt is the one c7shell surface the rule above cannot cover.
+-- ignore_alpha = 0.7 exists so panel shadows stay sharp, and this window's
+-- backdrop is the design's 45% dim over the whole screen -- below the
+-- threshold, so under that rule alone the panel blurs and everything behind it
+-- stays crisp, which is the opposite of what a modal is for.
+--
+-- So it gets its own rule, with a threshold low enough to take the backdrop
+-- in. Nothing here has a shadow to protect: the panel sits on a dimmed screen,
+-- so there is no transparent gutter to keep clean.
+--
+-- "^c7shell.*" above matches this namespace too, so both rules apply and this
+-- one has to be the one that counts -- it is last, and a later rule setting the
+-- same property is what wins. If that ever stops holding, the symptom is
+-- cosmetic and not a broken prompt: the backdrop goes sharp behind a blurred
+-- panel, still legibly a modal over a dimmed screen.
+hl.layer_rule({
+    name  = "c7shell-auth-blur",
+    match = { namespace = "^c7shell-auth$" },
+    blur         = true,
+    ignore_alpha = 0.2,
 })

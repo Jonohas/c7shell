@@ -67,3 +67,20 @@ end
 if gpu.wallpaper_backend() == "shell" then
     hl.env("C7SHELL_WALLPAPER", "shell")
 end
+
+-- Which program sudo asks for a password with. c7-askpass hands the request to
+-- the shell, which draws it as the same panel polkit prompts get -- naming the
+-- command and the terminal that asked for it, which a password box appearing
+-- over your desktop otherwise cannot do.
+--
+-- sudo consults this in two situations (sudo(8), SUDO_ASKPASS): when -A is
+-- given, and when there is no terminal to read from. So `sudo -A pacman -Syu`
+-- typed in a terminal raises the shell's prompt, and a GUI program that shells
+-- out to sudo with no tty gets one instead of failing.
+--
+-- Plain `sudo` in a terminal is deliberately untouched: it has a terminal, so
+-- it reads from it, which is the right thing and does not need a modal window
+-- over the whole screen. Making every sudo go through the shell means a line
+-- in /etc/sudo.conf -- a file the sudo package owns, which c7shell does not
+-- write. c7shell-doctor prints the one line to add for anyone who wants it.
+hl.env("SUDO_ASKPASS", "/usr/bin/c7-askpass")

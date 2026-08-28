@@ -37,10 +37,18 @@ end)
 -- so without this line kwalletd6 only ever starts via dbus activation with no
 -- key -- which is what makes it prompt.
 --
--- hyprpolkitagent's unit has the same WantedBy, hence the same treatment
--- rather than `systemctl --user enable`.
+-- hyprpolkitagent is NOT started here any more. The shell registers as the
+-- session's polkit authentication agent itself (bin/c7-authd, owned by
+-- Services/AuthService.qml), so that pkexec, systemctl and c7up's own root
+-- helper all prompt with the c7shell panel rather than a second, differently
+-- styled dialog. Only one agent may hold the registration, so starting both
+-- would mean whichever won the race drew the prompt.
+--
+-- It stays a depends= of the package: AuthService falls back to launching it
+-- if c7-authd will not start, on the grounds that an unstyled dialog beats a
+-- desktop where pkexec silently does nothing.
 hl.on("hyprland.start", function ()
-  hl.exec_cmd("/usr/lib/pam_kwallet_init & /usr/lib/hyprpolkitagent/hyprpolkitagent")
+  hl.exec_cmd("/usr/lib/pam_kwallet_init")
 end)
 
 -- Logitech MX Master 3S: thumb-button workspace gestures (rules in ~/.config/solaar/rules.yaml)
