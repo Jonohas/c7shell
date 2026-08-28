@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# The two live lines on the lock screen: what is playing, and what the machine
+# is connected to. hyprlock calls this from a label's cmd[update:N], once per
+# interval, per line:
+#
+#     text = cmd[update:2000] c7shell-lock-info media
+#     text = cmd[update:30000] c7shell-lock-info status
+#
+# It lives in /usr/bin rather than beside hyprlock.conf on purpose. hyprlang
+# does no variable expansion, so a config line cannot spell out a path under
+# $HOME or $XDG_CONFIG_HOME -- and the ~/.config copy would arrive without its
+# execute bit anyway, because c7shell-upgrade writes new files with a shell
+# redirect. A name on PATH sidesteps both.
+#
+# Every line is optional. Nothing here is worth a lock screen that reports an
+# error where a track title should be: a source that is missing, broken or has
+# nothing to say prints nothing, and hyprlock draws no label at all.
+set -uo pipefail
+
+# Prefix for the /sys paths read below, so the tests can hand this a battery on
+# a machine that has none (and none on a laptop that has one). Same hook, and
+# same reason, as c7shell-doctor's.
+root=${C7SHELL_ROOT:-}
+
+# hyprlock parses label text as pango markup, so a track called "Q&A" or
+# "<script>" would be a markup error rather than a title.
+escape() { local s=$1; s=${s//&/&amp;}; s=${s//</&lt;}; s=${s//>/&gt;}; printf '%s' "$s"; }
+
+# Long titles push the line off the screen edge; the mockup's card ellipsises at
+# 296px and this is the text-only equivalent.
+clip() {
+  local s=$1 n=$2
+  if ((${#s} > n)); then printf '%s…' "${s:0:n-1}"; else printf '%s' "$s"; fi
+}
+
+media() {
+  command -v playerctl >/dev/null || return 0
+  # No player on the bus at all is playerctl's exit 1, not an empty status.
+  local state
+  state=$(playerctl status 2>/dev/null) || return 0
+  [[ -n $state ]] || return 0
+  # "Stopped" is a player that is open and idle -- the mockup's card is for
+  # something you are listening to, and a stopped one is just clutter.
+  [[ $state == Stopped ]] && return 0
+
+  local title artist player
+  title=$(playerctl metadata --format '{{title}}' 2>/dev/null)
+  artist=$(playerctl metadata --format '{{artist}}' 2>/dev/null)
+  player=$(playerctl metadata --format '{{playerName}}' 2>/dev/null)
+  # A player with no title is a browser tab or a notification sound, not music.
+  [[ -n $title ]] || return 0
+
+  local line
+  line=$(clip "$title" 44)
+  [[ -n $artist ]] && line+=" — $(clip "$artist" 24)"
+  line="${state,,} · $line"
+  [[ -n $player ]] && line+=" · ${player,,}"
+  escape "$line"
+  printf '\n'
+}
+
+status() {
+  local parts=()
+
+  # The connection NetworkManager considers active, minus loopback, which is
+  # always up and never what anyone means by "the network".
+  if command -v nmcli >/dev/null; then
+    local name
+    name=$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null \
+             | grep -v ':loopback$' | head -1 | cut -d: -f1)
+    [[ -n $name ]] && parts+=("$(escape "$(clip "$name" 22)")")
+  fi
+
+  # The machine's own battery. Matched on type rather than on a BAT* name: the
+  # name is not standardised (BAT0, BAT1, CMB0, macsmc-battery all occur), and
+  # globbing for BAT* silently reports nothing on the laptops that use another.
+  #
+  # `scope` is what separates the machine's battery from a peripheral's. A
+  # wireless mouse or keyboard registers here too, with type=Battery and
+  # scope=Device -- without that second test the lock screen would happily
+  # announce the mouse's charge as the laptop's.
+  #
+  # Desktops and virtual machines have neither, and the line just loses a field
+  # rather than reporting 0%.
+  local supply
+  for supply in "$root"/sys/class/power_supply/*; do
+    [[ -r $supply/type && -r $supply/capacity ]] || continue
+    [[ $(<"$supply/type") == Battery ]] || continue
+    [[ -r $supply/scope && $(<"$supply/scope") == Device ]] && continue
+    local cap charge
+    cap=$(<"$supply/capacity")
+    charge=$(cat "$supply/status" 2>/dev/null)
+    if [[ $charge == Charging ]]; then parts+=("$cap% charging"); else parts+=("$cap%"); fi
+    break
+  done
+
+  # How many notifications are waiting, from the shell that owns
+  # org.freedesktop.Notifications. hyprlock cannot speak D-Bus, so the count
+  # comes over the shell's IPC socket -- the count only, never the contents:
+  # what they say stays hidden while the screen is locked.
+  #
+  # Timed out because this runs behind a lock screen every 30 seconds: a wedged
+  # shell must cost the line a field, not hang the label forever.
+  if command -v qs >/dev/null; then
+    local n
+    n=$(timeout 2 qs -c c7shell ipc call notifications count 2>/dev/null)
+    # Anything that is not a plain number is a shell that is not running, an
+    # older shell with no such handler, or an error string -- all "no field".
+    if [[ $n =~ ^[0-9]+$ ]] && ((n > 0)); then
+      if ((n == 1)); then parts+=("1 notification"); else parts+=("$n notifications"); fi
+    fi
+  fi
+
+  ((${#parts[@]})) || return 0
+  # Joined by hand: ${parts[*]} with IFS would use only the first character of
+  # it, so a multi-character separator silently collapses to a space.
+  local out=${parts[0]} i
+  for ((i = 1; i < ${#parts[@]}; i++)); do out+=" · ${parts[i]}"; done
+  printf '%s\n' "$out"
+}
+
+case ${1:-} in
+  media)  media ;;
+  status) status ;;
+  *) printf 'usage: c7shell-lock-info media|status\n' >&2; exit 2 ;;
+esac

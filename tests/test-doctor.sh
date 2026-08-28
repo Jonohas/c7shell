@@ -72,7 +72,7 @@ mkdir -p "$conf/hypr" "$conf/quickshell/c7shell" "$tmp/share"
 : > "$conf/hypr/hyprland.lua"
 # Without this hyprlock will not start, which takes SUPER+L, the power menu's
 # lock row and the idle lock with it -- see the lock screen cases below.
-printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 : > "$conf/quickshell/c7shell/shell.qml"
 
 run() {
@@ -140,8 +140,30 @@ printf 'hl.env("QT_QPA_PLATFORMTHEME", "kde")\n' > "$env_lua"
 out=$(run 2>&1) || fail "virtio_gpu without the fallback should warn, not fail:\n$out"
 grep -q 'no llvmpipe fallback' <<<"$out" || fail "no virtio_gpu warning:\n$out"
 
+# The other half of what a virtual GPU breaks: hyprlock's dmabuf screen copy.
+# The env fallback is in place throughout, so only the lock config is under test.
+printf 'DRIVER=vmwgfx\n' > "$drm/uevent"
+printf 'hl.env("LIBGL_ALWAYS_SOFTWARE", "1")\n' > "$env_lua"
+out=$(run 2>&1) || fail "vmwgfx with screencopy_mode = 1 should pass:\n$out"
+grep -q 'through shm' <<<"$out" || fail "no shm ok line:\n$out"
+
+# ...and without it, hyprlock aborts on the copy: nothing locks at all
+printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "vmwgfx with no screencopy_mode should fail, got exit $rc"
+grep -q 'suspends unlocked' <<<"$out" || fail "the consequence was not spelled out:\n$out"
+
+# a parked hyprlock.conf.new that has it changes the advice to "merge it"
+printf 'general {\n    screencopy_mode = 1\n}\n' > "$conf/hypr/hyprlock.conf.new"
+rc=0; out=$(run 2>&1) || rc=$?
+grep -q 'already waiting in hyprlock.conf.new' <<<"$out" \
+  || fail "the parked fix was not offered:\n$out"
+rm -f "$conf/hypr/hyprlock.conf.new"
+printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+
 # a real GPU is none of this machine's business, even with the same old copy
 printf 'DRIVER=amdgpu\n' > "$drm/uevent"
+printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 out=$(run 2>&1) || fail "a real GPU should not be touched by the check:\n$out"
 grep -q 'llvmpipe' <<<"$out" && fail "the check fired on a real GPU:\n$out"
 
@@ -253,9 +275,51 @@ mv "$tmp/lock-gone" "$conf/hypr/hyprlock.conf"
 # grace is a CLI flag in hyprlock 0.9, not a config key: in the file it is a
 # config error that stops hyprlock starting, and on a before-sleep lock it would
 # unlock the screen on resume.
-printf 'general {\n    grace = 5\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+printf 'general {\n    grace = 5\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 out=$(run 2>&1) || fail "a stray grace should warn, not fail:\n$out"
 grep -q 'sets grace' <<<"$out" || fail "grace in the config was not reported:\n$out"
+printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+
+# A newer hyprlock.conf parked beside an edited one. c7shell-upgrade reports
+# this once, as it writes the file; on an install whose config predates the
+# manifest every file is treated as edited, so the one message scrolls past in a
+# crowd and the lock screen silently stays on the old design.
+: > "$conf/hypr/hyprlock.conf.new"
+out=$(run 2>&1) || fail "a parked hyprlock.conf.new should warn, not fail:\n$out"
+grep -q 'hyprlock.conf.new' <<<"$out" || fail "the parked config was not reported:\n$out"
+grep -q 'diff ' <<<"$out" || fail "no way to see what changed:\n$out"
+rm -f "$conf/hypr/hyprlock.conf.new"
+
+# The now-playing and status lines are a command on PATH. c7shell-upgrade
+# --config-only refreshes the config without reinstalling the package, which
+# leaves the config calling a binary that is not there -- and hyprlock draws an
+# empty label rather than complaining.
+printf 'label {\n    text = cmd[update:2000] c7shell-lock-info media\n}\n' \
+  >> "$conf/hypr/hyprlock.conf"
+out=$(run 2>&1) || fail "a missing c7shell-lock-info should warn, not fail:\n$out"
+grep -q 'c7shell-lock-info, which is not installed' <<<"$out" \
+  || fail "the missing helper was not reported:\n$out"
+# ...and says nothing once it is on PATH, where the package puts it.
+stub c7shell-lock-info
+out=$(run 2>&1) || fail "an installed c7shell-lock-info should be silent:\n$out"
+grep -q 'c7shell-lock-info, which is not installed' <<<"$out" \
+  && fail "the helper is on PATH and still reported missing:\n$out"
+rm -f "$bin/c7shell-lock-info"
+
+# SUPER+L runs c7shell-lock, which ships with the package while the keybind
+# ships with the config -- so --config-only leaves the bind calling a command
+# that is not installed and nothing locks at all.
+mkdir -p "$conf/hypr/conf"
+printf 'hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("c7shell-lock"))\n' \
+  > "$conf/hypr/conf/binds.lua"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "a missing c7shell-lock should fail, got exit $rc"
+grep -q 'suspends unlocked' <<<"$out" || fail "the consequence was not spelled out:\n$out"
+stub c7shell-lock
+out=$(run 2>&1) || fail "an installed c7shell-lock should be silent:\n$out"
+grep -q 'runs c7shell-lock, which is not installed' <<<"$out" \
+  && fail "c7shell-lock is on PATH and still reported missing:\n$out"
+rm -f "$bin/c7shell-lock" "$conf/hypr/conf/binds.lua"
 printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 
 # --- the greeter theme -----------------------------------------------------

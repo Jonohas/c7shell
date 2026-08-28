@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Draw the lock screen's backdrop decoration, then hand over to hyprlock.
+
+The design doc puts two things behind the lock screen that hyprlock cannot
+draw: a crimson radial glow rising from the bottom edge, and a 56px grid. It has
+no gradients and no tiling -- but it does have an `image` widget, and an image
+sized to the screen is exactly those two things.
+
+An image has to be authored at the screen's own size. `image:size` is a single
+int and the aspect ratio is preserved, so a PNG with the screen's aspect and
+size = min(width, height) lands at exactly 1:1; anything else would rescale the
+grid into a different cell size on every machine. That is why this is a program
+that runs at lock time rather than a file shipped in the package: it is the only
+moment the monitor list is known.
+
+Those numbers are the monitor's PIXELS, not its logical size. hyprlock lays
+widgets out in buffer coordinates -- CSessionLockSurface::configure sets
+`size = size_ * POUTPUT->scale` and COutput::getViewport returns that -- so on a
+2560x1600 panel at scale 2 the viewport is 2560x1600, not 1280x800. Sizing the
+overlay in logical units drew it at half scale, centred, covering a quarter of
+the screen.
+
+Everything here is best-effort. A lock screen that does not appear is far worse
+than one without decoration, so any failure at all -- no hyprctl, no monitors,
+an unwritable cache, a malformed config -- falls through to running hyprlock
+exactly as if this program did not exist.
+"""
+
+import json
+import math
+import os
+import struct
+import subprocess
+import sys
+import zlib
+
+# The mockup's canvas is 1120x630 and everything on the lock screen is drawn at
+# 1.2x of it, matching what the greeter's Theme.qml resolves to on 1080p.
+SCALE = 1.2
+GRID_PX = 56          # mockup units; multiplied by SCALE below
+GRID_RGB = (255, 255, 255)
+GRID_ALPHA = 0.018
+# radial-gradient(900px 520px at 50% 118%, rgba(229,58,68,.2), transparent 68%)
+# Kept as fractions of the canvas rather than pixels so the glow lands in the
+# same place on any screen; the grid stays absolute, because a grid that scales
+# with the screen is not a grid.
+GLOW_RGB = (0xE5, 0x3A, 0x44)
+GLOW_RX, GLOW_RY = 900 / 1120, 520 / 630
+GLOW_CX, GLOW_CY = 0.50, 1.18
+GLOW_PEAK, GLOW_STOP = 0.20, 0.68
+
+
+def png(width, height, rows):
+    def chunk(tag, data):
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(b"".join(rows), 6))
+        + chunk(b"IEND", b"")
+    )
+
+
+def overlay(width, height):
+    """The grid and the glow, as RGBA scanlines with a PNG filter byte."""
+    # Physical pixels, like everything else hyprlock lays out: the grid has to
+    # match the type in hyprlock.conf, which is authored in the same units.
+    step = max(1, round(GRID_PX * SCALE))
+    ga = GRID_ALPHA
+    gr, gg, gb = GRID_RGB
+    cr, cg, cb = GLOW_RGB
+    rx, ry = GLOW_RX * width, GLOW_RY * height
+    cx, cy = GLOW_CX * width, GLOW_CY * height
+    ga8 = int(ga * 255 + 0.5)
+
+    # Rows outside the glow's reach are one of two constant patterns, so they
+    # are built once and reused. On a 1600px-tall screen that is most of the
+    # image, and it is the difference between this taking a moment and taking
+    # long enough to notice before the screen locks.
+    clear_px = bytes(4)
+    grid_px = bytes((gr, gg, gb, ga8))
+    plain_row = bytes([0]) + b"".join(
+        grid_px if x % step == 0 else clear_px for x in range(width)
+    )
+    grid_row = bytes([0]) + grid_px * width
+
+    # d < GLOW_STOP bounds the glow to a box; outside it there is nothing to mix.
+    reach = GLOW_STOP * ry
+    rows = []
+    for y in range(height):
+        if abs(y - cy) >= reach:
+            rows.append(grid_row if y % step == 0 else plain_row)
+            continue
+        dy = (y - cy) / ry
+        dy2 = dy * dy
+        on_grid_row = y % step == 0
+        row = bytearray([0])
+        for x in range(width):
+            dx = (x - cx) / rx
+            d = math.sqrt(dx * dx + dy2)
+            a = GLOW_PEAK * (1.0 - d / GLOW_STOP) if d < GLOW_STOP else 0.0
+            r, g, b = cr, cg, cb
+            if on_grid_row or x % step == 0:
+                # Grid over glow, resolved back to straight (non-premultiplied)
+                # alpha, which is what a PNG stores.
+                na = a + ga * (1 - a)
+                if na > 0:
+                    r = int((cr * a + gr * ga * (1 - a)) / na)
+                    g = int((cg * a + gg * ga * (1 - a)) / na)
+                    b = int((cb * a + gb * ga * (1 - a)) / na)
+                a = na
+            row += bytes((r, g, b, int(a * 255 + 0.5)))
+        rows.append(bytes(row))
+    return png(width, height, rows)
+
+
+def monitors():
+    out = subprocess.run(
+        ["hyprctl", "-j", "monitors"], capture_output=True, text=True, timeout=5
+    )
+    if out.returncode != 0:
+        return []
+    found = []
+    for m in json.loads(out.stdout):
+        name, w, h = m.get("name"), int(m.get("width", 0)), int(m.get("height", 0))
+        s = float(m.get("scale", 1) or 1)
+        if name and w > 0 and h > 0 and s > 0:
+            found.append((name, w, h, s))
+    return found
+
+
+def main():
+    argv = sys.argv[1:]
+    conf = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    cache = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    cache = os.path.join(cache, "c7shell")
+    src = os.path.join(conf, "hypr", "hyprlock.conf")
+
+    plain = ["hyprlock", *argv]
+    try:
+        # An explicit --config is the caller overriding us; decorating someone
+        # else's config would be a surprise.
+        if "--config" in argv or "-c" in argv:
+            os.execvp("hyprlock", plain)
+
+        with open(src, "r") as f:
+            base = f.read()
+        mons = monitors()
+        if not mons:
+            os.execvp("hyprlock", plain)
+
+        os.makedirs(cache, exist_ok=True)
+        blocks = []
+        for name, w, h, s in mons:
+            # Authored at, and sized in, the monitor's real pixels.
+            path = os.path.join(cache, f"lock-overlay-{name}-{w}x{h}.png")
+            if not os.path.exists(path):
+                tmp = path + ".tmp"
+                with open(tmp, "wb") as f:
+                    f.write(overlay(w, h))
+                os.replace(tmp, path)
+            blocks.append(
+                "image {\n"
+                f"    monitor = {name}\n"
+                f"    path = {path}\n"
+                # The viewport is in pixels, so this is too: with the PNG at the
+                # monitor's own size, min(w, h) makes hyprlock's
+                # max(size/tex.x, size/tex.y) come out at exactly 1.
+                f"    size = {min(w, h)}\n"
+                "    position = 0, 0\n"
+                "    halign = center\n"
+                "    valign = center\n"
+                # Both defaults are hostile here: rounding = -1 means a circle,
+                # and border_size = 4 draws a light grey frame round the screen.
+                "    rounding = 0\n"
+                "    border_size = 0\n"
+                # Above the background (-1), below everything the config puts at
+                # 1. Widgets sharing a zindex are not sorted stably, so every
+                # layer names its own.
+                "    zindex = 0\n"
+                "}\n"
+            )
+
+        merged = os.path.join(cache, "hyprlock-generated.conf")
+        tmp = merged + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(
+                "# Generated by c7shell-lock at lock time -- edits are lost.\n"
+                f"# Source: {src}\n\n"
+            )
+            f.write(base)
+            f.write("\n# ---- backdrop decoration (design doc turn 11) ----\n")
+            f.write("".join(blocks))
+        os.replace(tmp, merged)
+
+        os.execvp("hyprlock", ["hyprlock", "--config", merged, *argv])
+    except Exception as e:
+        # Deliberately not fatal, and deliberately noisy in the journal only.
+        print(f"c7shell-lock: falling back to plain hyprlock: {e}", file=sys.stderr)
+
+    os.execvp("hyprlock", plain)
+
+
+if __name__ == "__main__":
+    main()

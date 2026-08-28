@@ -156,6 +156,20 @@ Singleton {
     }
   }
 
+  // The lock screen's notification field. hyprlock cannot speak D-Bus and has no
+  // way to reach `list` directly, so the count -- and only the count -- goes out
+  // over IPC for c7shell-lock-info to read.
+  //
+  // The count, never the contents: the design doc is explicit that what the
+  // notifications *say* stays hidden while the screen is locked, and anything
+  // that answers this handler is by definition on the other side of the lock.
+  IpcHandler {
+    target: "notifications"
+
+    // A string, because that is what an IPC call returns; the caller parses it.
+    function count(): string { return String(root.count) }
+  }
+
   NotificationServer {
     id: server
 

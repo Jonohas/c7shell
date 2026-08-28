@@ -297,6 +297,42 @@ if command -v hyprlock >/dev/null && [[ -d $conf/hypr ]]; then
       warn "$lock_conf sets grace, which is a CLI flag in hyprlock 0.9, not a"
       note 'config key: hyprlock reports a config error and refuses to start.'
     fi
+    # A newer hyprlock.conf parked beside an edited one. c7shell-upgrade says
+    # this once, at the moment it writes the file, and then never again -- so on
+    # the machine that most needs to hear it (an install whose config predates
+    # the manifest, where *everything* is treated as edited) the message is long
+    # gone and the lock screen quietly stays on the old design. This is the only
+    # thing that still knows.
+    if [[ -f $lock_conf.new ]]; then
+      warn 'a newer hyprlock.conf is waiting beside yours as hyprlock.conf.new --'
+      note 'c7shell-upgrade kept your copy because it differs from what was'
+      note 'installed. Merge the two and the new lock screen takes effect at the'
+      note 'next lock; nothing needs restarting.'
+      note "  diff ${lock_conf/#$HOME/~} ${lock_conf/#$HOME/~}.new"
+    fi
+    # The now-playing and status lines are a command on PATH, not a path in the
+    # config: refreshing ~/.config alone (c7shell-upgrade --config-only) leaves
+    # the config asking for a binary the old package never installed. The labels
+    # fail silently, so nothing else would ever mention it.
+    if grep -q 'c7shell-lock-info' "$lock_conf" && ! command -v c7shell-lock-info >/dev/null; then
+      warn 'hyprlock.conf calls c7shell-lock-info, which is not installed --'
+      note 'the now-playing and status lines will be blank. It ships with the'
+      note 'package, so the config was refreshed without it: c7shell-upgrade'
+    fi
+    # SUPER+L, the power menu's lock row and hypridle all run c7shell-lock now.
+    # It ships with the package while the keybind ships with the config, so a
+    # ~/.config refreshed without a package rebuild (c7shell-upgrade
+    # --config-only) leaves every one of them calling a command that is not
+    # there. Nothing locks, and -- as ever -- the before-sleep lock fails the
+    # same way, so the machine suspends unlocked. A failure, not a warning.
+    if [[ -f $conf/hypr/conf/binds.lua ]] \
+       && grep -q 'c7shell-lock"' "$conf/hypr/conf/binds.lua" \
+       && ! command -v c7shell-lock >/dev/null; then
+      bad 'the lock keybind runs c7shell-lock, which is not installed -- nothing'
+      note 'locks, and this machine suspends unlocked. It ships with the package,'
+      note 'so the config was refreshed without rebuilding it:'
+      note '  c7shell-upgrade'
+    fi
   elif ((pending)); then
     printf '  next  the lock screen config lands with the rest -- run: c7shell-setup\n'
   else
@@ -578,6 +614,38 @@ if [[ -n $virtual_gpu ]]; then
       note '  c7shell-upgrade --config-only'
       note 'if that reports environment.lua kept, merge the conf/environment.lua.new'
       note 'it writes beside it, then log back in'
+    fi
+  fi
+
+  # The second thing a virtual GPU breaks, and the one nothing else notices.
+  # hyprlock takes a copy of the screen at startup -- for the screenshot
+  # background and for the fade, which is on by default -- and its default route
+  # is a GBM buffer over zwp_linux_dmabuf_v1. aquamarine cannot build a DRM
+  # renderer on a virtual GPU, so the compositor rejects the buffer and kills the
+  # connection; hyprlock aborts before drawing anything. SUPER+L does nothing,
+  # the power menu's lock row does nothing, and hypridle's before_sleep_cmd fails
+  # the same way, so the machine suspends unlocked. general:screencopy_mode = 1
+  # is the shm route, which is the one grim uses and the one that works here.
+  lock_conf=$conf/hypr/hyprlock.conf
+  if [[ ! -f $lock_conf ]]; then
+    # Reported by the lock screen section above; nothing to add.
+    :
+  elif grep -qE '^[[:space:]]*screencopy_mode[[:space:]]*=[[:space:]]*1' "$lock_conf"; then
+    ok "$virtual_gpu: hyprlock.conf takes the screen copy through shm"
+  else
+    if [[ $virtual_gpu == vmwgfx ]]; then
+      bad "$virtual_gpu: hyprlock.conf has no screencopy_mode = 1 -- hyprlock aborts on the dmabuf copy, so nothing locks and the machine suspends unlocked"
+    else
+      warn "$virtual_gpu: hyprlock.conf has no screencopy_mode = 1 -- if SUPER+L does nothing, this is why"
+    fi
+    if [[ -f $lock_conf.new ]] && grep -qE '^[[:space:]]*screencopy_mode[[:space:]]*=[[:space:]]*1' "$lock_conf.new"; then
+      note 'the new version is already waiting in hyprlock.conf.new --'
+      note 'merge it into hyprlock.conf; the next lock picks it up'
+    else
+      note 'your ~/.config copy predates the fix. To take the new version:'
+      note '  c7shell-upgrade --config-only'
+      note 'if that reports hyprlock.conf kept, merge the hyprlock.conf.new it'
+      note 'writes beside it'
     fi
   fi
 fi

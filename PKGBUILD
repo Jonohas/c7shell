@@ -60,7 +60,9 @@ optdepends=(
   'ddcutil: DDC/CI backlight control for external monitors'
   'brightnessctl: backlight control for internal panels'
   'upower: battery readout in the bar'
-  'playerctl: media keys (XF86Audio{Next,Prev,Play,Pause})'
+  # Also the lock screen's now-playing line: the bar reads MPRIS over D-Bus
+  # itself, but hyprlock cannot, so c7shell-lock-info shells out to this.
+  'playerctl: media keys (XF86Audio{Next,Prev,Play,Pause}) and the lock screen now-playing line'
   'solaar: Logitech device support, autostarted if present'
   'jq: helper scripting'
   'kwallet: secret storage unlocked at login by conf/autostart.lua'
@@ -125,6 +127,18 @@ package() {
   # The only way an installed c7shell gets a newer version: pacman has no
   # repository to upgrade a locally built package from.
   install -Dm755 bin/c7shell-upgrade "$pkgdir/usr/bin/c7shell-upgrade"
+  # The two live lines on the lock screen (now playing, network/battery).
+  # hyprlock.conf calls it by name from a label's cmd[]: hyprlang does no
+  # variable expansion, so the config cannot spell out a path under $HOME, and
+  # a copy shipped beside the config would arrive without its execute bit --
+  # c7shell-upgrade writes new files with a shell redirect. PATH solves both.
+  install -Dm755 bin/c7shell-lock-info "$pkgdir/usr/bin/c7shell-lock-info"
+  # What SUPER+L, the power menu and hypridle actually run. It draws the glow
+  # and the grid the design doc puts behind the lock screen -- an image sized to
+  # the monitor, which is something only a program running at lock time can
+  # author -- and then execs hyprlock. Any failure falls through to plain
+  # hyprlock, so the lock screen never depends on the decoration working.
+  install -Dm755 bin/c7shell-lock "$pkgdir/usr/bin/c7shell-lock"
   install -Dm644 share/c7shell.desktop \
     "$pkgdir/usr/share/wayland-sessions/c7shell.desktop"
 
