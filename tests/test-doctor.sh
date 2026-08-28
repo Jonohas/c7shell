@@ -70,7 +70,7 @@ mkdir -p "$conf/hypr" "$conf/quickshell/c7shell" "$tmp/share"
 : > "$conf/hypr/hyprland.lua"
 # Without this hyprlock will not start, which takes SUPER+L, the power menu's
 # lock row and the idle lock with it -- see the lock screen cases below.
-printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 : > "$conf/quickshell/c7shell/shell.qml"
 
 run() {
@@ -138,8 +138,30 @@ printf 'hl.env("QT_QPA_PLATFORMTHEME", "kde")\n' > "$env_lua"
 out=$(run 2>&1) || fail "virtio_gpu without the fallback should warn, not fail:\n$out"
 grep -q 'no llvmpipe fallback' <<<"$out" || fail "no virtio_gpu warning:\n$out"
 
+# The other half of what a virtual GPU breaks: hyprlock's dmabuf screen copy.
+# The env fallback is in place throughout, so only the lock config is under test.
+printf 'DRIVER=vmwgfx\n' > "$drm/uevent"
+printf 'hl.env("LIBGL_ALWAYS_SOFTWARE", "1")\n' > "$env_lua"
+out=$(run 2>&1) || fail "vmwgfx with screencopy_mode = 1 should pass:\n$out"
+grep -q 'through shm' <<<"$out" || fail "no shm ok line:\n$out"
+
+# ...and without it, hyprlock aborts on the copy: nothing locks at all
+printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+rc=0; out=$(run 2>&1) || rc=$?
+((rc == 1)) || fail "vmwgfx with no screencopy_mode should fail, got exit $rc"
+grep -q 'suspends unlocked' <<<"$out" || fail "the consequence was not spelled out:\n$out"
+
+# a parked hyprlock.conf.new that has it changes the advice to "merge it"
+printf 'general {\n    screencopy_mode = 1\n}\n' > "$conf/hypr/hyprlock.conf.new"
+rc=0; out=$(run 2>&1) || rc=$?
+grep -q 'already waiting in hyprlock.conf.new' <<<"$out" \
+  || fail "the parked fix was not offered:\n$out"
+rm -f "$conf/hypr/hyprlock.conf.new"
+printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+
 # a real GPU is none of this machine's business, even with the same old copy
 printf 'DRIVER=amdgpu\n' > "$drm/uevent"
+printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 out=$(run 2>&1) || fail "a real GPU should not be touched by the check:\n$out"
 grep -q 'llvmpipe' <<<"$out" && fail "the check fired on a real GPU:\n$out"
 
@@ -244,10 +266,10 @@ mv "$tmp/lock-gone" "$conf/hypr/hyprlock.conf"
 # grace is a CLI flag in hyprlock 0.9, not a config key: in the file it is a
 # config error that stops hyprlock starting, and on a before-sleep lock it would
 # unlock the screen on resume.
-printf 'general {\n    grace = 5\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+printf 'general {\n    grace = 5\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 out=$(run 2>&1) || fail "a stray grace should warn, not fail:\n$out"
 grep -q 'sets grace' <<<"$out" || fail "grace in the config was not reported:\n$out"
-printf 'general {\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
+printf 'general {\n    screencopy_mode = 1\n    ignore_empty_input = true\n}\n' > "$conf/hypr/hyprlock.conf"
 
 # A newer hyprlock.conf parked beside an edited one. c7shell-upgrade reports
 # this once, as it writes the file; on an install whose config predates the

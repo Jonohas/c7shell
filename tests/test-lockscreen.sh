@@ -86,6 +86,16 @@ C7SHELL_ROOT=$fakeroot "$info" status | grep -q '%' \
 # human runs it rather than silently printing a blank line forever.
 "$info" bogus >/dev/null 2>&1 && fail 'c7shell-lock-info accepted an unknown argument'
 
+# hyprlock copies the screen at startup -- for the screenshot background and for
+# the fade, which is on by default -- and its default route is a GBM buffer over
+# zwp_linux_dmabuf_v1. On a virtual GPU aquamarine cannot build a DRM renderer,
+# so the compositor rejects the buffer and kills the connection; hyprlock aborts
+# before it draws. SUPER+L does nothing, the power menu's lock row does nothing,
+# and hypridle's before_sleep_cmd fails the same way, so the machine suspends
+# unlocked. Mode 1 is the shm route -- the one grim uses.
+grep -qE '^\s*screencopy_mode\s*=\s*1' "$conf" \
+  || fail 'screencopy_mode is not 1, so hyprlock takes the dmabuf route and aborts on any virtual GPU -- nothing locks and the machine suspends unlocked'
+
 command -v hyprlock >/dev/null || {
   echo 'SKIP: hyprlock not installed, only the file itself was checked'
   exit 0
