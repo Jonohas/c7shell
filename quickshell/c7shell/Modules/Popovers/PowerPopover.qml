@@ -15,7 +15,12 @@ import qs.Services
 GlassPopover {
   id: root
 
-  name: "power"
+  // Named after the pill it hangs off, like every other popover here (audio,
+  // wifi, bluetooth) -- and NOT "power", which the session menu behind the
+  // bar's power button already owns. Two popovers answering one name is two
+  // windows open at once, and their focus grabs cancel each other: the panel
+  // flashes and vanishes with nothing in the log.
+  name: "battery"
   panelWidth: 262
   padding: 13
   gap: 11
