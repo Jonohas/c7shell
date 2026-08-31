@@ -16,10 +16,10 @@ Item {
 
   readonly property bool warn: BatteryService.warn
 
-  // Deliberately dim. The outline is the container, not the message -- pushing
-  // it up to the other icons' full-text tint makes the battery shout over them,
-  // and the fill inside it is what the eye is meant to land on.
-  readonly property color outline: root.warn ? Theme.accent : Theme.hairlineStrong
+  // Bright enough to hold its own beside the wi-fi and volume glyphs, but still
+  // under their full-text tint: this is a closed loop rather than a few strokes,
+  // so the same alpha would read heavier on it than on them.
+  readonly property color outline: root.warn ? Theme.accent : Theme.text2
 
   // Crimson out, green in, grey parked on AC -- the bar's existing language.
   // Below the threshold the escalation is the outline and the slot around it,
@@ -31,13 +31,17 @@ Item {
   readonly property bool charging: BatteryService.charging
   readonly property bool idleOnPower: BatteryService.idleOnPower
 
-  width: 20
-  height: 11
+  // A step up on the bar's previous 20x11: the widget carries numbers beside it
+  // now, and the glyph has to hold its own against them. Kept in whole pixels --
+  // at this size everything is effectively pixel art, and a fractional edge
+  // shows up as a soft one.
+  width: 22
+  height: 12
 
   Rectangle {   // body
-    width: 18
-    height: 11
-    radius: 2.5
+    width: 20
+    height: 12
+    radius: 3
     color: "transparent"
     border.width: 1
     border.color: root.outline
@@ -46,8 +50,8 @@ Item {
       x: 2
       y: 2
       // A sliver at 0% still reads as a battery; zero width reads as a fault.
-      width: Math.max(1, 14 * BatteryService.fraction)
-      height: 7
+      width: Math.max(1, 16 * BatteryService.fraction)
+      height: 8
       radius: 1.5
       color: root.fill
 
@@ -57,7 +61,7 @@ Item {
 
     Icon {   // the same lucide glyphs the rest of the row is drawn from
       anchors.centerIn: parent
-      size: 7
+      size: 8
       name: root.charging ? "zap" : "plug"
       visible: root.charging || root.idleOnPower
       tint: Theme.text
@@ -65,10 +69,10 @@ Item {
   }
 
   Rectangle {   // nub, flush against the body
-    x: 18
+    x: 20
     y: 3
     width: 2
-    height: 5
+    height: 6
     radius: 1
     color: root.outline
   }
