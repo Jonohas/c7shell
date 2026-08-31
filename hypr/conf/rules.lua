@@ -91,6 +91,23 @@ hl.window_rule({
     center = true,
 })
 
+-- teams-for-linux opens a "Screen is being shared" window while a screencast
+-- runs. It tiles by default and eats half a monitor. Float it small in the
+-- bottom-right instead. Title match only -- the class is shared with the main
+-- Teams window, which must stay tiled. pin keeps it above other windows and on
+-- every workspace; drop pin to hide it when you switch workspace.
+hl.window_rule({
+    name  = "float-teams-share-indicator",
+    match = { title = ".*Screen is being shared.*" },
+
+    -- No size rule: the window keeps its own natural size. move is an expression
+    -- over the Lua rule variables, so it docks bottom-right on whatever monitor
+    -- it opens on: monitor edge minus the real window size minus a 20px margin.
+    float = true,
+    move  = { "monitor_w-window_w-20", "monitor_h-window_h-20" },
+    pin   = true,
+})
+
 -- Blur the c7shell layer surfaces (bar island, later popovers). The namespace
 -- match is a FULL match, so it needs the trailing .* -- plain "^c7shell" never
 -- matches "c7shell-bar" and the rule silently does nothing.
