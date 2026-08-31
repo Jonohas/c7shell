@@ -1,6 +1,0 @@
-<!-- The filled bolt the battery glyph overlays on its fill; sized to sit in the
-     same 16x16 box as the rest of the glyph so it lands where the design puts
-     it rather than needing its own placement arithmetic. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="#ffffff">
-  <path d="M7.6 3 6 5.6h1.8L7 8.2 9 5.4H7.2L7.6 3Z" />
-</svg>
