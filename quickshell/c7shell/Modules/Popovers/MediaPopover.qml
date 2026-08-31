@@ -15,6 +15,13 @@ GlassPopover {
   name: "media"
   panelWidth: 300
 
+  // MediaPill is the one anchor in the bar that resizes on its own: its title
+  // is capped at 150px but not fixed at it, so a two-word track after a long
+  // one narrows the pill. Centred, that would slide this panel half of every
+  // such change; pinned to the pill's right edge, which does not move, the
+  // panel stays where the user left it across a whole album.
+  pinRight: true
+
   // position does not update on its own -- the service polls it, and only while
   // something is asking. This panel is that something, for as long as it is up.
   // Bracketed on `open` rather than on `visible`: the window stays mapped

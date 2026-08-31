@@ -36,15 +36,29 @@ PopupSurface {
   gutterBottom: root.gutter + root.overshoot
   panelHeight: column.implicitHeight + root.padding * 2
 
+  // Centred on the anchor, or pinned to the anchor's right edge. Centring is
+  // right for a pill of fixed width, and wrong for one that sizes itself to its
+  // content: an anchor whose width tracks a track title moves its own centre by
+  // half of every title-length change -- and the anchor rect is a binding, so
+  // that walks the panel sideways while it is open. In the right
+  // cluster the pill's RIGHT edge is the fixed one -- everything between it and
+  // the screen edge is fixed-width -- so pinning there holds the panel still.
+  property bool pinRight: false
+
   // The panel sits 8px under the bar island whichever module opened it, so the
   // anchor point is measured from the bar window's origin instead of from the
   // anchoring item: a 14px status icon and a 26px clock pill then land the
   // panel in exactly the same place. Writing any part of `rect` drops its
   // item-derived default, so all four components are set.
   anchor.edges: Edges.Bottom
-  anchor.gravity: Edges.Bottom
-  anchor.rect.x: 0
-  anchor.rect.width: root.lastAnchor?.width ?? 0
+  // Left gravity extends the window leftwards from the anchor point, putting
+  // the window's right edge -- and so, one gutter in, the panel's -- on the
+  // anchor's right edge. Same arithmetic PowerDropdown uses off the power button.
+  anchor.gravity: root.pinRight ? Edges.Bottom | Edges.Left : Edges.Bottom
+  anchor.rect.x: root.pinRight ? (root.lastAnchor?.width ?? 0) + root.gutter : 0
+  // Zero width when pinned: the rect is a point on the anchor's right edge, not
+  // the anchor's own box, or the gravity would be applied from its centre.
+  anchor.rect.width: root.pinRight ? 0 : (root.lastAnchor?.width ?? 0)
   anchor.rect.height: 0
   anchor.rect.y: {
     const item = root.lastAnchor
