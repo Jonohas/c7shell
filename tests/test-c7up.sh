@@ -229,6 +229,18 @@ out=$(runpac --sync --color=never --noconfirm --ignore=foo -- cowsay) \
   || fail "c7up-root rejected paru's repo-dependency command line:\n$out"
 out=$(runpac --database --asdeps -- cowsay) \
   || fail "c7up-root rejected the mark-as-dependency step:\n$out"
+# paru names repo dependencies the way it resolved them, repo and all, and a
+# real update died on "refusing implausible package name: extra/edk2-aarch64".
+out=$(runpac --sync --noconfirm -- extra/edk2-aarch64 multilib/lib32-glibc) \
+  || fail "c7up-root rejected a repo-qualified target:\n$out"
+[[ $(argline extra/edk2-aarch64 "$out") ]] \
+  || fail "the repo-qualified target was dropped:\n$out"
+# One repo segment and nothing path-shaped: the slash must not open a door.
+for bad in extra/../etc/passwd 'extra/evil;name' a/b/c ./cowsay extra/; do
+  out=$(runpac --sync -- "$bad" || true)
+  [[ $out == *"implausible package name"* ]] \
+    || fail "c7up-root accepted $bad as a target: $out"
+done
 # yay's spelling of the same thing, and --color as two tokens.
 out=$(runpac -U --color never --noconfirm --needed "$built") \
   || fail "c7up-root rejected the short-option spelling:\n$out"

@@ -25,6 +25,17 @@ check_pkgname() {
   [[ $1 =~ ^[A-Za-z0-9@._+-]+$ ]] || die "refusing implausible package name: $1"
 }
 
+# A target on a pacman command line may also name the repo it comes from --
+# paru resolves repo dependencies that way and sends `extra/edk2-aarch64`, which
+# pacman accepts and a bare package name check does not. Exactly one repo
+# segment, spelled as pacman.conf spells a section name: no dots there, so
+# `./cowsay` and `extra/../etc/passwd` stay implausible names rather than paths.
+check_target() {
+  [[ $1 == */* ]] || { check_pkgname "$1"; return; }
+  [[ $1 =~ ^[A-Za-z0-9_-]+/[A-Za-z0-9@._+-]+$ ]] \
+    || die "refusing implausible package name: $1"
+}
+
 check_color() {
   [[ $1 == never || $1 == always || $1 == auto ]] || die "unexpected --color value: $1"
 }
@@ -113,7 +124,7 @@ case "$verb" in
       case "$t" in
         /*.pkg.tar.*) [[ -f $t ]] || die "not a built package: $t" ;;
         /*) die "not a built package: $t" ;;
-        *) check_pkgname "$t" ;;
+        *) check_target "$t" ;;
       esac
     done
     exec pacman "${args[@]}" --noconfirm -- ${targets[@]+"${targets[@]}"}
