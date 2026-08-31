@@ -139,17 +139,27 @@ SettingsPage {
     padH: 4
     spacing: 2
 
-    // The ObjectModel goes in as-is and the delegate filters: a rebuilt JS
-    // array of its objects as `model` segfaults when one of them is destroyed
-    // between a rescan and the next regenerate.
+    // SSIDs go in, not the networks: the ObjectModel is safe to pass but
+    // arrives in NetworkManager's own order, which is not signal order at all,
+    // and a JS array of the objects as `model` segfaults when one of them is
+    // destroyed between a rescan and the next regenerate. The row looks its
+    // network back up and unloads with it, so nothing here binds to an object
+    // that is already gone.
     Repeater {
-      model: NetworkService.device ? NetworkService.device.networks : null
+      model: NetworkService.otherNames
 
-      NetworkRow {
+      Loader {
+        id: slot
         required property var modelData
+        readonly property var network: NetworkService.byName(slot.modelData)
+
         width: parent.width
-        network: modelData
-        visible: modelData.name !== "" && !modelData.connected
+        active: slot.network !== null
+        visible: slot.active
+        sourceComponent: NetworkRow {
+          width: slot.width
+          network: slot.network
+        }
       }
     }
   }

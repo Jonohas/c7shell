@@ -170,4 +170,22 @@ while read -r want; do
 done < <(grep -rho --include='*.qml' -E 'PopoverManager\.toggle\("[a-z]+"' "$src" \
   | sed -E 's/.*\("([a-z]+)".*/\1/' | sort -u)
 
+# --------------------------------------------------------------------------
+# The wifi lists render NetworkService.otherNames, and only that. The two other
+# things that can go in are both wrong: the device's own ObjectModel is safe to
+# pass but arrives in NetworkManager's own order, which is not signal order at
+# all, and a JS array of the WifiNetwork objects sorts fine and then segfaults
+# the shell when one of them is destroyed between a rescan and the next
+# regenerate. Names are copies: they sort, and the row looks its network back
+# up.
+# --------------------------------------------------------------------------
+hits=$(grep -rn --include='*.qml' -E 'model:.*(networks|NetworkService\.others)\b' "$src" \
+  | grep -v 'NetworkService\.otherNames' || true)
+if [[ -n $hits ]]; then
+  fail "a wifi Repeater takes the networks straight: the ObjectModel comes in
+  NetworkManager's order, not signal order, and an array of the objects
+  segfaults when one is destroyed mid-rescan. Use NetworkService.otherNames and
+  NetworkService.byName():\n$hits"
+fi
+
 echo 'test-qml-hygiene.sh: all checks passed'
