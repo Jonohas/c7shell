@@ -56,6 +56,12 @@ Singleton {
     && root.percent < ShellStore.batteryWarnBelow
 
   readonly property real energyWh: root.device?.energy ?? 0
+  // What the pack holds when full TODAY. The design figure is derived from
+  // health rather than read separately: UPower already worked out the ratio,
+  // and two sources for one number is how they come to disagree.
+  readonly property real energyFullWh: root.device?.energyCapacity ?? 0
+  readonly property real energyDesignWh: root.health > 0
+    ? root.energyFullWh / (root.health / 100) : 0
 
   // quickshell reports health as a percentage on some versions and a fraction
   // on others; normalise rather than draw "0%" on a healthy pack.
@@ -120,6 +126,19 @@ Singleton {
   // -- draw sampling ---------------------------------------------------------
   property var samples: []
 
+  // How many samples have landed since the window was last thrown away. The
+  // power popover waits for two of these before it prints a runtime estimate
+  // against a profile it has just switched to -- `samples.length` cannot say
+  // that on its own, because the window is capped at five and stops growing.
+  property int sampleCount: 0
+
+  // Called by whatever invalidates the window from outside -- switching tuned
+  // profile changes the draw as surely as unplugging does.
+  function resetSamples() {
+    root.samples = []
+    root.sampleCount = 0
+  }
+
   Timer {
     running: root.present
     interval: 2000
@@ -132,13 +151,14 @@ Singleton {
       // mean from dipping every few samples on hardware that does this.
       if (rate === 0 && root.discharging) return
       root.samples = root.samples.concat([rate]).slice(-5)
+      root.sampleCount += 1
     }
   }
 
   // A change of direction invalidates the window: averaging the tail of a
   // discharge into the head of a charge shows a figure that was never true.
-  onChargingChanged: root.samples = []
-  onOnAcChanged: root.samples = []
+  onChargingChanged: root.resetSamples()
+  onOnAcChanged: root.resetSamples()
 
   // Cycle count is not on UPower's device interface; it is one file in sysfs
   // next to the one UPower itself is reading. Absent on plenty of packs, in
