@@ -339,6 +339,9 @@ SettingsPage {
           anchors.verticalCenter: parent.verticalCenter
           width: 32
           horizontalAlignment: Text.AlignRight
+          // `enabled` is inherited from the row, so the readout fades with the
+          // slider it belongs to instead of staying the brightest thing left.
+          opacity: enabled ? 1 : 0.4
           text: `${PowerStore.dropBelow}%`
           font { family: Theme.fontMono; pixelSize: 10; weight: 600 }
           color: Theme.text

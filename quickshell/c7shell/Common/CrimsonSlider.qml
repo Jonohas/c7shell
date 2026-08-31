@@ -18,6 +18,10 @@ Item {
   signal moved(real value)
 
   implicitHeight: root.thumb ? 13 : root.trackHeight
+  // Same as TogglePill and Segmented: a slider whose row is disabled shows
+  // itself as dead. Without this the MouseArea goes deaf while the track keeps
+  // looking live, which is the one combination that reads as a bug.
+  opacity: root.enabled ? 1 : 0.4
 
   Rectangle {
     id: track
