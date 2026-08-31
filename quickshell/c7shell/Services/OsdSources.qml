@@ -80,6 +80,57 @@ Scope {
     }
   }
 
+  // -- track change (15b) -----------------------------------------------------
+  // Only a track change raises this pill: never a seek, never a pause, never a
+  // volume step. Every one of those leaves MprisService.trackId alone, so the
+  // key below is the entire filter -- there is nothing to test for.
+  //
+  // The arming problem is the same one `armed` solves for volume, and it has
+  // two halves here. Both are "the first metadata after something appeared",
+  // and neither is somebody changing the track:
+  //
+  //   * the first metadata after login or a shell restart -- covered by
+  //     mediaTrack starting empty;
+  //   * the first metadata after a player registers, or after the active
+  //     player changes (opening Spotify while a browser tab is paused) --
+  //     covered by comparing the player id first and returning.
+  property string mediaPlayer: ""
+  property string mediaTrack: ""
+
+  // Both halves in one key so the two arrive together: a player change and a
+  // track change land in the same frame, and reacting to them separately would
+  // fire on the intermediate state.
+  readonly property string mediaKey: `${MprisService.playerId}\n${MprisService.trackId}`
+
+  onMediaKeyChanged: {
+    const player = MprisService.playerId
+    const track = MprisService.trackId
+    const wasPlayer = root.mediaPlayer
+    const wasTrack = root.mediaTrack
+
+    // A track with no title is a player that has registered but not filled its
+    // metadata in yet (or a notification sound, which is not music). Recording
+    // it would make the real metadata that follows look like a track change.
+    if (track === "") {
+      // The player is still worth recording: it is what the next comparison
+      // needs to recognise as "the same player".
+      root.mediaPlayer = player
+      return
+    }
+
+    root.mediaPlayer = player
+    root.mediaTrack = track
+
+    if (wasTrack === "" || player !== wasPlayer) return
+    if (track === wasTrack) return
+
+    OsdManager.show("track", {
+      title: MprisService.title,
+      artist: MprisService.artist,
+      artUrl: MprisService.artUrl
+    }, 2500)   // 15b: 2.5s, twice the volume pill -- nobody asked for this one
+  }
+
   // -- keyboard layout --------------------------------------------------------
   // hyprland sends the xkb description ("English (US)"); the pill wants the
   // short code the user actually typed into kb_layout.

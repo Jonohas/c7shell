@@ -24,7 +24,13 @@ root=${C7SHELL_ROOT:-}
 
 # hyprlock parses label text as pango markup, so a track called "Q&A" or
 # "<script>" would be a markup error rather than a title.
-escape() { local s=$1; s=${s//&/&amp;}; s=${s//</&lt;}; s=${s//>/&gt;}; printf '%s' "$s"; }
+#
+# The backslashes are load-bearing. Since bash 5.2 an unquoted `&` in the
+# REPLACEMENT half of ${var//pat/rep} stands for the matched text, the way it
+# does in sed -- so `${s//</&lt;}` produced "<lt;" rather than "&lt;" and every
+# angle bracket on the lock screen came out as broken markup. `&amp;` only
+# looked right because there the match happens to be "&".
+escape() { local s=$1; s=${s//&/\&amp;}; s=${s//</\&lt;}; s=${s//>/\&gt;}; printf '%s' "$s"; }
 
 # Long titles push the line off the screen edge; the mockup's card ellipsises at
 # 296px and this is the text-only equivalent.
@@ -33,27 +39,50 @@ clip() {
   if ((${#s} > n)); then printf '%s…' "${s:0:n-1}"; else printf '%s' "$s"; fi
 }
 
-media() {
-  command -v playerctl >/dev/null || return 0
+# Everything the two media lines below need, or nothing at all. Sets `state`,
+# `title`, `artist` and `player` in the caller and returns non-zero when there
+# is nothing worth drawing -- which is most locks, on most machines.
+now_playing() {
+  command -v playerctl >/dev/null || return 1
   # No player on the bus at all is playerctl's exit 1, not an empty status.
-  local state
-  state=$(playerctl status 2>/dev/null) || return 0
-  [[ -n $state ]] || return 0
+  state=$(playerctl status 2>/dev/null) || return 1
+  [[ -n $state ]] || return 1
   # "Stopped" is a player that is open and idle -- the mockup's card is for
   # something you are listening to, and a stopped one is just clutter.
-  [[ $state == Stopped ]] && return 0
+  [[ $state == Stopped ]] && return 1
 
-  local title artist player
   title=$(playerctl metadata --format '{{title}}' 2>/dev/null)
   artist=$(playerctl metadata --format '{{artist}}' 2>/dev/null)
   player=$(playerctl metadata --format '{{playerName}}' 2>/dev/null)
   # A player with no title is a browser tab or a notification sound, not music.
-  [[ -n $title ]] || return 0
+  [[ -n $title ]] || return 1
+  return 0
+}
+
+# The card's top line: what is playing. Design 15b gives the card a title line
+# and a dimmer state line under it, which is two hyprlock labels -- one label
+# cannot carry two sizes, and a label with nothing to say draws nothing, so a
+# lock with no music still shows an empty corner rather than a stub card.
+media() {
+  local state title artist player
+  now_playing || return 0
 
   local line
   line=$(clip "$title" 44)
   [[ -n $artist ]] && line+=" — $(clip "$artist" 24)"
-  line="${state,,} · $line"
+  escape "$line"
+  printf '\n'
+}
+
+# The card's second line: "paused · spotify". The state belongs here rather
+# than in front of the title because it is the smaller fact -- and because it
+# is the one that changes when the media key is pressed behind the lock, which
+# is the only control the lock screen has.
+media_source() {
+  local state title artist player
+  now_playing || return 0
+
+  local line=${state,,}
   [[ -n $player ]] && line+=" · ${player,,}"
   escape "$line"
   printf '\n'
@@ -120,7 +149,8 @@ status() {
 }
 
 case ${1:-} in
-  media)  media ;;
-  status) status ;;
-  *) printf 'usage: c7shell-lock-info media|status\n' >&2; exit 2 ;;
+  media)        media ;;
+  media-source) media_source ;;
+  status)       status ;;
+  *) printf 'usage: c7shell-lock-info media|media-source|status\n' >&2; exit 2 ;;
 esac

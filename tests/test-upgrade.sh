@@ -202,6 +202,85 @@ grep -q 'already uses the c7shell theme' <<<"$out" || fail "an applied theme was
 out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
 grep -q 'greeter theme' <<<"$out" && fail "--no-greeter still touched the greeter:\n$out"
 
+# --- the real tree, upgraded from a version that predates a feature --------
+# Everything above runs on a synthetic three-file tree, which proves the merge
+# rules but not that THIS repository's files reach an existing install. A shell
+# component that ships but never lands is a bar with a missing pill and no
+# error anywhere, so the shipped tree itself is walked here.
+#
+# The now-playing surfaces (design 15b) are the case in hand: several new QML
+# files, several new icons, and a hyprlock.conf that grew a second label
+# calling a verb the old c7shell-lock-info did not have.
+real_share=$tmp/real-share
+real_conf=$tmp/real-conf
+mkdir -p "$real_share"
+cp -a "$here/../hypr" "$here/../quickshell" "$here/../xdg-desktop-portal" "$real_share/"
+
+# What the media surfaces added. Removing them from the shipped tree is what
+# makes the install below an install of the version before them.
+media_files=(
+  quickshell/c7shell/Services/MprisService.qml
+  quickshell/c7shell/Modules/Bar/MediaPill.qml
+  quickshell/c7shell/Modules/Popovers/MediaPopover.qml
+  quickshell/c7shell/Assets/icons/play.svg
+  quickshell/c7shell/Assets/icons/pause.svg
+  quickshell/c7shell/Assets/icons/skip-back.svg
+  quickshell/c7shell/Assets/icons/skip-forward.svg
+  quickshell/c7shell/Assets/icons/shuffle.svg
+  quickshell/c7shell/Assets/icons/repeat.svg
+  quickshell/c7shell/Assets/icons/repeat-1.svg
+  quickshell/c7shell/Assets/icons/music.svg
+)
+for f in "${media_files[@]}"; do
+  [[ -e $real_share/$f ]] || fail "tests/test-upgrade.sh names $f, which this tree does not ship"
+done
+
+# Install the older version, manifest and all, exactly as a machine set up
+# before the feature would have it.
+old_share=$tmp/old-share
+cp -a "$real_share" "$old_share"
+for f in "${media_files[@]}"; do rm -f "$old_share/$f"; done
+# The old lock screen had one media label; the new one has two.
+sed -i '/c7shell-lock-info media-source/d' "$old_share/hypr/hyprlock.conf"
+
+# Output swallowed unless it fails: setup runs the shipped theme export, which
+# needs a running Hyprland and says so on a machine that has none. That is not
+# this test's business and it is not a failure.
+C7SHELL_SHARE=$old_share XDG_CONFIG_HOME=$real_conf C7SHELL_STATE=$tmp/real-state \
+  "$setup" >"$tmp/setup.log" 2>&1 \
+  || fail "c7shell-setup could not install the shipped tree:\n$(cat "$tmp/setup.log")"
+[[ -e $real_conf/quickshell/c7shell/Services/MprisService.qml ]] \
+  && fail 'the staged "old" install already has the media service'
+
+# Now the current tree ships, and the upgrade has to carry every one of those
+# files across without being asked.
+out=$(C7SHELL_SHARE=$real_share XDG_CONFIG_HOME=$real_conf C7SHELL_STATE=$tmp/real-state \
+        "$upgrade" --config-only --no-doctor --no-greeter 2>&1) \
+  || fail "upgrading a real install from before the media surfaces failed:\n$out"
+
+for f in "${media_files[@]}"; do
+  [[ -e $real_conf/$f ]] \
+    || fail "c7shell-upgrade did not install $f -- the bar would come up without its media pill:\n$out"
+  cmp -s "$real_share/$f" "$real_conf/$f" \
+    || fail "$f landed but does not match the shipped version"
+done
+
+# The lock screen's second label, and the verb it calls. The label ships in
+# hyprlock.conf (the config half) and the verb in c7shell-lock-info (the
+# package half), so this is the one place in the feature where the two halves
+# of an upgrade have to agree.
+grep -q 'c7shell-lock-info media-source' "$real_conf/hypr/hyprlock.conf" \
+  || fail 'the upgraded hyprlock.conf did not gain the media-source label'
+"$here/../bin/c7shell-lock-info" media-source >/dev/null 2>&1 \
+  || fail 'hyprlock.conf calls c7shell-lock-info media-source but the script does not accept it'
+
+# And the shell has to actually reach the new files: a component nobody imports
+# is only reachable by accident of directory adjacency.
+grep -q 'MediaPopover' "$real_conf/quickshell/c7shell/shell.qml" \
+  || fail 'the upgraded shell.qml does not instantiate MediaPopover'
+grep -q 'MediaPill' "$real_conf/quickshell/c7shell/Modules/Bar/Bar.qml" \
+  || fail 'the upgraded Bar.qml does not place MediaPill'
+
 # --- the shell restart --------------------------------------------------
 # A change under quickshell/ leaves the running shell half-migrated, so the
 # upgrade restarts it. The instance is matched by config path: this test tree

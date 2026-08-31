@@ -2,7 +2,8 @@
 
 A Hyprland desktop: the compositor configured in Lua, plus **c7shell** — a
 [Quickshell](https://quickshell.org) shell providing the bar, launcher, global
-menu, notifications, OSDs, capture/recording, power menu and settings app.
+menu, notifications, OSDs, media controls, capture/recording, power menu and
+settings app.
 
 ```
 hypr/                 hyprland.lua + conf/*.lua   (Hyprland 0.56+, Lua config)

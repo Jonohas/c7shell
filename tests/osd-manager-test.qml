@@ -44,14 +44,74 @@ Window {
     }
   }
 
+  // The rest runs on a clock, because a duration can only be checked by
+  // outliving it. Each step arms the next.
   Timer {
-    interval: 2000   // past the 1200ms hideTimer
+    id: defaultExpiry
+    interval: 2000   // past the 1200ms default
     running: true
     onTriggered: {
       try {
       root.check(!OsdManager.showing, "the hide timer never fired")
       root.check(OsdManager.kind === "workspace",
         "timer expiry reset kind to '" + OsdManager.kind + "' -- the fade-out now renders the fallback audio glyph")
+
+      // 15b's track pill asks for 2.5s, which is why show() takes a duration
+      // at all. Nobody pressed a key to raise this one, so it has to outlast
+      // the 1.2s a volume step gets.
+      OsdManager.show("track", { title: "a song", artist: "somebody" }, 2500)
+      root.check(OsdManager.showing, "show() with a duration did not raise the pill")
+      root.check(OsdManager.payload.title === "a song", "the track payload did not survive show()")
+      longStillUp.start()
+      } catch (e) {
+        console.error("ASSERT-FAILED: " + e.message)
+        Qt.exit(1)
+      }
+    }
+  }
+
+  Timer {
+    id: longStillUp
+    interval: 1600   // past the default 1200, well short of 2500
+    onTriggered: {
+      try {
+      root.check(OsdManager.showing,
+        "a 2500ms pill was gone after 1600ms -- show()'s duration was ignored and the default was used")
+      longExpiry.start()
+      } catch (e) {
+        console.error("ASSERT-FAILED: " + e.message)
+        Qt.exit(1)
+      }
+    }
+  }
+
+  Timer {
+    id: longExpiry
+    interval: 1200   // 2800ms into the 2500ms pill
+    onTriggered: {
+      try {
+      root.check(!OsdManager.showing, "the 2500ms pill never expired")
+
+      // The duration is per-show, not sticky. Assigning the Timer's interval
+      // breaks the binding that held the default, so a show() without a
+      // duration has to put it back -- otherwise every volume step after one
+      // track change lingers for 2.5s.
+      OsdManager.show("volume", { value: 40 })
+      backToDefault.start()
+      } catch (e) {
+        console.error("ASSERT-FAILED: " + e.message)
+        Qt.exit(1)
+      }
+    }
+  }
+
+  Timer {
+    id: backToDefault
+    interval: 1600   // past 1200, short of 2500
+    onTriggered: {
+      try {
+      root.check(!OsdManager.showing,
+        "a show() with no duration kept the previous one's 2500ms -- the duration is sticky")
       console.log("OSD-TEST-PASS")
       Qt.exit(0)
       } catch (e) {

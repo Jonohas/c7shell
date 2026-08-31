@@ -78,6 +78,62 @@ while read -r dir; do
 done < <(find "$src" -mindepth 1 -type d -not -path '*/Assets/*')
 
 # --------------------------------------------------------------------------
+# Common/Icon.qml builds its source url from a bare name, so a name with no
+# svg behind it is not an error anywhere -- Image fails to load, MultiEffect
+# paints nothing, and the glyph is simply absent. A transport button with no
+# glyph on it is still a 26px click target, so it does not even leave a hole.
+# Only literal names can be checked; the conditional ones are ternaries over
+# literals, so both branches are picked up.
+# --------------------------------------------------------------------------
+# Two sources, and no others: `name:` written INSIDE an Icon block (tracked by
+# brace depth, because `name:` also means a popover's identity and a launcher
+# provider's label), and any `icon:` property, which in this shell only ever
+# feeds an Icon.name. Only the value up to the next `;` is read, so the
+# `icon: "scan"; label: "region"` one-liners do not contribute their labels.
+# A `name:`/`icon:` that opens a block is skipped -- OsdPill picks its glyph
+# with a switch, and the case labels in it are OSD kinds, not icon names.
+missing=()
+while read -r name; do
+  [[ -f $src/Assets/icons/$name.svg ]] || missing+=("$name")
+done < <(find "$src" -name '*.qml' -exec awk '
+  # Every string literal in `value`, which is one property assignment: either a
+  # bare "name" or a ternary over two of them.
+  function emit(value,   rest) {
+    if (value ~ /^[[:space:]]*\{/) return   # a block, not an expression
+    rest = value
+    while (match(rest, /"[a-z0-9-]+"/)) {
+      print substr(rest, RSTART + 1, RLENGTH - 2)
+      rest = substr(rest, RSTART + RLENGTH)
+    }
+  }
+  # The assignment starting at `from`, cut at the `;` that ends it.
+  function value(line, from,   v, semi) {
+    v = substr(line, from)
+    sub(/^[A-Za-z]+:/, "", v)
+    semi = index(v, ";")
+    return semi ? substr(v, 1, semi - 1) : v
+  }
+  {
+    line = $0
+    if (match(line, /(^|[^A-Za-z])Icon[[:space:]]*\{/)) { inIcon = 1; depth = 0 }
+    if (match(line, /^[[:space:]]*icon:/))
+      emit(value(line, RSTART + RLENGTH - length("icon:")))
+    else if (inIcon && match(line, /(^|[[:space:]{])name:/))
+      emit(value(line, RSTART + RLENGTH - length("name:")))
+    if (inIcon) {
+      opens = gsub(/\{/, "{", line); closes = gsub(/\}/, "}", line)
+      depth += opens - closes
+      if (depth <= 0) inIcon = 0
+    }
+  }
+' {} + | sort -u)
+if ((${#missing[@]})); then
+  fail "Icon name(s) with no Assets/icons/<name>.svg behind them. Icon draws
+  nothing at all for these -- no warning, no placeholder, just a glyph that is
+  not there: ${missing[*]}"
+fi
+
+# --------------------------------------------------------------------------
 # PopoverManager holds ONE name at a time, so a name claimed by two popovers
 # means both windows map on the same click. Each then asks Hyprland for a focus
 # grab, the second request cancels the first, HyprlandFocusGrab.onCleared calls

@@ -30,6 +30,7 @@ Scope {
   WifiPopover {}
   BluetoothPopover {}
   CalendarPopover {}
+  MediaPopover {}
   UpdatesDropdown {}
   PowerPopover {}
 

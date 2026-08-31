@@ -73,6 +73,7 @@ for mod in Quickshell Quickshell/Hyprland Quickshell/Io Quickshell/Wayland \
            Quickshell/Bluetooth Quickshell/Networking \
            Quickshell/Services/Pipewire Quickshell/Services/UPower \
            Quickshell/Services/SystemTray Quickshell/Services/Notifications \
+           Quickshell/Services/Mpris \
            QtQuick/Effects QtQuick/Shapes; do
   mkdir -p "$root/usr/lib/qt6/qml/$mod"
 done
