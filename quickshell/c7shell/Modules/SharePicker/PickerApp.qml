@@ -37,8 +37,10 @@ ShellRoot {
       sel = `[SELECTION]/window:${root.selWindow}`
     if (sel === "") return
     // argv keeps the shell out of the selection string; $XDPH_OUT is the
-    // wrapper's tempfile.
-    writeProc.exec(["sh", "-c", 'printf "%s" "$1" > "$XDPH_OUT"', "sh", sel])
+    // wrapper's tempfile. Trailing newline is required: xdph pop_back()s the
+    // screen name, expecting the reference picker's std::endl -- without it a
+    // real char is stripped ("DP-3" -> "DP-") and the screencast never starts.
+    writeProc.exec(["sh", "-c", 'printf "%s\\n" "$1" > "$XDPH_OUT"', "sh", sel])
   }
 
   Process {
