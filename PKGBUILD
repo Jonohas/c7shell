@@ -51,6 +51,10 @@ depends=(
   'xdg-desktop-portal-kde'
 )
 optdepends=(
+  # What settings -> system -> power drives. Without it the page and the battery
+  # popover both show the "tuned is not running" card and everything else --
+  # the battery readout, the idle timings, the charge limit -- carries on.
+  'tuned: power profiles in settings -> system -> power'
   # Not a depends=: the greeter is system state that c7shell-bootstrap sets up,
   # and a machine running gdm or greetd installs this package just as happily.
   # The theme under /usr/share/sddm/themes is inert without it.
@@ -187,6 +191,10 @@ package() {
   # the same authorisation as the repo half instead of a password prompt on a
   # TTY the shell does not have.
   install -Dm755 bin/c7up-sudo "$pkgdir/usr/lib/c7shell/c7up-sudo"
+  # The power page's root half: the charge limit, the lid action and enabling
+  # tuned.service. Same trust boundary and the same place as c7up-root -- a
+  # fixed verb, never a command line, and nowhere near anyone's PATH.
+  install -Dm755 bin/c7power-root "$pkgdir/usr/lib/c7shell/c7power-root"
   # auth_admin_keep, so one authorisation covers the repo half and the AUR half
   # of the same run. Without this pkexec falls back to its generic action,
   # whose dialog names a binary rather than the task.

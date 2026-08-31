@@ -25,7 +25,6 @@ Item {
 
   readonly property var result: UpdatesService.result
   readonly property bool escalating: UpdatesService.needsReview
-  readonly property string amber: "#e0b341"
 
   visible: root.shown
   implicitHeight: root.visible ? card.height : 0
@@ -73,7 +72,7 @@ Item {
         Rectangle {
           anchors.verticalCenter: parent.verticalCenter
           width: 6; height: 6; radius: 3
-          color: root.escalating ? root.amber : Theme.success
+          color: root.escalating ? Theme.warning : Theme.success
         }
         Text {
           text: root.escalating

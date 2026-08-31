@@ -38,7 +38,7 @@ PanelWindow {
   // Toasts are muted while sharing a screen; the notification still lands in
   // the popover list, only the on-screen pop-up is suppressed.
   readonly property bool anyNotif: NotifServer.popups.length > 0 && !ScreenshareService.active
-  visible: win.anyNotif || capture.visible || updates.visible
+  visible: win.anyNotif || capture.visible || updates.visible || power.visible
 
   anchors { top: true; right: true }
   // Ignore, not a zero zone: a zero zone still respects the bar's 48px, which
@@ -74,6 +74,14 @@ PanelWindow {
     // the thing you just asked for.
     UpdateToast {
       id: updates
+      width: stack.width
+    }
+
+    // A profile the user did not pick by hand. Above the notification stack
+    // for the same reason the two above it are: it is the shorter-lived one,
+    // and it is about something that just happened to the machine.
+    PowerToast {
+      id: power
       width: stack.width
     }
 

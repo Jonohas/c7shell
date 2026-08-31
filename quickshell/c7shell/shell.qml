@@ -31,6 +31,7 @@ Scope {
   BluetoothPopover {}
   CalendarPopover {}
   UpdatesDropdown {}
+  PowerPopover {}
 
   // One instance, like every other popover: it anchors to whichever bar's
   // power button opened it.

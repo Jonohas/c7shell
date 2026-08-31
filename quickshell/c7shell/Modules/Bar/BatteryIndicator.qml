@@ -1,64 +1,177 @@
 import QtQuick
-import Quickshell.Services.UPower
+import Quickshell
 import qs.Theme
 import qs.Common
+import qs.Services
 
-// 1h: same icon+% slot in the bar; the fill color carries the state and a
-// glyph overlays the fill. discharging = crimson fill · charging = green fill
-// + bolt, green % · on-power-not-charging = grey fill + plug · critical =
-// crimson outline + crimson %.
+// The bar's battery widget, per the topbar handoff: glyph, optional percentage,
+// optional signed draw, a hairline between the two numbers when both are on.
+// Nothing here is a mock -- the settings page's preview is this same component.
+//
+// Both number fields reserve the width of the widest string they can ever hold,
+// so the whole right-hand cluster stays put as the draw fluctuates. JetBrains
+// Mono is monospaced, which makes that a simple max over the candidates rather
+// than a tabular-figure font feature.
 Row {
   id: root
-  spacing: 5
 
-  readonly property var battery: UPower.displayDevice
-  readonly property real pct: battery?.percentage ?? 0
-  readonly property int st: battery?.state ?? 0
+  spacing: 8
 
-  readonly property bool charging: st === UPowerDeviceState.Charging
-  readonly property bool onPower: st === UPowerDeviceState.FullyCharged
-    || st === UPowerDeviceState.PendingCharge
-  readonly property bool critical: !charging && !onPower && pct <= 0.10
+  // The bar drives this from the hit target that wraps the widget; standalone
+  // uses (the settings preview) leave it false and get no tooltip.
+  property bool hovered: false
 
-  Item {
+  // The crimson-tinted state, published so whatever owns the pill around this
+  // -- the bar's QuickSlot -- can tint itself to match.
+  readonly property bool warn: BatteryService.warn
+
+  readonly property bool showPercent: ShellStore.batteryPercentage
+  readonly property bool showWatts: BatteryService.showWatts
+
+  BatteryGlyph {
     anchors.verticalCenter: parent.verticalCenter
-    width: 20; height: 11
-
-    Rectangle {   // body
-      width: 18; height: 11; radius: 2.5
-      color: "transparent"
-      border.width: 1
-      border.color: root.critical ? Theme.accent : Theme.hairlineStrong
-
-      Rectangle {   // charge fill
-        x: 2; y: 2
-        width: Math.max(1, 14 * root.pct)
-        height: 7; radius: 1.5
-        color: root.charging ? Theme.success
-          : root.onPower ? Theme.text3
-          : Theme.accent
-      }
-      Icon {   // glyph overlays the fill
-        anchors.centerIn: parent
-        size: 7
-        name: root.charging ? "zap" : "plug"
-        visible: root.charging || root.onPower
-        tint: Theme.text
-      }
-    }
-    Rectangle {   // nub
-      x: 18; y: 3
-      width: 2; height: 5; radius: 1
-      color: root.critical ? Theme.accent : Theme.hairlineStrong
-    }
   }
 
   Text {
+    id: percentText
+
     anchors.verticalCenter: parent.verticalCenter
-    text: `${Math.round(root.pct * 100)}%`
+    visible: root.showPercent
+    // Only the field the percentage lives in is reserved, not the whole widget:
+    // turning the number off should actually shrink the pill.
+    width: visible ? percentMetrics.width : 0
+    horizontalAlignment: Text.AlignRight
+    text: `${BatteryService.percent}%`
+    // Weight 600 below the threshold: the pill is already crimson, and the
+    // number is the thing being said.
+    font { family: Theme.fontMono; pixelSize: 10; weight: root.warn ? 600 : 500 }
+    color: root.warn ? Theme.text : Theme.alpha(Theme.text, 0.8)
+  }
+
+  TextMetrics {
+    id: percentMetrics
+    font: percentText.font
+    text: "100%"
+  }
+
+  Rectangle {   // hairline, only when both numbers are present
+    anchors.verticalCenter: parent.verticalCenter
+    visible: root.showPercent && root.showWatts
+    width: 1
+    height: 12
+    color: root.warn ? Theme.alpha(Theme.accent, 0.3) : Theme.alpha(Theme.text, 0.12)
+  }
+
+  Text {
+    id: wattText
+
+    anchors.verticalCenter: parent.verticalCenter
+    visible: root.showWatts
+    width: visible ? wattMetrics.width : 0
+    horizontalAlignment: Text.AlignRight
+    text: BatteryService.wattText
     font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
-    color: root.charging ? Theme.success
-      : root.critical ? Theme.accentSoft
-      : Theme.text2
+    color: BatteryService.idleOnPower ? Theme.alpha(Theme.text, 0.45)
+      : BatteryService.charging ? Theme.success
+      : Theme.accentSoft
+  }
+
+  TextMetrics {
+    id: wattMetrics
+    font: wattText.font
+    // "on power" is longer than a two-digit draw and shorter than a three-digit
+    // one, so the reservation has to be the max of both, not just the number.
+    text: BatteryService.widestWattText.length >= "on power".length
+      ? BatteryService.widestWattText : "on power"
+  }
+
+  // -- hover tooltip ---------------------------------------------------------
+  // Everything the bar deliberately leaves out. Time remaining lives only here,
+  // which is what its settings toggle is labelled after.
+  component TipRow: Item {
+    id: tipRow
+
+    required property string key
+    required property string value
+
+    width: parent ? parent.width : 0
+    implicitHeight: 12
+
+    Text {
+      anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+      text: tipRow.key
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.alpha(Theme.text, 0.45)
+    }
+    Text {
+      anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+      text: tipRow.value
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.text
+    }
+  }
+
+  PopupWindow {
+    id: tip
+
+    visible: root.hovered
+    grabFocus: false
+    color: "transparent"
+    implicitWidth: 224
+    implicitHeight: card.implicitHeight + 16
+
+    anchor {
+      item: root
+      edges: Edges.Bottom
+      gravity: Edges.Bottom
+    }
+
+    GlassPanel {
+      id: card
+
+      x: 12
+      y: 6
+      width: 200
+      implicitHeight: rows.implicitHeight + 22
+      radius: Theme.radiusMenu
+
+      Column {
+        id: rows
+
+        anchors {
+          left: parent.left; right: parent.right; top: parent.top
+          leftMargin: 12; rightMargin: 12; topMargin: 11
+        }
+        spacing: 6
+
+        TipRow {
+          key: "charge"
+          value: `${BatteryService.percent}% · ${BatteryService.energyWh.toFixed(1)} Wh`
+        }
+        TipRow {
+          key: "draw"
+          value: BatteryService.idleOnPower
+            ? "on power" : `${BatteryService.watts.toFixed(1)} W`
+        }
+        TipRow {
+          // The estimate is UPower's, and it is missing for the first minute
+          // after a state change -- an absent row beats "0 m".
+          visible: ShellStore.batteryTimeRemaining && BatteryService.secondsLeft > 0
+          key: BatteryService.charging ? "until full" : "remaining"
+          value: BatteryService.duration(BatteryService.secondsLeft)
+        }
+        TipRow {
+          visible: BatteryService.health >= 0
+          key: "health"
+          value: `${BatteryService.health}%`
+        }
+        TipRow {
+          // Plenty of packs do not export a cycle count at all.
+          visible: BatteryService.cycles > 0
+          key: "cycles"
+          value: `${BatteryService.cycles}`
+        }
+      }
+    }
   }
 }
