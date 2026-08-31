@@ -30,7 +30,6 @@ Row {
 
   BatteryGlyph {
     anchors.verticalCenter: parent.verticalCenter
-    size: 15
   }
 
   Text {
