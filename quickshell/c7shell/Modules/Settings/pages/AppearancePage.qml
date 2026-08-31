@@ -252,30 +252,6 @@ SettingsPage {
     }
   }
 
-  // -- top bar ---------------------------------------------------------------
-  // Shell geometry, not compositor geometry: these two land in Theme and the
-  // bar rebinds on the next frame, so there is nothing to push at hyprland.
-  SettingsCard {
-    width: parent.width
-    spacing: 12
-
-    SliderRow {
-      width: parent.width
-      label: "bar gap top"; suffix: "px"
-      // 32, not further: the bar window reserves 36px below the island for the
-      // drop shadow, and a taller inset would push the island's own shadow past
-      // the bottom of the surface it is drawn on.
-      value: AppearanceStore.barMarginTop; from: 0; to: 32
-      onMoved: v => AppearanceStore.values.barMarginTop = v
-    }
-    SliderRow {
-      width: parent.width
-      label: "bar gap sides"; suffix: "px"
-      value: AppearanceStore.barMarginSide; from: 0; to: 80
-      onMoved: v => AppearanceStore.values.barMarginSide = v
-    }
-  }
-
   // -- wallpaper -------------------------------------------------------------
   SettingsCard {
     width: parent.width
