@@ -176,7 +176,7 @@ GlassPopover {
       anchors.left: parent.left
       text: `${UpdatesService.pacnews.length} config file${UpdatesService.pacnews.length === 1 ? "" : "s"} to review`
       font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-      color: "#e0b341"
+      color: Theme.warning
     }
     Text {
       anchors.right: parent.right

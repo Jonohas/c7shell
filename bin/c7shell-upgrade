@@ -203,6 +203,10 @@ conflicts=()
 updated=0
 added=0
 removed=0
+# Only a write under quickshell/ makes the running shell stale. A hypr-only
+# upgrade changes nothing quickshell has loaded, and has nothing to restart for.
+shell_dirty=0
+touches_shell() { case $1 in quickshell/*) shell_dirty=1 ;; esac; }
 
 if ((do_config)); then
   step 'configs'
@@ -237,6 +241,7 @@ if ((do_config)); then
           run mkdir -p -- "$(dirname -- "$dst")"
           if ((dry)); then printf '  would: install %s\n' "$dst"
           else shipped_at "$rel" "$src" > "$dst"; fi
+          touches_shell "$rel"
           ((++added))
           continue
         fi
@@ -249,6 +254,7 @@ if ((do_config)); then
           info "update  $rel"
           if ((dry)); then printf '  would: rewrite %s\n' "$dst"
           else shipped_at "$rel" "$src" > "$dst"; fi
+          touches_shell "$rel"
           ((++updated))
         elif ((take_shipped)); then
           # Asked for explicitly: the shipped file wins and the local one is
@@ -260,6 +266,7 @@ if ((do_config)); then
             shipped_at "$rel" "$src" > "$dst"
             rm -f -- "$dst.new"
           fi
+          touches_shell "$rel"
           ((++updated))
         else
           # Edited locally and changed upstream: keep theirs, park ours.
@@ -295,6 +302,7 @@ if ((do_config)); then
         if [[ ${last[$rel]:-} == "$(hash_of "$dst")" ]]; then
           info "remove  $rel  (dropped upstream)"
           run rm -f -- "$dst"
+          touches_shell "$rel"
           ((++removed))
         else
           warn "$rel is no longer shipped but differs from what we installed -- left alone"
@@ -326,6 +334,50 @@ if ((do_config)); then
 
     ((added || updated || removed || ${#conflicts[@]})) \
       || info 'configs already match the installed version'
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# the running shell
+# ---------------------------------------------------------------------------
+
+# The config half rewrites ~/.config one file at a time and quickshell watches
+# that tree, so it hot-reloads on the first file written and then runs the rest
+# of the copy against a tree that is half the old version and half the new one.
+# That window is where a module which gained a binding in this upgrade meets the
+# service that has not gained the property yet -- "Cannot read property 'length'
+# of undefined", "orphanNames is not a function" -- and the shell can settle
+# there, because the reload it keeps is whichever one the watcher fired last,
+# not the one that saw the finished tree. There is nothing worth preserving in a
+# half-migrated shell, so it is restarted onto the whole one.
+#
+# Matched by config path rather than by name: `qs kill -c c7shell` would also
+# reach an instance running somebody else's tree, and this must never kill a
+# shell whose files this run did not touch (tests/test-upgrade.sh runs the whole
+# config half against a temporary $XDG_CONFIG_HOME, on a machine whose real
+# shell is up).
+shell_config=$conf/quickshell/c7shell/shell.qml
+shell_running() { qs list --all 2>/dev/null | grep -qF "Config path: $shell_config"; }
+
+if ((shell_dirty)) && command -v qs >/dev/null && shell_running; then
+  step 'restarting the shell'
+  if ((dry)); then
+    info "would restart the quickshell instance running $shell_config"
+  else
+    qs kill -c c7shell >/dev/null 2>&1 || true
+    # The relaunch is --no-duplicate, so wait for the old one to actually be
+    # gone: two shells drawing the same bars is worse than one stale shell.
+    for _ in $(seq 30); do shell_running || break; sleep 0.2; done
+    if shell_running; then
+      warn 'the running shell did not exit -- it is still on the old config'
+      info 'restart it yourself, or log out and back in'
+    else
+      # Nothing supervises quickshell: hypr autostarts it once and that is the
+      # only launch there is. Same command, same environment as
+      # hypr/conf/autostart.lua, detached so it outlives this terminal.
+      QT_WAYLAND_DISABLE_WINDOWDECORATION=1 setsid qs -c c7shell -d -n >/dev/null 2>&1 &
+      info 'restarted onto the new config'
+    fi
   fi
 fi
 

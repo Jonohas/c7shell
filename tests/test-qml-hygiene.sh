@@ -133,4 +133,41 @@ if ((${#missing[@]})); then
   not there: ${missing[*]}"
 fi
 
+# --------------------------------------------------------------------------
+# PopoverManager holds ONE name at a time, so a name claimed by two popovers
+# means both windows map on the same click. Each then asks Hyprland for a focus
+# grab, the second request cancels the first, HyprlandFocusGrab.onCleared calls
+# PopoverManager.close(), and both panels vanish. What the user sees is a
+# popover that flashes and disappears; what the log says is nothing at all.
+#
+# This happened for real: the battery popover was named "power", which the
+# session menu behind the bar's power button already answered to.
+# --------------------------------------------------------------------------
+# GlassPopover subclasses declare `name:`; PowerDropdown is a PopupSurface of
+# its own and declares the same identity as `open: ... === "x"`.
+names=$(
+  # Exactly two spaces: that is a property of the popover's own root object.
+  # Anything deeper is a nested Icon, which uses `name` for its glyph.
+  { grep -rh --include='*.qml' -E '^  name: "[a-z]+"$' "$src/Modules/Popovers" 2>/dev/null \
+      | sed -E 's/.*"([a-z]+)".*/\1/'
+    grep -rh --include='*.qml' -E 'open: PopoverManager\.current === "[a-z]+"' "$src" 2>/dev/null \
+      | sed -E 's/.*=== "([a-z]+)".*/\1/'
+  } | sort
+)
+dupes=$(printf '%s\n' "$names" | uniq -d)
+if [[ -n $dupes ]]; then
+  fail "two popovers answer to the same PopoverManager name, so one click maps
+  both windows and their focus grabs cancel each other -- the panel flashes and
+  vanishes with nothing in the log:\n$dupes"
+fi
+
+# The other half of the same mistake: a bar module that toggles a name no
+# popover answers to is a button that visibly does nothing.
+while read -r want; do
+  printf '%s\n' "$names" | grep -qx "$want" \
+    || fail "PopoverManager.toggle(\"$want\", ...) names a popover that does not
+  exist, so the button it is on does nothing at all"
+done < <(grep -rho --include='*.qml' -E 'PopoverManager\.toggle\("[a-z]+"' "$src" \
+  | sed -E 's/.*\("([a-z]+)".*/\1/' | sort -u)
+
 echo 'test-qml-hygiene.sh: all checks passed'

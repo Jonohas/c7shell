@@ -94,6 +94,7 @@ Scope {
         case "displays": return displaysPage
         case "topbar": return topbarPage
         case "system": return systemPage
+        case "power": return powerPage
         }
         return soonPage
       }
@@ -106,6 +107,7 @@ Scope {
     Component { id: displaysPage; DisplaysPage {} }
     Component { id: topbarPage; TopbarPage {} }
     Component { id: systemPage; SystemPage {} }
+    Component { id: powerPage; PowerPage {} }
 
     Component {
       id: soonPage

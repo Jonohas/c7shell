@@ -12,7 +12,6 @@ Rectangle {
 
   required property var file          // { path, changed, edited }
 
-  readonly property string amber: "#e0b341"
 
   implicitWidth: parent ? parent.width : 340
   implicitHeight: body.implicitHeight + 18
@@ -38,7 +37,7 @@ Rectangle {
       Text {
         text: ".pacnew"
         font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
-        color: root.amber
+        color: Theme.warning
       }
     }
 
@@ -81,14 +80,14 @@ Rectangle {
     radius: Theme.radiusChip
     color: choiceHover.hovered ? Theme.surface07 : Theme.surface04
     border.width: 1
-    border.color: choice.highlight ? Theme.alpha(root.amber, 0.4) : Theme.hairline
+    border.color: choice.highlight ? Theme.alpha(Theme.warning, 0.4) : Theme.hairline
 
     Text {
       id: text
       anchors.centerIn: parent
       text: choice.label
       font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-      color: choice.highlight ? root.amber : Theme.text2
+      color: choice.highlight ? Theme.warning : Theme.text2
     }
 
     HoverHandler { id: choiceHover; cursorShape: Qt.PointingHandCursor }

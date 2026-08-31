@@ -15,14 +15,16 @@ Rectangle {
   id: root
   signal clicked()
 
-  property bool open: false
+  // Named to match QuickSlot rather than a popover's own `open`: this is the
+  // pill's highlight, not MediaPopover's identity.
+  property bool active: false
 
   visible: MprisService.hasPlayer
 
   implicitWidth: content.implicitWidth + 12   // content tuning, not a token
   implicitHeight: Theme.pillHeight
   radius: Theme.pillRadius
-  color: root.open ? Theme.accentFillActive
+  color: root.active ? Theme.accentFillActive
     : mouse.containsMouse ? Theme.hoverPill
     : Theme.surface05
   Behavior on color { ColorAnimation { duration: 120 } }

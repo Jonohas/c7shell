@@ -59,6 +59,10 @@ Singleton {
   // #f0eff1 on crimson reads grey, which is why five files had this literal.
   readonly property color textOnAccent: "#ffffff"
   readonly property color success: "#4ade80"
+  // The "needs attention, but nothing is broken" amber: a pacnew waiting to be
+  // reviewed, and tuned not running. Four views had this literal before the
+  // power page needed a fifth.
+  readonly property color warning: "#e0b341"
 
   // spec §4 shadows: bar `0 12px 40px rgba(0,0,0,.5)`, panels `0 24px 80px rgba(0,0,0,.65)`
   readonly property color barShadowColor: Qt.rgba(0, 0, 0, 0.5)
