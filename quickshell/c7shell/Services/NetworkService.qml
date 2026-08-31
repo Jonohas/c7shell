@@ -31,6 +31,24 @@ Singleton {
     .slice()
     .sort((a, b) => (b.known - a.known) || (b.signalStrength - a.signalStrength))
 
+  // What the views hand a Repeater, because the objects themselves cannot be:
+  // a rebuilt JS array of WifiNetworks as `model` segfaults when one of them is
+  // destroyed between a rescan and the next regenerate, and the ObjectModel
+  // that is safe to pass comes in NetworkManager's own order, which is not
+  // signal order at all. SSIDs are copies, so they can be sorted and the row
+  // looks its network back up. Deduplicated: one row per name is what byName()
+  // can resolve.
+  readonly property var otherNames: root.others
+    .map(n => n.name)
+    .filter((name, i, all) => all.indexOf(name) === i)
+
+  // Null once the network is gone, so the row unloads with it rather than
+  // holding bindings onto a destroyed object.
+  function byName(name) {
+    return root.device?.networks?.values?.find(
+      n => n.name === name && !n.connected) ?? null
+  }
+
   // The popover writes this on open/close. Scanning left on keeps the radio
   // busy and the list churning behind a panel nobody is looking at.
   property bool wantScan: false

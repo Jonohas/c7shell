@@ -147,16 +147,27 @@ GlassPopover {
       // whose width tracks contentWidth rather than the viewport.
       width: list.width
 
-      // The ObjectModel goes in as-is and the delegate filters: a rebuilt JS
-      // array of its objects as `model` segfaults when one of them is destroyed
-      // between a rescan and the next regenerate.
+      // SSIDs go in, not the networks: the ObjectModel is safe to pass but
+      // arrives in NetworkManager's own order, which is not signal order at
+      // all, and a JS array of the objects as `model` segfaults when one of
+      // them is destroyed between a rescan and the next regenerate. The row
+      // looks its network back up and unloads with it, so nothing here binds
+      // to an object that is already gone.
       Repeater {
-        model: NetworkService.device ? NetworkService.device.networks : null
-        NetworkRow {
+        model: NetworkService.otherNames
+
+        Loader {
+          id: slot
           required property var modelData
+          readonly property var network: NetworkService.byName(slot.modelData)
+
           width: rows.width
-          network: modelData
-          visible: modelData.name !== "" && !modelData.connected
+          active: slot.network !== null
+          visible: slot.active
+          sourceComponent: NetworkRow {
+            width: rows.width
+            network: slot.network
+          }
         }
       }
     }
@@ -164,7 +175,8 @@ GlassPopover {
 
   // Radio on and nothing in range reads as a broken panel otherwise: the list
   // simply collapses and the section label sits over nothing. `others` is a
-  // count here, never a Repeater model -- the rule is about models, not lengths.
+  // count here, never a model -- the rule above is about what a Repeater is
+  // handed, not about naming the objects at all.
   Text {
     width: parent.width
     visible: NetworkService.enabled && NetworkService.others.length === 0
