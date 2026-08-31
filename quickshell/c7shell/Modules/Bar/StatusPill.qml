@@ -71,7 +71,7 @@ Rectangle {
           anchors { right: parent.right; top: parent.top; margins: -1 }
           visible: UpdatesService.pacnews.length > 0 && !UpdatesService.running
           width: 4; height: 4; radius: 2
-          color: "#e0b341"
+          color: Theme.warning
         }
       }
 
