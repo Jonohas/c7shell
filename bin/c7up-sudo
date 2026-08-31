@@ -5,8 +5,8 @@
 # it built. Left as real sudo that is a password prompt on a TTY the shell does
 # not have, and the run stalls invisibly. Routing it through the same polkit
 # action as the repo half means the authorisation the user already gave in step
-# 1 covers it (auth_admin_keep), and the wizard's "waiting for authorisation"
-# state covers the case where it has expired.
+# 1 covers it -- through the run's root session where there is one, and through
+# a pkexec of its own for a helper someone pointed here by hand.
 set -euo pipefail
 
 # sudo's contract is `sudo <program> <args...>`, so the helper names pacman
@@ -20,5 +20,31 @@ case "$prog" in
   *) printf 'c7up-sudo: the AUR helper asked to run %s as root; only pacman is routed here\n' \
        "${prog:-<nothing>}" >&2; exit 2 ;;
 esac
+
+# The run's open root session, if this is a run (bin/c7up's root_open). A build
+# takes as long as it takes, and by the time paru wants to install, the five
+# minutes polkit keeps an admin authorisation for are usually gone -- a fresh
+# pkexec here is the mid-run second password prompt this shim exists to avoid.
+# The session is already authorised, so the request goes down its pipe instead
+# and root answers it with the same `pacman` verb either way.
+sess=${C7UP_SESSION_DIR:-}
+if [[ -n $sess && -p $sess/in && -p $sess/out ]]; then
+  mark=$'\036'
+  req=(pacman "$@")
+  ( IFS=$'\t'; printf '%s\n' "${req[*]}" ) > "$sess/in"
+  # Everything up to the marker is pacman's own output, which paru is reading
+  # off our stdout; the marker carries the exit status, which is what sudo's
+  # contract says we return.
+  while IFS= read -r line; do
+    if [[ $line == *"$mark"* ]]; then
+      # `set -e` is on: an `&&` that comes out false here would end the shim.
+      if [[ -n ${line%%"$mark"*} ]]; then printf '%s\n' "${line%%"$mark"*}"; fi
+      exit "${line##*"$mark"}"
+    fi
+    printf '%s\n' "$line"
+  done < "$sess/out"
+  printf 'c7up-sudo: the update session closed before the install finished\n' >&2
+  exit 2
+fi
 
 exec pkexec /usr/lib/c7shell/c7up-root pacman "$@"

@@ -60,7 +60,53 @@ check_pacnew() {
   [[ -f $1.pacnew ]] || die "no pacnew beside $1"
 }
 
+# What a session's reply to one request ends with, and the same byte bin/c7up
+# looks for. A record separator: no line of pacman output has ever contained one.
+readonly mark=$'\036'
+
 case "$verb" in
+  # One authorisation for one whole run.
+  #
+  # pkexec authorises a *program*, and a run needs root three times, minutes
+  # apart: the repo sync, the AUR helper's install of what it built, and the
+  # service check at the end. As three pkexecs they were one password prompt
+  # only while polkit's auth_admin_keep held, which is five minutes -- shorter
+  # than most full updates, so the prompt came back mid-run. So the program
+  # pkexec authorises is this loop instead: it stays alive for the run and
+  # takes verbs on stdin, one per line, tab-separated between arguments.
+  #
+  # It is not a wider root than the verbs below, because it *is* the verbs
+  # below: every request goes back through this same dispatch, by name, with
+  # the same checks. Nothing here forwards a command line to a shell, and a
+  # session cannot ask for a session.
+  session)
+    (($# == 0)) || die 'session takes no arguments'
+    while IFS=$'\t' read -r -a req; do
+      ((${#req[@]})) || continue
+      rc=0
+      if [[ ${req[0]} == session ]]; then
+        printf 'c7up-root: a session cannot open a session\n' >&2
+        rc=2
+      else
+        # stdin is the request pipe: a child that read from it would eat the
+        # requests after this one. Nothing here is interactive anyway.
+        "$0" "${req[@]}" </dev/null || rc=$?
+      fi
+      # Led by a newline of its own: a verb whose last write had none would
+      # otherwise leave its final bytes sitting in front of the marker, and a
+      # caller matching the start of a line would not recognise it.
+      printf '\n%s%s\n' "$mark" "$rc"
+    done
+    exit 0
+    ;;
+
+  # Nothing, on purpose. bin/c7up asks for this first: the reply is proof that
+  # the polkit dialog is behind us, which is what the wizard's "waiting for
+  # authorisation" state clears on.
+  ping)
+    exit 0
+    ;;
+
   # The whole repo transaction in one invocation, so the lock is taken once.
   # --noconfirm is safe *because* c7up already answered every question in the
   # wizard: the ignores below are the user's step-1 choices.

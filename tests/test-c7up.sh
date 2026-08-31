@@ -23,7 +23,7 @@ command -v python3 >/dev/null || { echo 'SKIP: python3 not installed'; exit 0; }
 
 # The real tools c7up leans on that are not worth stubbing.
 for helper in bash sed awk grep tr cut wc date mktemp rm cat diff paste head tail \
-              printf sort timeout dirname uname mkdir touch; do
+              printf sort timeout dirname uname mkdir touch mkfifo; do
   p=$(command -v "$helper" 2>/dev/null) && ln -sf "$p" "$bin/$helper"
 done
 
@@ -291,19 +291,41 @@ out=$(PATH="$tmp/pac:$PATH" bash "$sudoshim" bash -c 'id' 2>&1 || true)
 # --------------------------------------------------------------------------
 mkdir -p "$tmp/lib"
 # pkexec's only job here is to run what it is handed; the authorisation it
-# normally performs has no analogue in a test.
-stub pkexec 'exec "$@"'
-cat > "$tmp/lib/c7up-root" <<'EOF'
-#!/bin/sh
-# Stands in for pacman under pkexec: the (n/m) lines are the only progress
-# either half of a real run emits, and the whole bar is driven off them.
-echo "(1/3) upgrading mesa... done"
-echo "(2/3) upgrading pipewire... done"
-printf ':: [1mrunning post-transaction hooks[0m
-'
-echo "(3/3) upgrading systemd... done"
+# normally performs has no analogue in a test. Each call is counted, because
+# "how many times does one run ask for a password" is the assertion below.
+stub pkexec 'echo "$@" >> "$TMPDIR/pkexec.log"; exec "$@"'
+
+# Stands in for the root helper, session loop and all: a run drives one of
+# these down a pipe now rather than starting one per privileged step. The
+# argument is the shell the `sync` verb runs, and the (n/m) lines in it are the
+# only progress either half of a real run emits -- the whole bar is driven off
+# them.
+root_stub() {
+  cat > "$tmp/lib/c7up-root" <<EOF
+#!/bin/bash
+mark=\$'\036'
+[ "\${1-}" = session ] || exit 2
+while IFS=\$'\t' read -r -a req; do
+  rc=0
+  case \${req[0]} in
+    ping) ;;
+    sync) $1 ;;
+    # What the AUR helper's --sudo shim asks for. Printing something is how the
+    # test can see that its request really travelled down the session's pipe.
+    pacman) echo "installing myaurpkg... done" ;;
+    *) ;;
+  esac
+  printf '\n%s%s\n' "\$mark" "\$rc"
+done
 EOF
-chmod +x "$tmp/lib/c7up-root"
+  chmod +x "$tmp/lib/c7up-root"
+}
+root_stub '
+    echo "(1/3) upgrading mesa... done"
+    echo "(2/3) upgrading pipewire... done"
+    printf ":: \033[1mrunning post-transaction hooks\033[0m\n"
+    echo "(3/3) upgrading systemd... done"'
+: > "$tmp/pkexec.log"
 
 state=$tmp/state/arch-update
 mkdir -p "$state"
@@ -352,6 +374,14 @@ for l in sys.stdin:
 [[ $(ev auth <<<"$out" | tail -1 | field state) == granted ]] \
   || fail "the run never cleared its waiting-on-authorisation state:\n$out"
 
+# And exactly one pkexec for the whole run. The repo sync, the AUR helper's
+# install and the post-run service check used to be one each, which was one
+# password prompt each as soon as the run outlived polkit's keep window.
+[[ $(wc -l < "$tmp/pkexec.log") == 1 ]] \
+  || fail "one run asked for authorisation more than once:\n$(cat "$tmp/pkexec.log")"
+[[ $(cat "$tmp/pkexec.log") == *session ]] \
+  || fail "the run's one pkexec was not the root session:\n$(cat "$tmp/pkexec.log")"
+
 [[ $(ev done <<<"$out" | field ok) == True ]] || fail "the run did not report success:\n$out"
 # Step 3 is built from this payload, so an absent key is a card that never
 # appears rather than a card that says zero.
@@ -379,13 +409,10 @@ fi
 #     than leaving the user to guess what state the machine is in.
 # --------------------------------------------------------------------------
 printf 'mesa 1 -> 2\n' > "$state/last_updates_check_packages"
-cat > "$tmp/lib/c7up-root" <<'EOF'
-#!/bin/sh
-echo "(1/1) upgrading mesa..."
-echo "error: failed to commit transaction (conflicting files)" >&2
-exit 1
-EOF
-chmod +x "$tmp/lib/c7up-root"
+root_stub '
+    echo "(1/1) upgrading mesa..."
+    echo "error: failed to commit transaction (conflicting files)" >&2
+    rc=1'
 
 out=$(env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp" \
       XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" \
@@ -635,5 +662,42 @@ out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans 'oldlib; reboot' 2>&
 out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans 2>&1 || true)
 [[ $out == *"no package named"* ]] \
   || fail "c7up-root accepted an empty removal: $out"
+
+# --------------------------------------------------------------------------
+# 14. The AUR half goes through the same authorisation as the repo half. paru
+#     builds as the user for as long as a build takes and then wants root to
+#     install what it built; a pkexec of its own there was a second password
+#     prompt for one run, because a build routinely outlasts the five minutes
+#     polkit keeps an admin authorisation for.
+# --------------------------------------------------------------------------
+stub pkexec 'echo "$@" >> "$TMPDIR/pkexec.log"; exec "$@"'
+root_stub '
+    echo "(1/1) upgrading mesa... done"'
+: > "$tmp/pkexec.log"
+stub pacdiff 'exit 0'
+stub checkservices 'exit 0'
+# What paru does once the build is done: it installs through the --sudo shim.
+stub paru 'case "$*" in
+  *-Sua*) exec sh '"$here"'/../bin/c7up-sudo pacman --upgrade --noconfirm -- /tmp/x.pkg.tar.zst ;;
+esac
+exit 0'
+mkdir -p "$tmp/config/arch-update"
+echo 'aur_helper=paru' > "$tmp/config/arch-update/arch-update.conf"
+printf 'mesa 1 -> 2\n' > "$state/last_updates_check_packages"
+printf 'myaurpkg 1 -> 2\n' > "$state/last_updates_check_aur"
+: > "$state/last_updates_check_flatpak"
+
+out=$(env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp" \
+      XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" \
+      XDG_CONFIG_HOME="$tmp/config" TMPDIR="$tmp" C7UP_LIBDIR="$tmp/lib" \
+      bash "$c7up" run 2>"$tmp/err") \
+  || fail "a run with an AUR package exited non-zero:\n$(cat "$tmp/err")"
+
+[[ $(ev phase <<<"$out" | grep -c '"aur".*"done"') == 1 ]] \
+  || fail "the AUR phase did not finish:\n$out"
+[[ $out == *"installing myaurpkg"* ]] \
+  || fail "the AUR install did not go through the run's root session:\n$out"
+[[ $(wc -l < "$tmp/pkexec.log") == 1 ]] \
+  || fail "the AUR half raised an authorisation of its own:\n$(cat "$tmp/pkexec.log")"
 
 echo 'test-c7up.sh: all checks passed'
