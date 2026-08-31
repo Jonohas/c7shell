@@ -3,6 +3,7 @@ import QtQuick.Effects
 import Quickshell.Hyprland
 import qs.Theme
 import qs.Common
+import qs.Services
 import "../../Common/Pips.js" as Pips
 
 // Dice-face workspace tiles: the pip layout IS the workspace number.
@@ -45,6 +46,11 @@ Row {
 
       value: pip.wsId
       tile: root.tile
+      mode: ShellStore.workspaceIndicator
+      // Hyprland reports an unnamed workspace's name as its own number as a
+      // string; that is not a name, and the tile should fall back to the
+      // numeral rather than print it twice as wide.
+      label: pip.modelData.name === `${pip.wsId}` ? "" : (pip.modelData.name ?? "")
       dotColor: pip.focused ? Theme.text
         : pip.urgent ? Theme.alpha(Theme.text, 0.8)
         : Theme.alpha(Theme.text, 0.55)
