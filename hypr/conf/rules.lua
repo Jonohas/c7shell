@@ -100,14 +100,11 @@ hl.window_rule({
     name  = "float-teams-share-indicator",
     match = { title = ".*Screen is being shared.*" },
 
-    -- move anchors to the monitor's right/bottom edge with Hyprland's 100%-<px>
-    -- token, so the window follows whatever monitor it opens on. The numbers are
-    -- window size + 20px margin: x left = 100%-500 (480 wide + 20), y top =
-    -- 100%-221 (201 tall + 20). Retune both if size changes. size keeps the DP-3
-    -- stream aspect (3440x1440): 480 wide -> 480*1440/3440 = 201 tall.
+    -- No size rule: the window keeps its own natural size. move is an expression
+    -- over the Lua rule variables, so it docks bottom-right on whatever monitor
+    -- it opens on: monitor edge minus the real window size minus a 20px margin.
     float = true,
-    size  = "480 201",
-    move  = "100%-500 100%-221",
+    move  = { "monitor_w-window_w-20", "monitor_h-window_h-20" },
     pin   = true,
 })
 
