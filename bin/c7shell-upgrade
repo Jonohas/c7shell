@@ -129,6 +129,32 @@ shipped_at() {
 }
 shipped_hash() { shipped_at "$1" "$2" | sha256sum | cut -d' ' -f1; }
 
+# makepkg never builds when a tarball for the pkgver it computes already sits in
+# the build directory: it says "A package has already been built, installing
+# existing package..." and hands that file straight to pacman. An interrupted
+# build leaves a half-written (often zero-length) tarball behind, and because
+# pkgver() bakes the commit into the version, that file keeps matching for as
+# long as the branch head does not move -- so every later run fails the same way
+# with "missing package metadata ... invalid or corrupted package" and never
+# rebuilds. Dropping what cannot be read is enough to break the loop.
+prune_broken_packages() {
+  local dir=$1 f
+  [[ -d $dir ]] || return 0
+  # `shopt -p` exits non-zero when the option is unset, which is most of the
+  # time and is not an error here.
+  local restore; restore=$(shopt -p nullglob || true)
+  shopt -s nullglob
+  for f in "$dir"/*.pkg.tar.*; do
+    [[ $f == *.sig ]] && continue
+    # bsdtar, not zstd: it reads whatever compression makepkg.conf's PKGEXT
+    # chose, and it is present on any machine that can run makepkg at all.
+    [[ -s $f ]] && bsdtar -tf "$f" >/dev/null 2>&1 && continue
+    info "dropping an unreadable leftover package: ${f##*/}"
+    run rm -f -- "$f"
+  done
+  eval "$restore"
+}
+
 # ---------------------------------------------------------------------------
 # the package
 # ---------------------------------------------------------------------------
@@ -163,12 +189,17 @@ if ((do_package)); then
     info 'already the current commit, not rebuilding (use --force to rebuild anyway)'
   else
     info 'building and installing'
+    prune_broken_packages "$src"
     # --no-bootstrap: this machine is already set up, this is an upgrade.
     # The doctor runs once at the end of this script instead.
+    # -f: passed through to makepkg, so a *readable* tarball for this same
+    # commit is rebuilt rather than reinstalled. install.sh forces this itself
+    # now, but the copy that runs here is the one on the branch being built,
+    # which on an older branch does not.
     if ((dry)); then
-      printf '  would: (cd %s && C7SHELL_BRANCH=%s ./install.sh --no-bootstrap)\n' "$src" "$branch"
+      printf '  would: (cd %s && C7SHELL_BRANCH=%s ./install.sh --no-bootstrap -f)\n' "$src" "$branch"
     else
-      ( cd "$src" && C7SHELL_BRANCH=$branch C7SHELL_SKIP_DOCTOR=1 ./install.sh --no-bootstrap )
+      ( cd "$src" && C7SHELL_BRANCH=$branch C7SHELL_SKIP_DOCTOR=1 ./install.sh --no-bootstrap -f )
     fi
   fi
 

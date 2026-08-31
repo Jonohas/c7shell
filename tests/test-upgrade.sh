@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Self-check for bin/c7shell-upgrade. Run it directly: tests/test-upgrade.sh
 #
-# Only the config half is exercised (--config-only): the package half rebuilds
+# Mostly the config half is exercised (--config-only): the package half rebuilds
 # from git and installs with pacman, which a test has no business doing. The
 # config half is the part that can lose your edits, so that is what is checked.
+# The one exception is at the end, where the package half's plan is inspected
+# under --dry-run: it never runs git or pacman there either.
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -326,5 +328,35 @@ ship quickshell/c7shell/shell.qml 'v11 shell'
 out=$("$upgrade" --config-only --no-doctor --no-greeter --dry-run 2>&1) || true
 grep -q 'would restart the quickshell instance' <<<"$out" || fail "--dry-run did not plan the restart:\n$out"
 [[ -e $QS_STUB/killed ]] && fail '--dry-run killed the running shell'
+
+# --- leftover packages in the build cache ---------------------------------
+# makepkg installs an existing tarball instead of building when one matches the
+# pkgver it computes, so a half-written file from an interrupted build makes
+# every later run fail in pacman with "invalid or corrupted package" -- forever,
+# because the broken file keeps matching. The package half drops what cannot be
+# read before makepkg looks. Only the plan is checked here: building for real
+# clones from git and installs with pacman, which a test has no business doing.
+export C7SHELL_CACHE=$tmp/cache
+pkgdir_=$C7SHELL_CACHE/src
+mkdir -p "$pkgdir_/.git"
+: > "$pkgdir_/c7shell-0.1.0.r1.gempty-1-any.pkg.tar.zst"
+printf 'not a package at all\n' > "$pkgdir_/c7shell-0.1.0.r2.gtrunc-1-any.pkg.tar.zst"
+good=$pkgdir_/c7shell-0.1.0.r3.ggood-1-any.pkg.tar.zst
+( cd "$tmp" && printf 'x\n' > payload && bsdtar --zstd -cf "$good" payload )
+: > "$good.sig"
+
+out=$("$upgrade" --package-only --no-doctor --force --dry-run 2>&1)
+grep -q 'gempty' <<<"$out" || fail "a zero-length leftover package was not dropped:\n$out"
+grep -q 'gtrunc' <<<"$out" || fail "an unreadable leftover package was not dropped:\n$out"
+grep -q 'ggood'  <<<"$out" && fail "a readable package was dropped:\n$out"
+[[ -e $pkgdir_/c7shell-0.1.0.r1.gempty-1-any.pkg.tar.zst ]] \
+  || fail '--dry-run deleted a package file'
+grep -q 'install.sh --no-bootstrap -f' <<<"$out" \
+  || fail "the build does not force a rebuild, so a stale tarball is reinstalled:\n$out"
+
+# ...and install.sh must force it too, for the runs that do not come through
+# c7shell-upgrade at all.
+grep -qE '^makepkg .*-[a-z]*f' "$here/../install.sh" \
+  || fail 'install.sh does not pass -f to makepkg'
 
 echo 'PASS: c7shell-upgrade'
