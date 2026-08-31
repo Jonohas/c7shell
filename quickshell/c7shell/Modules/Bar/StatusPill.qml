@@ -148,13 +148,17 @@ Rectangle {
       id: batterySlot
       anchors.verticalCenter: parent.verticalCenter
       visible: BatteryService.present
+      active: PopoverManager.current === "power"
       slotColor: battery.warn ? Theme.accentFill : "transparent"
       slotBorder: battery.warn ? Theme.accentBorder : "transparent"
+      onClicked: PopoverManager.toggle("power", batterySlot)
 
       BatteryIndicator {
         id: battery
         anchors.verticalCenter: parent.verticalCenter
-        hovered: batterySlot.hovered
+        // The tooltip stands down while the popover is up: it says a subset of
+        // what the panel says, and two surfaces over one pill is one too many.
+        hovered: batterySlot.hovered && PopoverManager.current !== "power"
       }
     }
   }
