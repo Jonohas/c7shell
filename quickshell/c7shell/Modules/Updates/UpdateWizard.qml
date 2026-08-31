@@ -27,7 +27,7 @@ Scope {
 
   readonly property bool hasCleanup:
     UpdatesService.pacnews.length > 0 || UpdatesService.rebootRequired
-    || UpdatesService.services.length > 0
+    || UpdatesService.services.length > 0 || UpdatesService.orphans.length > 0
 
   // Two dots or three. On the review-only entry there are none at all.
   readonly property int stepCount: {
@@ -87,8 +87,11 @@ Scope {
             Text {
               text: root.entry === "failure" ? `Stopped at package ${UpdatesService.result?.done ?? 0}`
                   : root.step === 1 ? "Before we update"
-                  : root.step === 2 ? "Updating"
-                  : root.entry === "review" ? `${UpdatesService.pacnews.length} config file${UpdatesService.pacnews.length === 1 ? "" : "s"} to review`
+                  : root.step === 2 ? (UpdatesService.awaitingAuth ? "Waiting for authorisation" : "Updating")
+                  : root.entry === "review"
+                    ? (UpdatesService.pacnews.length > 0
+                       ? `${UpdatesService.pacnews.length} config file${UpdatesService.pacnews.length === 1 ? "" : "s"} to review`
+                       : `${UpdatesService.orphans.length} package${UpdatesService.orphans.length === 1 ? "" : "s"} nothing needs`)
                   : `Done — ${UpdatesService.result?.updated ?? 0} updated`
               font { family: Theme.fontDisplay; pixelSize: 13; weight: 700 }
               color: Theme.text
@@ -101,7 +104,9 @@ Scope {
                   : root.step === 1
                   ? `${UpdatesService.total} packages · ${UpdatesService.humanSize(UpdatesService.size)} · ${UpdatesService.total - UpdatesService.decisions.length} auto-approved`
                   : root.step === 2
-                  ? `${UpdatesService.doneCount} of ${UpdatesService.runTotal}`
+                  ? (UpdatesService.awaitingAuth
+                     ? "confirm the prompt to continue"
+                     : `${UpdatesService.doneCount} of ${UpdatesService.runTotal}`)
                   : root.entry === "review"
                   ? "from an earlier update"
                   : `${UpdatesService.duration(UpdatesService.result?.secs)} · log at ${UpdatesService.logPath}`
@@ -288,6 +293,7 @@ Scope {
           width: parent.width
           visible: root.step === 2 && root.entry !== "failure"
           showPhases: true
+          showHeadline: false
           logLines: 6
         }
 
@@ -400,6 +406,14 @@ Scope {
                 GhostButton { label: "later"; onTriggered: UpdatesService.services = [] }
               }
             }
+          }
+
+          // arch-update asks this after every run, in a terminal nobody sees.
+          // Here it is a card with the names in it, at the wizard's width.
+          OrphanCard {
+            width: parent.width
+            visible: UpdatesService.orphans.length > 0
+            onDismissed: UpdatesService.orphans = []
           }
 
           Rectangle {

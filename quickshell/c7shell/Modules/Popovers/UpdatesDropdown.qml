@@ -24,6 +24,14 @@ GlassPopover {
 
   readonly property bool runningHere: UpdatesService.running
 
+  // The orphan offer, unfolded in place. Same rule as the update itself: this
+  // panel does what it can do here, and a window is only for what genuinely
+  // needs one.
+  property bool cleaning: false
+  // Folded again on close: the next open is the summary, not wherever the
+  // last one was left.
+  onOpenChanged: if (!root.open) root.cleaning = false
+
   // -- header ------------------------------------------------------------------
   Item {
     width: parent.width
@@ -151,6 +159,7 @@ GlassPopover {
     width: parent.width
     visible: !root.runningHere && UpdatesService.total === 0
              && UpdatesService.pacnews.length === 0
+             && UpdatesService.orphans.length === 0
     text: "everything is current"
     font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
     color: Theme.textDisabled
@@ -167,7 +176,7 @@ GlassPopover {
       anchors.left: parent.left
       text: `${UpdatesService.pacnews.length} config file${UpdatesService.pacnews.length === 1 ? "" : "s"} to review`
       font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-      color: "#e0b341"
+      color: Theme.warning
     }
     Text {
       anchors.right: parent.right
@@ -183,6 +192,41 @@ GlassPopover {
         }
       }
     }
+  }
+
+  // Packages nothing depends on any more. Not amber and not a decision: an
+  // orphan is disk, not a broken config, and the flow is still clean with a
+  // dozen of them sitting there. It is offered, and that is all.
+  Item {
+    width: parent.width
+    height: 15
+    visible: !root.runningHere && UpdatesService.orphans.length > 0
+
+    Text {
+      anchors.left: parent.left
+      text: `${UpdatesService.orphans.length} package${UpdatesService.orphans.length === 1 ? "" : "s"} nothing needs`
+          + (UpdatesService.orphanSize > 0
+             ? ` · ${UpdatesService.humanSize(UpdatesService.orphanSize)}` : "")
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.text3
+    }
+    Text {
+      anchors.right: parent.right
+      text: root.cleaning ? "hide" : "clean up →"
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.text3
+
+      HoverHandler { cursorShape: Qt.PointingHandCursor }
+      TapHandler { onTapped: root.cleaning = !root.cleaning }
+    }
+  }
+
+  OrphanCard {
+    width: parent.width
+    visible: !root.runningHere && root.cleaning && UpdatesService.orphans.length > 0
+    // Folded away, not resolved: the next dry run finds them again, and the
+    // list itself is left alone so settings → system still has it.
+    onDismissed: root.cleaning = false
   }
 
   // -- 12a · 2, running in place ---------------------------------------------------

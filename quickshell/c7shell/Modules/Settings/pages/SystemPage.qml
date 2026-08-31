@@ -17,7 +17,7 @@ SettingsPage {
   id: root
 
   title: "System"
-  subtitle: "updates · configs to review"
+  subtitle: "updates · configs to review · unneeded packages"
 
   // -- updates ---------------------------------------------------------------
   SettingsCard {
@@ -93,6 +93,21 @@ SettingsPage {
     text: "no config files waiting"
     font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
     color: Theme.textDisabled
+  }
+
+  // -- packages nothing needs -------------------------------------------------
+  // The other half of what "later" parks. arch-update offers this at the end
+  // of a terminal run; parking it here is what lets the dropdown and the
+  // wizard say "keep them" without the offer being lost.
+  SectionLabel {
+    text: "packages nothing needs"
+    visible: UpdatesService.orphans.length > 0
+  }
+
+  OrphanCard {
+    width: parent.width
+    visible: UpdatesService.orphans.length > 0
+    onDismissed: UpdatesService.orphans = []
   }
 
   // -- pending reboot ---------------------------------------------------------

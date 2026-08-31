@@ -194,6 +194,84 @@ out=$(bash "$root" restart-services 'foo.service; reboot' 2>&1 || true)
 [[ $out == *"not a service unit"* ]] || fail "c7up-root accepted a crafted unit name: $out"
 
 # --------------------------------------------------------------------------
+# 8b. The `pacman` verb is what the AUR helper's --sudo shim lands on, so it
+#     has to accept the command line the helper actually writes. paru writes
+#     it in long options with an end-of-options marker; yay writes -U. Both
+#     have to get through, and what pacman is finally handed must still be the
+#     narrow command line the verb promises.
+# --------------------------------------------------------------------------
+mkdir -p "$tmp/pac"
+printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$@"' > "$tmp/pac/pacman"
+chmod +x "$tmp/pac/pacman"
+built=$tmp/foo-1-1-x86_64.pkg.tar.zst
+: > "$built"
+runpac() { PATH="$tmp/pac:$PATH" bash "$root" pacman "$@" 2>&1; }
+# One argument per line out of the stub, so position is greppable.
+argline() { grep -nxF -- "$1" <<<"$2" | head -1 | cut -d: -f1; }
+
+# Verbatim from `paru --sudo <shim> -U <file>` -- the line issue #59 hit.
+out=$(runpac --upgrade --color=never --noconfirm -- "$built") \
+  || fail "c7up-root rejected paru's own install command line:\n$out"
+[[ $(argline --upgrade "$out") ]] || fail "the operation was dropped:\n$out"
+[[ $(argline "$built" "$out") ]] || fail "the built package was dropped:\n$out"
+# Nothing that looks like a flag may land behind the marker: past it pacman
+# reads every word as a package file, so a trailing --noconfirm becomes a file
+# it cannot find.
+if sed -n "$(( $(argline -- "$out") + 1 )),\$p" <<<"$out" | grep -q '^-'; then
+  fail "a flag landed after the end-of-options marker:\n$out"
+fi
+[[ $(argline --noconfirm "$out") ]] || fail "--noconfirm was dropped:\n$out"
+(( $(argline "$built" "$out") > $(argline -- "$out") )) \
+  || fail "the target landed in front of the end-of-options marker:\n$out"
+
+# The repo-dependency and mark-as-dependency halves of the same flow.
+out=$(runpac --sync --color=never --noconfirm --ignore=foo -- cowsay) \
+  || fail "c7up-root rejected paru's repo-dependency command line:\n$out"
+out=$(runpac --database --asdeps -- cowsay) \
+  || fail "c7up-root rejected the mark-as-dependency step:\n$out"
+# yay's spelling of the same thing, and --color as two tokens.
+out=$(runpac -U --color never --noconfirm --needed "$built") \
+  || fail "c7up-root rejected the short-option spelling:\n$out"
+
+# Widening it is still the thing to avoid. --root, --dbpath and --config each
+# point pacman at a tree the caller chose, which is a root install of packages
+# nobody authorised.
+for flag in --root=/ --dbpath=/tmp/db --config=/tmp/pacman.conf --hookdir=/tmp; do
+  out=$(runpac --upgrade "$flag" -- "$built" || true)
+  [[ $out == *"unexpected pacman flag"* ]] \
+    || fail "c7up-root accepted $flag from the AUR helper: $out"
+done
+out=$(runpac --sync -- 'evil;name' || true)
+[[ $out == *"implausible package name"* ]] \
+  || fail "a target behind the marker skipped the name check: $out"
+out=$(runpac --upgrade -- /etc/passwd || true)
+[[ $out == *"not a built package"* ]] || fail "c7up-root installed a path that is not a package: $out"
+out=$(runpac --upgrade -- "$tmp/missing.pkg.tar.zst" || true)
+[[ $out == *"not a built package"* ]] || fail "c7up-root accepted a package file that is not there: $out"
+out=$(runpac --color=never --noconfirm -- cowsay || true)
+[[ $out == *"no pacman operation"* ]] || fail "c7up-root ran pacman with no operation: $out"
+out=$(runpac --upgrade --color=/etc -- "$built" || true)
+[[ $out == *"unexpected --color value"* ]] || fail "c7up-root passed --color anything: $out"
+out=$(runpac --sync --ignore 'evil;name' -- cowsay || true)
+[[ $out == *"implausible package name"* ]] || fail "c7up-root passed --ignore anything: $out"
+
+# The shim in front of it. sudo's contract is `sudo <program> <args...>`, so
+# the helper names pacman as the first word; if that word survives the trip it
+# arrives at root as a package to install.
+sudoshim=$here/../bin/c7up-sudo
+printf '%s\n' '#!/bin/sh' 'shift; printf "%s\n" "$@"' > "$tmp/pac/pkexec"
+chmod +x "$tmp/pac/pkexec"
+out=$(PATH="$tmp/pac:$PATH" bash "$sudoshim" pacman --upgrade --noconfirm -- "$built" 2>&1) \
+  || fail "c7up-sudo rejected what paru hands its sudo:\n$out"
+[[ $(head -1 <<<"$out") == pacman ]] \
+  || fail "c7up-sudo did not pass the verb through as itself:\n$out"
+[[ $(sed -n 2p <<<"$out") == --upgrade ]] \
+  || fail "c7up-sudo left pacman's own name in the argument list:\n$out"
+out=$(PATH="$tmp/pac:$PATH" bash "$sudoshim" bash -c 'id' 2>&1 || true)
+[[ $out == *"only pacman is routed here"* ]] \
+  || fail "c7up-sudo would run something other than pacman as root: $out"
+
+# --------------------------------------------------------------------------
 # 9. The run's streaming contract. This is the half that cannot be exercised
 #    against a real system in a test -- it installs packages -- so the stubs
 #    stand in for pkexec and the root helper, and the assertions are on the
@@ -263,6 +341,10 @@ for l in sys.stdin:
   || fail "the run never cleared its waiting-on-authorisation state:\n$out"
 
 [[ $(ev done <<<"$out" | field ok) == True ]] || fail "the run did not report success:\n$out"
+# Step 3 is built from this payload, so an absent key is a card that never
+# appears rather than a card that says zero.
+[[ $(ev done <<<"$out" | jq_py "'orphans' in d") == True ]] \
+  || fail "the run's done event carried no orphan list:\n$out"
 # A run that leaves the counts it started from in place would have the bar
 # still advertising updates that are now installed.
 [[ ! -s $state/last_updates_check_packages ]] \
@@ -453,5 +535,93 @@ out=$(C7UP_TEST_ROOT="$tmp" bash "$tmp/lib/c7up-root" pacnew-write "$tmp/fake" "
 [[ $out == *"not a regular file"* ]] \
   || fail "pacnew-write did not reject a symlink as its source: $out"
 [[ $(cat "$tmp/fake") == x ]] || fail 'pacnew-write wrote despite rejecting the source' 
+
+# --------------------------------------------------------------------------
+# 13. Orphan packages: arch-update's own post-update question, which this
+#     flow computed and never showed. They are cleanup, not a decision --
+#     every machine that has ever removed a package has some, and putting
+#     them in front of the clean path would mean nobody ever gets one click.
+# --------------------------------------------------------------------------
+stub checkupdates 'echo "mesa 25.1.2 -> 25.1.4"'
+stub pacdiff 'exit 0'
+stub paru 'exit 0'
+stub pacman 'case "$*" in
+  *--print-format*) echo 1000 ;;
+  *--print*) echo "https://mirror/extra/mesa.pkg.tar.zst" ;;
+  *-Qtdq*) echo oldlib; echo stale-thing ;;
+  *-Qii*) printf "MODIFIED\t/etc/pacman.conf\n" ;;
+  *-Qi*) cat <<EOF
+Name            : oldlib
+Version         : 1.0-1
+Installed Size  : 12.00 MiB
+Description     : nothing depends on this
+
+Name            : stale-thing
+Version         : 2.0-1
+Installed Size  : 512.00 KiB
+Description     : nor this
+EOF
+  ;;
+esac
+exit 0'
+
+out=$(run_verdict) || fail "verdict exited non-zero with orphans present:\n$(cat "$tmp/err")"
+[[ $(jq_py "[x['name'] for x in d['orphans']]" <<<"$out") == "['oldlib', 'stale-thing']" ]] \
+  || fail "the verdict did not carry the orphan list:\n$out"
+# The size is the only reason to care about an orphan, and MiB/KiB is what
+# pacman prints -- a naive parse turns 512.00 KiB into 512 bytes.
+[[ $(jq_py "d['orphans'][0]['size']" <<<"$out") == 12582912 ]] \
+  || fail "an orphan's MiB size was not converted to bytes:\n$out"
+[[ $(jq_py "d['orphans'][1]['size']" <<<"$out") == 524288 ]] \
+  || fail "an orphan's KiB size was not converted to bytes:\n$out"
+# Cleanup, not a decision: two orphans and a routine mesa bump is still the
+# one-click path.
+[[ $(field clean <<<"$out") == True ]] || fail "orphans escalated the clean path:\n$out"
+[[ $(jq_py "len(d['decisions'])" <<<"$out") == 0 ]] \
+  || fail "an orphan became a decision:\n$out"
+
+# The standalone verb, which is what the shell re-reads after a removal --
+# taking one orphan away can orphan the next.
+out=$(env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp" \
+      XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" \
+      XDG_CONFIG_HOME="$tmp/config" TMPDIR="$tmp" \
+      bash "$c7up" orphans 2>"$tmp/err") || fail "the orphans verb exited non-zero:\n$(cat "$tmp/err")"
+[[ $(jq_py "[x['name'] for x in d['packages']]" <<<"$out") == "['oldlib', 'stale-thing']" ]] \
+  || fail "the orphans verb did not list them:\n$out"
+
+# A machine with none says so in JSON rather than emitting a bare comma.
+stub pacman 'case "$*" in
+  *-Qtdq*) exit 1 ;;
+esac
+exit 0'
+out=$(env -i PATH="$bin:/usr/bin:/bin" HOME="$tmp" \
+      XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" \
+      XDG_CONFIG_HOME="$tmp/config" TMPDIR="$tmp" \
+      bash "$c7up" orphans 2>/dev/null)
+python3 -c 'import json,sys;json.loads(sys.stdin.read())' <<<"$out" \
+  || fail "no orphans at all did not produce valid JSON:\n$out"
+[[ $(jq_py "d['packages']" <<<"$out") == "[]" ]] \
+  || fail "no orphans should be an empty list:\n$out"
+
+# Root re-derives the list rather than trusting its argv: -Rns on a package
+# something still depends on takes that something with it, and the caller is
+# not in a position to promise otherwise.
+stub pacman 'case "$*" in
+  *-Qtdq*) echo oldlib ;;
+  *) echo "REMOVED: $*" ;;
+esac
+exit 0'
+out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans oldlib 2>&1 || true)
+[[ $out == *"REMOVED:"* && $out == *"-Rns"* ]] \
+  || fail "c7up-root did not remove a genuine orphan: $out"
+out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans systemd 2>&1 || true)
+[[ $out == *"not an orphan package"* ]] \
+  || fail "c7up-root removed a package that is not an orphan: $out"
+out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans 'oldlib; reboot' 2>&1 || true)
+[[ $out == *"implausible package name"* ]] \
+  || fail "c7up-root accepted a crafted package name: $out"
+out=$(PATH="$bin:/usr/bin:/bin" bash "$root" remove-orphans 2>&1 || true)
+[[ $out == *"no package named"* ]] \
+  || fail "c7up-root accepted an empty removal: $out"
 
 echo 'test-c7up.sh: all checks passed'

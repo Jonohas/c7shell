@@ -2,7 +2,6 @@ import QtQuick
 import Quickshell.Networking
 import Quickshell.Bluetooth
 import Quickshell.Services.Pipewire
-import Quickshell.Services.UPower
 import qs.Theme
 import qs.Common
 import qs.Services
@@ -13,8 +12,6 @@ Rectangle {
   readonly property var wifi: Networking.devices.values.find(d => d.type === DeviceType.Wifi) ?? null
   readonly property var btAdapter: Bluetooth.defaultAdapter
   readonly property var sink: Pipewire.defaultAudioSink
-  readonly property var battery: UPower.displayDevice
-  readonly property bool hasBattery: battery?.isLaptopBattery ?? false
   readonly property bool muted: sink?.audio?.muted ?? false
 
   PwObjectTracker { objects: root.sink ? [root.sink] : [] }
@@ -74,7 +71,7 @@ Rectangle {
           anchors { right: parent.right; top: parent.top; margins: -1 }
           visible: UpdatesService.pacnews.length > 0 && !UpdatesService.running
           width: 4; height: 4; radius: 2
-          color: "#e0b341"
+          color: Theme.warning
         }
       }
 
@@ -145,10 +142,24 @@ Rectangle {
       onClicked: PopoverManager.toggle("audio", volSlot)
       Icon { name: root.muted ? "volume-x" : "volume-2"; tint: root.muted ? Theme.accentSoft : Theme.text }
     }
+    // Below the warn threshold the whole slot goes crimson-tinted, which is
+    // the one state the battery widget is allowed to shout in.
     QuickSlot {
+      id: batterySlot
       anchors.verticalCenter: parent.verticalCenter
-      visible: root.hasBattery
-      BatteryIndicator { anchors.verticalCenter: parent.verticalCenter }
+      visible: BatteryService.present
+      active: PopoverManager.current === "battery"
+      slotColor: battery.warn ? Theme.accentFill : "transparent"
+      slotBorder: battery.warn ? Theme.accentBorder : "transparent"
+      onClicked: PopoverManager.toggle("battery", batterySlot)
+
+      BatteryIndicator {
+        id: battery
+        anchors.verticalCenter: parent.verticalCenter
+        // The tooltip stands down while the popover is up: it says a subset of
+        // what the panel says, and two surfaces over one pill is one too many.
+        hovered: batterySlot.hovered && PopoverManager.current !== "battery"
+      }
     }
   }
 }

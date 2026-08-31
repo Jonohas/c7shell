@@ -204,6 +204,52 @@ grep -q 'already uses the c7shell theme' <<<"$out" || fail "an applied theme was
 out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
 grep -q 'greeter theme' <<<"$out" && fail "--no-greeter still touched the greeter:\n$out"
 
+# --- the shell restart --------------------------------------------------
+# A change under quickshell/ leaves the running shell half-migrated, so the
+# upgrade restarts it. The instance is matched by config path: this test tree
+# is a temporary $XDG_CONFIG_HOME that no quickshell is running, and the
+# developer's own shell -- which very much is running -- must survive the suite.
+ship quickshell/c7shell/shell.qml 'v9 shell'
+out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
+grep -q 'update  quickshell/c7shell/shell.qml' <<<"$out" || fail "the shell file was not updated:\n$out"
+grep -q 'restarting the shell' <<<"$out" && fail "restarted a shell that is not running this config:\n$out"
+
+# A hypr-only change has nothing to restart for either, whatever is running.
+ship hypr/hyprland.lua 'v9 entry'
+out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
+grep -q 'restarting the shell' <<<"$out" && fail "a hypr-only change restarted the shell:\n$out"
+
+# With a quickshell that does claim this tree, the restart is kill-then-relaunch
+# and the relaunch is detached, so it has to outlive the upgrade that started
+# it. The stub records both halves and stops reporting the instance once it is
+# killed, which is also what the wait loop is reading.
+export QS_STUB=$tmp/qs-stub
+mkdir -p "$QS_STUB"
+cat > "$tmp/bin/qs" <<'QS'
+#!/bin/sh
+case "$1 $2" in
+  'list --all') [ -e "$QS_STUB/killed" ] || printf '  Config path: %s\n' "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml" ;;
+  'kill -c')    printf '%s\n' "$3" > "$QS_STUB/killed" ;;
+  '-c c7shell') printf '%s\n' "$*" > "$QS_STUB/launched" ;;
+esac
+QS
+chmod +x "$tmp/bin/qs"
+
+ship quickshell/c7shell/shell.qml 'v10 shell'
+out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
+grep -q 'restarting the shell' <<<"$out" || fail "the shell was not restarted:\n$out"
+[[ $(cat "$QS_STUB/killed") == c7shell ]] || fail 'the restart killed the wrong config'
+for _ in $(seq 25); do [[ -e $QS_STUB/launched ]] && break; sleep 0.2; done
+grep -q -- '-d' "$QS_STUB/launched" 2>/dev/null \
+  || fail "the shell was killed and not relaunched: $(cat "$QS_STUB/launched" 2>/dev/null)"
+
+# --dry-run plans the restart and does not perform it
+rm -f "$QS_STUB/killed" "$QS_STUB/launched"
+ship quickshell/c7shell/shell.qml 'v11 shell'
+out=$("$upgrade" --config-only --no-doctor --no-greeter --dry-run 2>&1) || true
+grep -q 'would restart the quickshell instance' <<<"$out" || fail "--dry-run did not plan the restart:\n$out"
+[[ -e $QS_STUB/killed ]] && fail '--dry-run killed the running shell'
+
 # --- leftover packages in the build cache ---------------------------------
 # makepkg installs an existing tarball instead of building when one matches the
 # pkgver it computes, so a half-written file from an interrupted build makes

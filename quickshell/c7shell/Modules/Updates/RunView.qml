@@ -19,6 +19,10 @@ Column {
   property bool showPhases: false
   property int logLines: 4
 
+  // The wizard's own step heading already says "Updating" and counts the
+  // packages; repeating it here would print the same two lines twice.
+  property bool showHeadline: true
+
   spacing: 9
 
   readonly property real fraction:
@@ -29,6 +33,7 @@ Column {
   Column {
     width: parent.width
     spacing: 2
+    visible: root.showHeadline
 
     Text {
       text: UpdatesService.awaitingAuth ? "waiting for authorisation" : "updating"

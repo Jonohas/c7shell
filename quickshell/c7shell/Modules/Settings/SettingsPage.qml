@@ -11,10 +11,27 @@ Item {
   property string subtitle: ""
   default property alias content: body.data
 
+  // A status chip that belongs to the page as a whole rather than to any card
+  // on it -- the power page's "tuned 2.26 · active". Baseline-aligned with the
+  // subtitle, so the title still owns the top line on its own.
+  property alias headerTrailing: headerSlot.data
+
+  Row {
+    id: headerSlot
+    anchors { right: parent.right; top: parent.top; topMargin: 4 }
+    spacing: 8
+  }
+
   Column {
     id: head
 
-    anchors { left: parent.left; right: parent.right; top: parent.top }
+    anchors {
+      left: parent.left
+      right: headerSlot.left
+      // Only pages that actually put something up there give up the width.
+      rightMargin: headerSlot.children.length > 0 ? 16 : 0
+      top: parent.top
+    }
     spacing: 2
 
     Text {

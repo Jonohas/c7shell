@@ -10,6 +10,10 @@ import "Pips.js" as Pips
 // Dots scale with the tile, so a 17px OSD tile and a 20px bar tile read the
 // same. The caller owns the background: focus, urgency and the OSD's accent
 // fill are its business, not the geometry's.
+//
+// `mode` is the topbar setting: the pips are the shell's own idiom, but plain
+// numerals and hyprland's workspace names are both legitimate answers, and the
+// same tile draws all three so focus, urgency and glow behave identically.
 Rectangle {
   id: root
 
@@ -17,15 +21,28 @@ Rectangle {
   property int tile: 20
   property color dotColor: Theme.text
 
+  // dice | numerals | names
+  property string mode: "dice"
+  // Only consulted in `names` mode, and only when hyprland actually has a name
+  // for the workspace -- an unnamed one falls back to its number rather than to
+  // an empty tile.
+  property string label: ""
+
   readonly property var face: Pips.layout(root.value)
   readonly property real dotSize: root.face.dotSize * (root.tile / 20)
 
-  width: root.tile
+  readonly property bool pips: root.mode === "dice" && !root.face.numeral
+  readonly property string captionText: root.mode === "names" && root.label !== ""
+    ? root.label : `${root.value}`
+
+  // A name needs room; a numeral does not. Padding is on the text, so the tile
+  // stays exactly square whenever it holds one glyph or a pip face.
+  width: root.pips ? root.tile : Math.max(root.tile, caption.implicitWidth + 12)
   height: root.tile
   radius: Theme.radiusPip
 
   Repeater {
-    model: root.face.dots
+    model: root.pips ? root.face.dots : []
 
     Rectangle {
       required property var modelData
@@ -40,7 +57,7 @@ Rectangle {
 
   // Domino mid divider (7-12)
   Rectangle {
-    visible: root.face.divider
+    visible: root.pips && root.face.divider
     x: 4
     width: root.tile - 8
     height: 1
@@ -48,11 +65,14 @@ Rectangle {
     color: Theme.alpha(Theme.text, 0.25)
   }
 
-  // 13+ fallback: the number itself
+  // Whatever the pips cannot say: the 13+ fallback, and both of the non-dice
+  // modes.
   Text {
-    visible: root.face.numeral
+    id: caption
+
+    visible: !root.pips
     anchors.centerIn: parent
-    text: root.value
+    text: root.captionText
     color: root.dotColor
     font.family: Theme.fontMono
     font.pixelSize: Math.round(root.tile * 0.45)

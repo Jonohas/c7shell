@@ -25,6 +25,10 @@ check_pkgname() {
   [[ $1 =~ ^[A-Za-z0-9@._+-]+$ ]] || die "refusing implausible package name: $1"
 }
 
+check_color() {
+  [[ $1 == never || $1 == always || $1 == auto ]] || die "unexpected --color value: $1"
+}
+
 # Only files pacman itself put a .pacnew next to are resolvable. Anything else
 # -- a relative path, a symlink out of /etc, a path with no .pacnew sibling --
 # is a caller bug at best.
@@ -57,16 +61,62 @@ case "$verb" in
 
   # What the AUR helper's --sudo shim lands on: paru builds as the user and
   # then asks its sudo command to install the built packages.
+  #
+  # Helpers do not agree on how to spell a pacman command line. paru sends the
+  # long forms and an end-of-options marker --
+  #     pacman --upgrade --color=never --noconfirm -- /path/foo.pkg.tar.zst
+  # -- where yay sends `-U`. So this sorts every token into an allowed flag or
+  # a target and rebuilds the command line, rather than waving a matching one
+  # through: an allowlist that only knew the short spellings turned a routine
+  # AUR upgrade into "unexpected pacman flag from the AUR helper: --upgrade".
+  #
+  # Rebuilding is also what lets --noconfirm go in front of the targets. Append
+  # it to a line that already ended its options with `--` and pacman looks for
+  # a package file named "--noconfirm".
   pacman)
-    for a; do
+    op=
+    endopts=
+    args=()
+    targets=()
+    while (($#)); do
+      a=$1; shift
+      if [[ -n $endopts ]]; then targets+=("$a"); continue; fi
       case "$a" in
-        -U|-S|-Syu|-Su|-D|--asdeps|--asexplicit|--noconfirm|--needed|--color|never|always|auto) ;;
-        /*.pkg.tar.*) [[ -f $a ]] || die "not a built package: $a" ;;
+        --) endopts=1 ;;
+
+        # The three operations the helper legitimately needs: pull a repo
+        # dependency, install what it built, and mark it as a dependency.
+        -S|-Sy|-Su|-Syu|--sync)       op=$a; args+=("$a") ;;
+        -U|--upgrade)                 op=$a; args+=("$a") ;;
+        -D|--database)                op=$a; args+=("$a") ;;
+        --refresh|--sysupgrade)       args+=("$a") ;;
+
+        --asdeps|--asexplicit|--needed|--noconfirm|--noprogressbar) args+=("$a") ;;
+
+        # Values are checked, not just the flag: --ignore takes a package name
+        # and --color one of three words.
+        --color=*)  check_color "${a#*=}";   args+=("$a") ;;
+        --color)    check_color "${1-}";     args+=("$a" "$1"); shift ;;
+        --ignore=*) check_pkgname "${a#*=}"; args+=("$a") ;;
+        --ignore)   check_pkgname "${1-}";   args+=("$a" "$1"); shift ;;
+
+        # Everything else stays out, and --root/--dbpath/--config especially:
+        # each of them would let the caller point this pacman at a tree of its
+        # own choosing, which is the one thing the verb exists to prevent.
         -*) die "unexpected pacman flag from the AUR helper: $a" ;;
-        *) check_pkgname "$a" ;;
+
+        *) targets+=("$a") ;;
       esac
     done
-    exec pacman "$@" --noconfirm
+    [[ -n $op ]] || die 'no pacman operation from the AUR helper'
+    for t in ${targets[@]+"${targets[@]}"}; do
+      case "$t" in
+        /*.pkg.tar.*) [[ -f $t ]] || die "not a built package: $t" ;;
+        /*) die "not a built package: $t" ;;
+        *) check_pkgname "$t" ;;
+      esac
+    done
+    exec pacman "${args[@]}" --noconfirm -- ${targets[@]+"${targets[@]}"}
     ;;
 
   # Non-interactive halves of pacdiff: keep mine is just removing the .pacnew,
@@ -106,6 +156,20 @@ case "$verb" in
     chmod --reference="$1.c7up-bak" -- "$1"
     chown --reference="$1.c7up-bak" -- "$1"
     rm -f -- "$1.c7up-bak" "$1.pacnew"
+    ;;
+
+  # The post-update task arch-update offers and the shell never showed. Root
+  # re-derives the orphan list rather than trusting the argv it was handed: an
+  # argument is a wish, `pacman -Qtdq` is the fact, and -Rns on a package
+  # something still depends on takes that something with it.
+  remove-orphans)
+    (($# > 0)) || die 'no package named'
+    orphans=$(pacman -Qtdq) || true
+    for pkg; do
+      check_pkgname "$pkg"
+      grep -qxF -- "$pkg" <<<"$orphans" || die "not an orphan package: $pkg"
+    done
+    exec pacman -Rns --noconfirm --color never -- "$@"
     ;;
 
   restart-services)
