@@ -24,4 +24,20 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/c7shell/c7up-root</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
   </action>
+  <!-- The power page's three privileged writes: the charge limit, the lid
+       action, and enabling tuned.service. Same shape as the update action -
+       one program, a fixed verb, named here by absolute path. auth_admin_keep
+       so dragging the charge-limit slider does not prompt on every step. -->
+  <action id="io.crimson7.c7shell.power">
+    <description>Change system power settings</description>
+    <message>Authentication is required to change system power settings</message>
+    <icon_name>battery</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/c7shell/c7power-root</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
 </policyconfig>
