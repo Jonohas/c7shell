@@ -4,7 +4,9 @@ import Quickshell.Hyprland
 import QtQuick
 
 // Tracks portal screencast sessions via Hyprland's socket2 `screencast`
-// event ("state,owner", one event per session start/stop).
+// event ("state,owner"). Note the event is not a session lifecycle signal --
+// Hyprland derives it from each screencopy client's recent frame rate, so a
+// live session toggles it off and on again whenever the frames slow down.
 Singleton {
   id: root
 
@@ -18,17 +20,32 @@ Singleton {
   property bool active: false
 
   Timer {
-    id: debounce
+    id: rise
     interval: 400
     onTriggered: root.active = root.sessions > 0
   }
 
+  // The event is a frame-rate heuristic, not a session state: Hyprland samples
+  // each screencopy client twice a second and posts "0" whenever it took fewer
+  // than a handful of frames in that window. A shared window on a workspace
+  // nobody is looking at stops repainting and trips that constantly, so the
+  // falling edge is held well past the sampling window -- clearing `active` on
+  // the spot is what made the indicator flicker. The cost is an icon that
+  // lingers a couple of seconds after a share really ends; for an indicator
+  // that is the right way round.
+  Timer {
+    id: fall
+    interval: 3000
+    onTriggered: root.active = false
+  }
+
   onSessionsChanged: {
     if (sessions === 0) {
-      debounce.stop()
-      active = false
-    } else if (!active) {
-      debounce.restart()
+      rise.stop()
+      if (active) fall.restart()
+    } else {
+      fall.stop()
+      if (!active) rise.restart()
     }
   }
 
@@ -47,5 +64,8 @@ Singleton {
     Quickshell.execDetached(["systemctl", "--user", "restart",
       "xdg-desktop-portal-hyprland.service"])
     root.sessions = 0
+    // Asked for explicitly: no reason to sit through the flicker hold-off.
+    fall.stop()
+    root.active = false
   }
 }
