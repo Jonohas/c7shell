@@ -37,6 +37,13 @@ Singleton {
   // pip cannot.
   readonly property string workspaceIndicator: root.values.workspaceIndicator
 
+  // -- media pill --
+  // "full" is the art · bars · title pill; "compact" drops the art and title
+  // to leave only the eq bars, so the bar says "something is playing" and no
+  // more -- the title, cover and transport live in the popover card either way.
+  // Default is "full" so an upgrade does not shrink anyone's pill.
+  readonly property string mediaPillStyle: root.values.mediaPillStyle
+
   // -- battery widget --
   // Percentage and wattage are independent on purpose: the number without the
   // draw and the draw without the number are both reasonable bars.
@@ -76,6 +83,7 @@ Singleton {
 
       property string islandStyle: "bar"
       property string workspaceIndicator: "dice"
+      property string mediaPillStyle: "full"
 
       property bool batteryPercentage: true
       property bool batteryWattage: false
