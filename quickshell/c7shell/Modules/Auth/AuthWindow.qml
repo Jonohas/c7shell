@@ -21,9 +21,31 @@ PanelWindow {
   id: win
 
   visible: AuthService.active
-  screen: Quickshell.screens.find(s => s.name === Hyprland.focusedMonitor?.name) ?? null
+  // Never resolve to null -- the same rule, and the same reason, as
+  // Modules/Capture/CaptureOverlay.qml: the name match fails whenever
+  // Hyprland's monitor list and Quickshell's screen list disagree, which they
+  // do after a hotplug (a reconnected output can come back as DP-3 instead of
+  // DP-4, and a config reload does not resync them). A null screen means the
+  // window cannot map while `visible` still goes true, and for THIS window that
+  // is the worst of the three: a live PAM conversation with no prompt on screen
+  // to answer or cancel it, until the shell is restarted as a process.
+  screen: Quickshell.screens.find(s => s.name === Hyprland.focusedMonitor?.name)
+    ?? Quickshell.screens[0]
+    ?? null
 
   anchors { top: true; bottom: true; left: true; right: true }
+  // Ignore, not a zero zone. A zero zone reserves nothing but still RESPECTS
+  // the bar's own reservation, so the surface started Theme.barMarginTop +
+  // Theme.barHeight down the screen and the 45% backdrop below stopped short of
+  // the bar: a modal holding an EXCLUSIVE keyboard grab, with the bar left
+  // undimmed -- and still clickable -- above it. Same correction, same reason,
+  // as CaptureOverlay.
+  //
+  // Not a fixed number, which is why it is not written as one: barMarginTop is
+  // a slider on the topbar settings page (0..32 over a 38px bar), so the strip
+  // this window used to miss was anywhere from 38 to 70px tall, and it moved
+  // live while that slider was dragged.
+  exclusionMode: ExclusionMode.Ignore
   exclusiveZone: 0
   color: "transparent"
 
