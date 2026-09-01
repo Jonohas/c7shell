@@ -32,6 +32,11 @@ Singleton {
   readonly property int total: root.sources.reduce((n, s) => n + s.items.length, 0)
   readonly property real size: root.verdict?.size ?? 0
   readonly property bool clean: root.verdict?.clean ?? true
+  // Whether there is a verdict at all. Not the same as "nothing pending": at
+  // startup, and in the seconds after a run, the counts above are zero because
+  // nothing has been counted yet, and a view that reads them as "up to date"
+  // states something it does not know.
+  readonly property bool hasVerdict: root.verdict !== null
   readonly property bool rebootPredicted: root.verdict?.reboot ?? false
   readonly property double checkedAt: root.verdict?.checked ?? 0
   property bool checking: false
@@ -121,7 +126,10 @@ Singleton {
 
   // ---------------------------------------------------------------- refresh --
   function refresh() {
-    if (root.checking || root.running) return
+    // Guarded on the process, not on `checking`: the end of a run sets
+    // `checking` itself, before the dry run it is announcing has started.
+    if (verdictProc.running || root.running) return
+    refreshAfterRun.stop()
     root.checking = true
     root.checkError = ""
     verdictProc.running = true
@@ -285,7 +293,15 @@ Singleton {
       // put them. A clean run that produced configs to review does NOT open
       // anything -- it escalates the toast, and the toast offers the wizard.
       if (root.result.ok !== true && !root.result.aborted) root.openWizard("failure")
-      // The counts the bar shows are stale until the next dry run.
+      // The verdict describes the machine as it was *before* this run: every
+      // package in it has just been installed. Left standing until the next dry
+      // run lands, the bar keeps its count and the dropdown re-opens on the
+      // list it just finished applying. Dropped here, and `checking` raised
+      // now rather than when the process starts, so the seconds in between
+      // read as "checking…" instead of as a pending update.
+      root.verdict = null
+      root.checking = true
+      root.checkError = ""
       refreshAfterRun.restart()
     }
   }
