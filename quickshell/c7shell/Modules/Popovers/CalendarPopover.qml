@@ -54,6 +54,124 @@ GlassPopover {
     }
   }
 
+  // Now-playing card — only in "compact" media style, where the clock pill is
+  // the media signal and this dropdown is where the title, art and transport
+  // live. In "full" style the standalone MediaPill and its own popover carry
+  // all this, so the card would be a duplicate and stays hidden.
+  Rectangle {
+    width: parent.width
+    visible: ShellStore.mediaPillStyle === "compact" && MprisService.hasPlayer
+    implicitHeight: 30 + 20
+    radius: Theme.radiusRow
+    color: Theme.surface04
+    border.width: 1
+    border.color: Theme.hairline
+
+    Row {
+      anchors { fill: parent; margins: 10 }
+      spacing: 10
+
+      Rectangle {
+        id: cardArt
+        anchors.verticalCenter: parent.verticalCenter
+        width: 30; height: 30
+        radius: 6
+        color: Theme.surface07
+        clip: true
+
+        Icon {
+          anchors.centerIn: parent
+          name: "music"
+          size: 13
+          tint: Theme.text3
+        }
+        Image {
+          anchors.fill: parent
+          source: MprisService.artUrl
+          fillMode: Image.PreserveAspectCrop
+          visible: status === Image.Ready
+          asynchronous: true
+          sourceSize: Qt.size(60, 60)
+        }
+      }
+
+      Column {
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width - cardArt.width - transport.width - parent.spacing * 2
+        spacing: 2
+
+        Text {
+          width: parent.width
+          elide: Text.ElideRight
+          text: MprisService.title || MprisService.identity
+          font { family: Theme.fontMono; pixelSize: 11; weight: 600 }
+          color: Theme.text
+        }
+        Text {
+          width: parent.width
+          elide: Text.ElideRight
+          text: MprisService.artist || MprisService.identity.toLowerCase()
+          font { family: Theme.fontMono; pixelSize: 9; weight: 400 }
+          color: Theme.text3
+        }
+      }
+
+      Row {
+        id: transport
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 4
+
+        CardButton {
+          icon: "skip-back"
+          enabled: MprisService.canGoPrevious
+          onTriggered: MprisService.previous()
+        }
+        CardButton {
+          icon: MprisService.playing ? "pause" : "play"
+          accent: true
+          enabled: MprisService.canTogglePlaying
+          onTriggered: MprisService.playPause()
+        }
+        CardButton {
+          icon: "skip-forward"
+          enabled: MprisService.canGoNext
+          onTriggered: MprisService.next()
+        }
+      }
+    }
+  }
+
+  // 14px glyph in a 26px hit target, the same sizing MediaPopover's transport
+  // uses; the play glyph takes the accent tone, the skip glyphs the quiet one.
+  component CardButton: Item {
+    id: button
+
+    property string icon
+    property bool accent: false
+    signal triggered()
+
+    implicitWidth: 26
+    implicitHeight: 26
+    opacity: button.enabled ? 1 : 0.35
+
+    Icon {
+      anchors.centerIn: parent
+      name: button.icon
+      size: 14
+      tint: button.accent ? Theme.accentSoft
+        : buttonMouse.containsMouse ? Theme.text
+        : Theme.text2
+    }
+
+    MouseArea {
+      id: buttonMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      enabled: button.enabled
+      onClicked: button.triggered()
+    }
+  }
+
   MonthGrid {
     id: month
     width: parent.width

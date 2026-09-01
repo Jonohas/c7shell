@@ -77,6 +77,24 @@ SettingsPage {
 
       SettingsListRow {
         width: parent.width
+        title: "media pill"
+        subtitle: ShellStore.mediaPillStyle === "compact"
+          ? "just the eq bars — title, art and controls live in the popover"
+          : "art, eq bars and track title in the bar"
+
+        Segmented {
+          anchors.verticalCenter: parent.verticalCenter
+          options: [
+            { value: "full", label: "full" },
+            { value: "compact", label: "compact" }
+          ]
+          value: ShellStore.mediaPillStyle
+          onPicked: v => ShellStore.values.mediaPillStyle = v
+        }
+      }
+
+      SettingsListRow {
+        width: parent.width
         title: "global menu"
         // Not a decoration: turning this off gives the menus BACK to the app,
         // and an app that is already open keeps whatever it decided when its

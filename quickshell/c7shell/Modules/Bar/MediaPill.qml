@@ -20,7 +20,10 @@ Rectangle {
   // pill's highlight, not MediaPopover's identity.
   property bool active: false
 
-  visible: MprisService.hasPlayer
+  // Hidden with no player, and hidden wholesale in "compact" media style: there
+  // the "something is playing" signal lives in the clock pill (the dynamic
+  // island) instead, and the title/art/transport move to the calendar card.
+  visible: MprisService.hasPlayer && ShellStore.mediaPillStyle !== "compact"
 
   implicitWidth: content.implicitWidth + 24   // 12px horizontal padding each side
   implicitHeight: Theme.pillHeight
