@@ -89,12 +89,24 @@ Scope {
 
     visible: root.open
     // Follow the focused monitor so super+space opens where the user is
-    // looking, from any workspace.
-    screen: Quickshell.screens.find(s => s.name === Hyprland.focusedMonitor?.name) ?? null
+    // looking, from any workspace. Falling back to the first screen rather than
+    // to null for the reason CaptureOverlay.qml spells out: after a hotplug the
+    // name match can fail, and a null screen is a window that cannot map while
+    // `open` still goes true -- super+space then does nothing at all. Opening on
+    // the wrong output is recoverable; opening on none is not.
+    screen: Quickshell.screens.find(s => s.name === Hyprland.focusedMonitor?.name)
+      ?? Quickshell.screens[0]
+      ?? null
 
     // Full-screen: it costs nothing while hidden and gives outside-click
     // dismissal for free. Nothing is reserved from the layout.
+    //
+    // Ignore, not a zero zone: a zero zone reserves nothing but still RESPECTS
+    // the bar's reservation, so this window was 48px shorter than the screen
+    // (Theme.barMarginTop + Theme.barHeight) and the panel's `centerIn: parent`
+    // put it 24px below true centre. See CaptureOverlay for the same fix.
     anchors { top: true; bottom: true; left: true; right: true }
+    exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
     color: "transparent"
 
