@@ -7,6 +7,7 @@ set -euo pipefail
 share=${C7SHELL_SHARE:-/usr/share/c7shell}
 conf=${XDG_CONFIG_HOME:-$HOME/.config}
 state=${C7SHELL_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/c7shell}
+data=${XDG_DATA_HOME:-$HOME/.local/share}/c7shell
 parts=(hypr quickshell/c7shell xdg-desktop-portal)
 force=0
 dry=0
@@ -22,6 +23,7 @@ usage: c7shell-setup [--force] [--dry-run]
 
 env: C7SHELL_SHARE (default /usr/share/c7shell)
      XDG_CONFIG_HOME  (default \$HOME/.config)
+     XDG_DATA_HOME    (default \$HOME/.local/share)
      C7SHELL_STATE    (default \$XDG_STATE_HOME/c7shell)
 
 exit: 0 all parts installed, 3 nothing done because a target already exists
@@ -97,6 +99,14 @@ if [[ -f $exporter ]] && command -v python3 >/dev/null; then
   fi
 fi
 
+# The launcher's "actions" provider lists every executable directly in here as
+# a runnable row. It lives under the data dir rather than in the config copy
+# because --force moves the whole config tree aside, which would take a user's
+# scripts with it. Create it empty so there is somewhere obvious to drop one:
+# an absent directory just yields no rows and no explanation.
+printf 'creating %s   (drop executable scripts here to get launcher rows)\n' "$data/scripts"
+run mkdir -p -- "$data/scripts"
+
 # Record the hash of every file as installed. c7shell-upgrade compares against
 # this to tell "you edited it" from "it is just an old copy" -- without it, a
 # later upgrade has to assume every difference is a local edit and can only
@@ -144,6 +154,8 @@ Notes:
     `qs -c c7shell` and leaves any other ~/.config/quickshell config alone.
   - ~/.config/hypr/appearance.json is written by the settings app on first
     change; until then the defaults in conf/appearance.lua apply.
+  - Executables in ~/.local/share/c7shell/scripts show up in the launcher
+    under the "actions" provider.
   - Logitech thumb-button gestures expect ~/.config/solaar/rules.yaml, which
     is yours to write; the autostart entry is harmless without it.
 MSG

@@ -16,6 +16,7 @@ conf=${XDG_CONFIG_HOME:-$HOME/.config}
 # installing anything.
 root=${C7SHELL_ROOT:-}
 share=${C7SHELL_SHARE:-/usr/share/c7shell}
+data=${XDG_DATA_HOME:-$HOME/.local/share}/c7shell
 fix=0
 quiet=0
 pending=0
@@ -619,6 +620,17 @@ if command -v c7-authd >/dev/null && [[ -f $autostart ]] \
    && grep -q 'hyprpolkitagent' "$autostart"; then
   note "$autostart still starts hyprpolkitagent, so it will keep drawing the"
   note 'password prompts. c7shell-upgrade --config-only replaces that file.'
+fi
+
+# The launcher's "actions" provider scans this one directory and shows nothing
+# at all when it is missing, so a user who put a script somewhere else gets no
+# error to explain the empty result. c7shell-setup creates it; a machine set up
+# before that just needs the mkdir.
+if [[ -d $data/scripts ]]; then
+  ok "$data/scripts   (launcher \"actions\" scripts)"
+else
+  note "$data/scripts does not exist, so the launcher's \"actions\" provider"
+  note 'lists no user scripts. create it:  mkdir -p '"$data/scripts"
 fi
 
 if [[ -d $share ]]; then

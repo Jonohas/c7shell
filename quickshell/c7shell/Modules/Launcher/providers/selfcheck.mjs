@@ -59,7 +59,7 @@ assert.ok(Search.isPrefixIntent("s", "settings", 1), "floor is overridable");
 assert.equal(Search.initials("Firefox"), "fi");
 assert.equal(Search.initials("Files (Nautilus)"), "fn");
 assert.equal(Search.initials("firewall-reload"), "fr");
-assert.equal(Search.initials("~/.config/qs/scripts"), "cq");
+assert.equal(Search.initials("~/.local/share/c7shell/scripts"), "ls");
 assert.equal(Search.initials("   "), "??", "no crash on junk");
 
 console.log("launcher selfcheck: ok");
