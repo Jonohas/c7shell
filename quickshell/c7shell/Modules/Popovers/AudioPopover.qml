@@ -59,7 +59,7 @@ GlassPopover {
     }
   }
 
-  SectionLabel { text: "devices" }
+  SectionLabel { text: "output" }
 
   Column {
     width: parent.width
@@ -79,6 +79,14 @@ GlassPopover {
         onPicked: Pipewire.preferredDefaultAudioSink = modelData
       }
     }
+  }
+
+  SectionLabel { text: "input" }
+
+  Column {
+    width: parent.width
+    spacing: 5
+
     Repeater {
       model: Pipewire.nodes
       DeviceRow {
