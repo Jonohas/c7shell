@@ -47,6 +47,9 @@ GlassPopover {
     }
     Text {
       anchors { left: title.right; leftMargin: 7; baseline: title.baseline }
+      // Hidden rather than zero while there is no verdict: a "0" beside the
+      // title is an answer, and during a check there isn't one yet.
+      visible: UpdatesService.hasVerdict
       text: `${UpdatesService.total}`
       font { family: Theme.fontMono; pixelSize: 12; weight: 600 }
       color: Theme.accentSoft
@@ -87,7 +90,8 @@ GlassPopover {
   Column {
     width: parent.width
     spacing: 2
-    visible: !root.runningHere && UpdatesService.clean && UpdatesService.checkError === ""
+    visible: !root.runningHere && UpdatesService.hasVerdict
+             && UpdatesService.clean && UpdatesService.checkError === ""
 
     Text {
       text: UpdatesService.total > 0 ? "nothing needs a decision" : "up to date"
@@ -103,7 +107,7 @@ GlassPopover {
   }
 
   DecisionStrip {
-    visible: !root.runningHere && !UpdatesService.clean
+    visible: !root.runningHere && UpdatesService.hasVerdict && !UpdatesService.clean
     decisions: UpdatesService.decisions
   }
 
@@ -154,10 +158,22 @@ GlassPopover {
     }
   }
 
+  // No verdict yet -- at startup, and in the seconds after a run while the
+  // dry run catches up. Says so rather than showing the previous answer or
+  // claiming the machine is current before anything has looked.
+  Text {
+    width: parent.width
+    visible: !root.runningHere && !UpdatesService.hasVerdict
+             && UpdatesService.checkError === ""
+    text: "checking for updates…"
+    font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+    color: Theme.textDisabled
+  }
+
   // Nothing pending, and nothing parked either.
   Text {
     width: parent.width
-    visible: !root.runningHere && UpdatesService.total === 0
+    visible: !root.runningHere && UpdatesService.hasVerdict && UpdatesService.total === 0
              && UpdatesService.pacnews.length === 0
              && UpdatesService.orphans.length === 0
     text: "everything is current"

@@ -77,7 +77,10 @@ Rectangle {
 
       Text {
         anchors.verticalCenter: parent.verticalCenter
-        visible: !UpdatesService.running
+        // The count only, never a "0": the slot also stands for a parked
+        // pacnew and for the seconds after a run when nothing has been
+        // counted yet, and in both the icon alone is the honest badge.
+        visible: !UpdatesService.running && UpdatesService.total > 0
         text: `${UpdatesService.total}`
         font { family: Theme.fontMono; pixelSize: 10; weight: 600 }
         color: UpdatesService.kernelPending ? Theme.accentSoft : Theme.text3
