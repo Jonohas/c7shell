@@ -1,55 +1,46 @@
 import QtQuick
-import QtQuick.Effects
 import qs.Theme
 import qs.Services
 
-// Replaces ClockPill while recording (mockup 5b): solid crimson pill with
-// elapsed time and stop. The ONLY topbar change during recording.
+// The recording section inside the clock pill (mockup 5b): crimson dot, elapsed
+// time and stop drawn on the pill's own background, shown right of the time
+// behind a divider while recording. The clock, media and tray all stay put.
 // The mockup's pause control is dropped: wf-recorder has no pause signal
 // (SIGINT/SIGTERM/SIGHUP all end the recording), so showing ⏸ would lie.
-Rectangle {
+Item {
   id: root
-  implicitWidth: content.implicitWidth + 28   // content tuning, not a token
+  implicitWidth: content.implicitWidth
   implicitHeight: Theme.pillHeight
-  radius: Theme.pillRadius
-  color: Theme.alpha(Theme.accent, 0.85)
-
-  RectangularShadow {   // crimson glow, spec 5b
-    anchors.fill: parent
-    radius: root.radius
-    color: Theme.accentGlow
-    offset: Qt.vector2d(0, 0)
-    blur: 12
-    z: -1
-  }
 
   Row {
     id: content
     anchors.centerIn: parent
     spacing: 10
 
-    Rectangle {   // live dot
+    Rectangle {   // live dot, pulsing to read as "recording"
       anchors.verticalCenter: parent.verticalCenter
       width: 6; height: 6; radius: 3
-      color: Theme.text
+      color: Theme.accentSoft
+
+      SequentialAnimation on opacity {
+        running: true
+        loops: Animation.Infinite
+        NumberAnimation { to: 0.25; duration: 700; easing.type: Easing.InOutSine }
+        NumberAnimation { to: 1; duration: 700; easing.type: Easing.InOutSine }
+      }
     }
     Text {
       anchors.verticalCenter: parent.verticalCenter
       text: RecordingService.elapsedText
       font { family: Theme.fontMono; pixelSize: 12; weight: 700 }
-      color: Theme.text
-    }
-    Rectangle {
-      anchors.verticalCenter: parent.verticalCenter
-      width: 1; height: 12
-      color: Theme.alpha(Theme.text, 0.35)
+      color: Theme.accentSoft
     }
     // Stop is DRAWN, not a glyph: JetBrains Mono has no ■, so Text fell back
     // to the emoji font and ignored colour and opacity.
     Rectangle {
       anchors.verticalCenter: parent.verticalCenter
       width: 8; height: 8; radius: 1
-      color: Theme.text
+      color: Theme.accentSoft
       MouseArea { anchors.fill: parent; anchors.margins: -4; onClicked: RecordingService.stop() }
     }
   }
