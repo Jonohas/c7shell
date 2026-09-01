@@ -9,7 +9,7 @@
 local json = require("conf/json")
 
 local defaults = {
-    theme = "dark", accent = "#e53a44", fromWallpaper = false,
+    theme = "dark", accent = "#e53a44",
     rounding = 19, gapsIn = 3, gapsOut = 12,
     blurSize = 8, blurPasses = 3, inactiveOpacity = 1.0,
     borderWidth = 2, animationsEnabled = true, animationSpeed = 1.0,

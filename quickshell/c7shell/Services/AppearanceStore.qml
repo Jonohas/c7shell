@@ -30,7 +30,6 @@ Singleton {
   // or browser window comes up wearing.
   readonly property string colorScheme: ["dark", "light"].includes(root.values.colorScheme) ? root.values.colorScheme : "dark"
   readonly property color accent: /^#[0-9a-fA-F]{6}$/.test(root.values.accent) ? root.values.accent : "#e53a44"
-  readonly property bool fromWallpaper: root.values.fromWallpaper
 
   readonly property int rounding: root.clamp(root.values.rounding, 0, 40)
   readonly property int gapsIn: root.clamp(root.values.gapsIn, 0, 40)
@@ -92,7 +91,6 @@ Singleton {
       property string theme: "dark"
       property string colorScheme: "dark"
       property string accent: "#e53a44"
-      property bool fromWallpaper: false
       property int rounding: 19
       property int gapsIn: 3
       property int gapsOut: 12
