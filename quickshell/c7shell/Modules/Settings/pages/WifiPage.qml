@@ -53,7 +53,7 @@ SettingsPage {
       }
     }
 
-    SettingsRow {
+    ListRow {
       width: parent.width
       visible: NetworkService.connected !== null
       active: true
@@ -86,7 +86,7 @@ SettingsPage {
     // through rfkill, which is also what the laptop's own airplane key throws.
     // So this row and the Fn key mean the same thing, and unlike the wi-fi
     // toggle above it can undo a block the key made.
-    SettingsRow {
+    ListRow {
       width: parent.width
       visible: AirplaneService.hasWifi || AirplaneService.hasBt
       hoverable: false
@@ -172,7 +172,7 @@ SettingsPage {
 
     required property var network
 
-    SettingsRow {
+    ListRow {
       id: line
 
       width: row.width

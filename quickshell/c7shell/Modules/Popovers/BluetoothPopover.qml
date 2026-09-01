@@ -55,7 +55,7 @@ GlassPopover {
         device: modelData
         visible: modelData.connected
         // Matching the mock: the first card carries the crimson tint.
-        highlighted: BluetoothService.connectedDevices.length > 0
+        active: BluetoothService.connectedDevices.length > 0
           && BluetoothService.connectedDevices[0] === modelData
       }
     }
@@ -121,61 +121,34 @@ GlassPopover {
     onRightClicked: { PopoverManager.close(); SettingsService.open("bluetooth") }
   }
 
-  component DeviceCard: Rectangle {
+  component DeviceCard: ListRow {
     id: card
 
     required property var device
-    property bool highlighted: false
 
     readonly property int battery: BluetoothService.batteryPercent(card.device)
 
     implicitHeight: 46
     radius: Theme.radiusRow
-    color: card.highlighted ? Theme.accentFill : Theme.surface04
-    border.width: 1
-    border.color: card.highlighted ? Theme.accentBorder : Theme.hairline
+    // A card, not a list row: it keeps its surface whether or not it is the
+    // tinted one.
+    filled: true
+    subtitleColor: Theme.alpha(Theme.text, 0.5)
+    leadingSize: 13
+    title: BluetoothService.label(card.device)
+    subtitle: BluetoothService.subtitle(card.device)
 
-    MouseArea {
-      anchors.fill: parent
-      onClicked: BluetoothService.activate(card.device)
-    }
+    onClicked: BluetoothService.activate(card.device)
 
-    Icon {
-      id: glyph
-      anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
+    leading: Icon {
       name: "bluetooth"
       size: 13
-      tint: card.highlighted ? Theme.accentSoft : Theme.alpha(Theme.text, 0.6)
-    }
-
-    Column {
-      anchors {
-        left: glyph.right; leftMargin: 11
-        right: batteryBox.left; rightMargin: 8
-        verticalCenter: parent.verticalCenter
-      }
-      spacing: 2
-
-      Text {
-        width: parent.width
-        text: BluetoothService.label(card.device)
-        font { family: Theme.fontMono; pixelSize: 12; weight: 600 }
-        color: card.highlighted ? Theme.text : Theme.alpha(Theme.text, 0.85)
-        elide: Text.ElideRight
-      }
-      Text {
-        width: parent.width
-        text: BluetoothService.subtitle(card.device)
-        font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-        color: Theme.alpha(Theme.text, 0.5)
-        elide: Text.ElideRight
-      }
+      tint: card.active ? Theme.accentSoft : Theme.alpha(Theme.text, 0.6)
     }
 
     // "▮ 80%" — U+25AE is not in JetBrains Mono, so the bar is drawn.
     Row {
-      id: batteryBox
-      anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
+      anchors.verticalCenter: parent.verticalCenter
       spacing: 5
       visible: card.battery >= 0
 
@@ -184,18 +157,18 @@ GlassPopover {
         width: 4
         height: 9
         radius: 1
-        color: card.highlighted ? Theme.accentSoft : Theme.alpha(Theme.text, 0.45)
+        color: card.active ? Theme.accentSoft : Theme.alpha(Theme.text, 0.45)
       }
       Text {
         anchors.verticalCenter: parent.verticalCenter
         text: `${card.battery}%`
         font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
-        color: card.highlighted ? Theme.accentSoft : Theme.alpha(Theme.text, 0.45)
+        color: card.active ? Theme.accentSoft : Theme.alpha(Theme.text, 0.45)
       }
     }
   }
 
-  component NearbyRow: Rectangle {
+  component NearbyRow: ListRow {
     id: near
 
     required property var device
@@ -205,31 +178,16 @@ GlassPopover {
     readonly property string error: BluetoothService.pairError(near.device)
 
     implicitHeight: list.rowHeight
-    radius: Theme.radiusTile
-    color: nearMouse.containsMouse ? Theme.surface04 : "transparent"
+    inset: 10
+    titleSize: 11
+    titleWeight: 500
+    titleColor: Theme.alpha(Theme.text, near.anonymous ? 0.5 : 0.8)
+    title: BluetoothService.label(near.device)
 
-    MouseArea {
-      id: nearMouse
-      anchors.fill: parent
-      hoverEnabled: true
-      onClicked: BluetoothService.activate(near.device)
-    }
+    onClicked: BluetoothService.activate(near.device)
 
     Text {
-      anchors {
-        left: parent.left; leftMargin: 10
-        right: action.left; rightMargin: 8
-        verticalCenter: parent.verticalCenter
-      }
-      text: BluetoothService.label(near.device)
-      font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
-      color: Theme.alpha(Theme.text, near.anonymous ? 0.5 : 0.8)
-      elide: Text.ElideRight
-    }
-
-    Text {
-      id: action
-      anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+      anchors.verticalCenter: parent.verticalCenter
       text: near.error !== "" ? near.error
         : near.device.pairing ? "pairing…"
         : near.device.paired || near.device.bonded ? "connect"

@@ -76,7 +76,7 @@ GlassPopover {
         node: modelData
         visible: !modelData.isStream && modelData.audio && modelData.isSink
         active: modelData === AudioService.output
-        onPicked: Pipewire.preferredDefaultAudioSink = modelData
+        onClicked: Pipewire.preferredDefaultAudioSink = modelData
       }
     }
     Repeater {
@@ -87,7 +87,7 @@ GlassPopover {
         node: modelData
         visible: !modelData.isStream && modelData.audio && !modelData.isSink
         active: modelData === AudioService.input
-        onPicked: Pipewire.preferredDefaultAudioSource = modelData
+        onClicked: Pipewire.preferredDefaultAudioSource = modelData
       }
     }
   }
@@ -121,45 +121,28 @@ GlassPopover {
 
   // -- delegates ------------------------------------------------------------
 
-  component DeviceRow: Rectangle {
+  component DeviceRow: ListRow {
     id: device
 
     required property var node
-    required property bool active
-    signal picked()
 
     implicitHeight: 28
-    radius: Theme.radiusTile
-    color: device.active ? Theme.accentFillSoft : (deviceMouse.containsMouse ? Theme.surface04 : "transparent")
-    border.width: device.active ? 1 : 0
-    border.color: Theme.accentBorderSoft
+    inset: 10
+    leadingSize: 6
+    titleSize: 11
+    titleWeight: 500
+    // A softer crimson than a page row's: an output and an input are current
+    // at once here, and two full-strength fills in one list fight.
+    softAccent: true
+    titleColor: device.active ? Theme.text : Theme.alpha(Theme.text, 0.7)
+    title: AudioService.label(device.node)
 
-    MouseArea {
-      id: deviceMouse
-      anchors.fill: parent
-      hoverEnabled: true
-      onClicked: device.picked()
-    }
-
-    Rectangle {
-      anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
+    // The 6px crimson dot the mock marks the current device with.
+    leading: Rectangle {
       width: 6
       height: 6
       radius: 3
       color: device.active ? Theme.accent : Theme.alpha(Theme.text, 0.2)
     }
-
-    Text {
-      anchors {
-        left: parent.left; leftMargin: 26
-        right: parent.right; rightMargin: 10
-        verticalCenter: parent.verticalCenter
-      }
-      text: AudioService.label(device.node)
-      font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
-      color: device.active ? Theme.text : Theme.alpha(Theme.text, 0.7)
-      elide: Text.ElideRight
-    }
   }
-
 }

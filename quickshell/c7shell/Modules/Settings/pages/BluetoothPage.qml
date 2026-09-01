@@ -110,7 +110,7 @@ SettingsPage {
     }
   }
 
-  component DeviceRow: SettingsRow {
+  component DeviceRow: ListRow {
     id: row
 
     required property var device

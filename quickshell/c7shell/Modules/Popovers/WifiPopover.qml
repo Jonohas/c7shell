@@ -43,82 +43,48 @@ GlassPopover {
   }
 
   // 1i: when the wire is the primary link the popover leads with it (2a card style).
-  Rectangle {
+  ListRow {
     width: parent.width
     visible: NetworkService.primary === "ethernet"
     implicitHeight: 46
     radius: Theme.radiusRow
-    color: Theme.surface04
-    border.width: 1
-    border.color: Theme.hairline
+    filled: true
+    hoverable: false
+    inset: 14
+    leadingSize: 7
+    titleColor: Theme.text
+    subtitleColor: Theme.text2
+    title: NetworkService.ethDevice?.name ?? ""
+    subtitle: NetworkService.ip !== "" ? `connected · ${NetworkService.ip}` : "connected"
 
-    Rectangle {   // green status dot
-      anchors { left: parent.left; leftMargin: 14; verticalCenter: parent.verticalCenter }
+    leading: Rectangle {   // green status dot
       width: 7; height: 7; radius: 3.5
       color: Theme.success
-    }
-    Column {
-      anchors { left: parent.left; leftMargin: 32; verticalCenter: parent.verticalCenter }
-      spacing: 2
-      Text {
-        text: NetworkService.ethDevice?.name ?? ""
-        font { family: Theme.fontMono; pixelSize: 12; weight: 600 }
-        color: Theme.text
-      }
-      Text {
-        text: NetworkService.ip !== "" ? `connected · ${NetworkService.ip}` : "connected"
-        font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-        color: Theme.text2
-      }
     }
   }
 
   // -- the link you are on --------------------------------------------------
-  Rectangle {
+  ListRow {
     width: parent.width
     visible: NetworkService.connected !== null
     implicitHeight: 46
     radius: Theme.radiusRow
-    color: Theme.accentFill
-    border.width: 1
-    border.color: Theme.accentBorder
+    active: true
+    hoverable: false
+    leadingSize: 15
+    subtitleColor: Theme.alpha(Theme.text, 0.5)
+    title: NetworkService.connected?.name ?? ""
+    subtitle: `connected · ${NetworkService.securityLabel(NetworkService.connected)}`
+      + (NetworkService.primary === "wifi" && NetworkService.ip !== "" ? ` · ${NetworkService.ip}` : "")
 
-    SignalArcs {
-      id: joinedIcon
-      anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
+    leading: SignalArcs {
       size: 15
       tint: Theme.accentSoft
       strength: NetworkService.connected?.signalStrength ?? 0
     }
 
-    Column {
-      anchors {
-        left: joinedIcon.right; leftMargin: 11
-        right: joinedDbm.left; rightMargin: 8
-        verticalCenter: parent.verticalCenter
-      }
-      spacing: 2
-
-      Text {
-        width: parent.width
-        text: NetworkService.connected?.name ?? ""
-        font { family: Theme.fontMono; pixelSize: 12; weight: 600 }
-        color: Theme.text
-        elide: Text.ElideRight
-      }
-      Text {
-        width: parent.width
-        text: `connected · ${NetworkService.securityLabel(NetworkService.connected)}`
-          + (NetworkService.primary === "wifi" && NetworkService.ip !== "" ? ` · ${NetworkService.ip}` : "")
-        font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-        color: Theme.alpha(Theme.text, 0.5)
-        elide: Text.ElideRight
-      }
-    }
-
     Text {
-      id: joinedDbm
-      anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
+      anchors.verticalCenter: parent.verticalCenter
       text: `${NetworkService.dbm(NetworkService.connected?.signalStrength ?? 0)}dBm`
       font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
       color: Theme.accentSoft
@@ -241,63 +207,39 @@ GlassPopover {
       function onOpenChanged() { if (!root.open) psk.collapse() }
     }
 
-    Rectangle {
+    ListRow {
       width: row.width
       implicitHeight: 32
-      radius: Theme.radiusTile
-      color: rowMouse.containsMouse ? Theme.surface04 : "transparent"
+      inset: 10
+      leadingSize: 14
+      titleSize: 11
+      titleWeight: 500
+      titleColor: Theme.alpha(Theme.text, 0.8)
+      title: row.network.stateChanging ? `${row.network.name} · connecting…` : row.network.name
 
-      MouseArea {
-        id: rowMouse
-        anchors.fill: parent
-        hoverEnabled: true
-        onClicked: {
-          // A network nobody has saved a key for cannot be joined by asking
-          // NetworkManager to try: that drops the association you are on and
-          // leaves a half-built autoconnect profile behind.
-          if (psk.asking) psk.focusInput()
-          else if (NetworkService.needsKey(row.network)) psk.ask()
-          else NetworkService.connect(row.network)
-        }
+      leading: SignalArcs { size: 14; strength: row.network.signalStrength }
+
+      onClicked: {
+        // A network nobody has saved a key for cannot be joined by asking
+        // NetworkManager to try: that drops the association you are on and
+        // leaves a half-built autoconnect profile behind.
+        if (psk.asking) psk.focusInput()
+        else if (NetworkService.needsKey(row.network)) psk.ask()
+        else NetworkService.connect(row.network)
       }
 
-      SignalArcs {
-        id: arcs
-        anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
-        size: 14
-        strength: row.network.signalStrength
+      Icon {
+        anchors.verticalCenter: parent.verticalCenter
+        visible: NetworkService.secured(row.network)
+        name: "lock"
+        size: 10
+        tint: Theme.alpha(Theme.text, 0.4)
       }
-
       Text {
-        anchors {
-          left: arcs.right; leftMargin: 11
-          right: trailing.left; rightMargin: 8
-          verticalCenter: parent.verticalCenter
-        }
-        text: row.network.stateChanging ? `${row.network.name} · connecting…` : row.network.name
-        font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
-        color: Theme.alpha(Theme.text, 0.8)
-        elide: Text.ElideRight
-      }
-
-      Row {
-        id: trailing
-        anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
-        spacing: 8
-
-        Icon {
-          anchors.verticalCenter: parent.verticalCenter
-          visible: NetworkService.secured(row.network)
-          name: "lock"
-          size: 10
-          tint: Theme.alpha(Theme.text, 0.4)
-        }
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: `${NetworkService.dbm(row.network.signalStrength)}`
-          font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-          color: Theme.alpha(Theme.text, 0.35)
-        }
+        anchors.verticalCenter: parent.verticalCenter
+        text: `${NetworkService.dbm(row.network.signalStrength)}`
+        font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+        color: Theme.alpha(Theme.text, 0.35)
       }
     }
 
