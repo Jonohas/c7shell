@@ -40,6 +40,63 @@ Rectangle {
     id: content
     anchors.centerIn: parent
     spacing: 10
+    // Above the fill MouseArea so the recording pill's stop button gets its
+    // clicks; the date/time carry no MouseArea, so those clicks still fall
+    // through to open the calendar.
+    z: 1
+
+    // Dynamic-island media signal: in "compact" media style the standalone
+    // MediaPill is gone, and this is the only "something is playing" cue. Three
+    // eq bars in the time-text tone, then a hairline before the date. Both hide
+    // when nothing is registered, and Row drops their spacing with them, so an
+    // idle bar is the clock alone with no gap where the bars would sit.
+    Row {
+      id: eq
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: 2
+      height: 12
+      visible: ShellStore.mediaPillStyle === "compact" && MprisService.hasPlayer
+
+      Repeater {
+        model: 3
+
+        Rectangle {
+          required property int index
+          // Anchored to the bottom, so the bar grows UP from a fixed baseline
+          // rather than out from its centre -- centre-growth reads as jitter.
+          anchors.bottom: parent.bottom
+          width: 3
+          height: 4
+          radius: 1.5
+          // Paused freezes the bars low and dims them, so the session still
+          // reads as reachable rather than stopped.
+          color: Theme.accentSoft
+          opacity: MprisService.playing ? 1 : 0.45
+
+          // One ~1s ease-in-out cycle per bar, all identical, phase-offset by a
+          // one-shot lead pause (0/0.22/0.44s) so the three read as an
+          // equalizer instead of one thick bar -- the design's dv-eq keyframes.
+          // paused (not stopped) on pause, so the bars FREEZE in place rather
+          // than snapping back to a reset height.
+          SequentialAnimation on height {
+            running: true
+            paused: !MprisService.playing
+            PauseAnimation { duration: index * 220 }
+            SequentialAnimation {
+              loops: Animation.Infinite
+              NumberAnimation { to: 12; duration: 520; easing.type: Easing.InOutSine }
+              NumberAnimation { to: 4; duration: 520; easing.type: Easing.InOutSine }
+            }
+          }
+        }
+      }
+    }
+    Rectangle {
+      anchors.verticalCenter: parent.verticalCenter
+      visible: eq.visible
+      width: 1; height: 12
+      color: Theme.hairlineStrong
+    }
 
     // Dynamic-island media signal: in "compact" media style the standalone
     // MediaPill is gone, and this is the only "something is playing" cue. Three
@@ -110,6 +167,20 @@ Rectangle {
       text: Time.hm
       font { family: Theme.fontMono; pixelSize: 12; weight: 700 }
       color: Theme.accentSoft
+    }
+
+    // Recording section: a divider then the red pill, right of the time, both
+    // shown only while recording. Row drops an invisible child's spacing, so
+    // the pill is the clock alone when idle.
+    Rectangle {
+      anchors.verticalCenter: parent.verticalCenter
+      visible: RecordingService.active
+      width: 1; height: 12
+      color: Theme.hairlineStrong
+    }
+    RecordingIsland {
+      anchors.verticalCenter: parent.verticalCenter
+      visible: RecordingService.active
     }
   }
 
