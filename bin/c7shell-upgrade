@@ -390,6 +390,21 @@ fi
 shell_config=$conf/quickshell/c7shell/shell.qml
 shell_running() { qs list --all 2>/dev/null | grep -qF "Config path: $shell_config"; }
 
+# The pids behind that, for when asking has not worked. `qs list` groups the
+# process id and the config path under one Instance block, so the id is
+# whichever one was last seen above the path we are looking for.
+shell_pids() {
+  qs list --all 2>/dev/null | awk -v cfg="  Config path: $shell_config" '
+    /^[[:space:]]*Process ID:/ { pid = $NF }
+    $0 == cfg && pid != "" { print pid; pid = "" }'
+}
+
+# Wait for `qs list` to agree with what we just did. Six seconds: a shell exits
+# in well under one and comes up in about one, and anything past that is not a
+# delay, it is the thing this waits to find out about.
+wait_gone()  { local _; for _ in $(seq 30); do shell_running || return 0; sleep 0.2; done; return 1; }
+wait_there() { local _; for _ in $(seq 30); do shell_running && return 0; sleep 0.2; done; return 1; }
+
 if ((shell_dirty)) && command -v qs >/dev/null && shell_running; then
   step 'restarting the shell'
   if ((dry)); then
@@ -398,7 +413,23 @@ if ((shell_dirty)) && command -v qs >/dev/null && shell_running; then
     qs kill -c c7shell >/dev/null 2>&1 || true
     # The relaunch is --no-duplicate, so wait for the old one to actually be
     # gone: two shells drawing the same bars is worse than one stale shell.
-    for _ in $(seq 30); do shell_running || break; sleep 0.2; done
+    #
+    # `qs kill` is a request, though, and a shell can take its windows down and
+    # then wedge on the way out -- the instance is still listed, still holding
+    # the name the relaunch needs, and the desktop it was drawing is already
+    # gone. Leaving that alone used to be the cautious branch. It is not: it is
+    # a session with no bar and no launcher until the user logs out, which is
+    # worse than either outcome the caution was weighing. So the request
+    # escalates to the process behind it.
+    if ! wait_gone; then
+      mapfile -t stuck < <(shell_pids)
+      if ((${#stuck[@]})); then
+        info "the shell has not exited -- signalling ${stuck[*]}"
+        kill -TERM "${stuck[@]}" 2>/dev/null || true
+        wait_gone || { kill -KILL "${stuck[@]}" 2>/dev/null || true; wait_gone || true; }
+      fi
+    fi
+
     if shell_running; then
       warn 'the running shell did not exit -- it is still on the old config'
       info 'restart it yourself, or log out and back in'
@@ -407,7 +438,15 @@ if ((shell_dirty)) && command -v qs >/dev/null && shell_running; then
       # only launch there is. Same command, same environment as
       # hypr/conf/autostart.lua, detached so it outlives this terminal.
       QT_WAYLAND_DISABLE_WINDOWDECORATION=1 setsid qs -c c7shell -d -n >/dev/null 2>&1 &
-      info 'restarted onto the new config'
+      # And then check, because "restarted" is the one line in this whole
+      # command the user acts on by walking away. A launch that failed and said
+      # nothing is how you find out at the next reboot that you have no shell.
+      if wait_there; then
+        info 'restarted onto the new config'
+      else
+        warn 'the new shell did not come up'
+        info 'start it yourself: qs -c c7shell -d -n'
+      fi
     fi
   fi
 fi

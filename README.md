@@ -503,10 +503,16 @@ terminal" runs it.
 `c7shell-bootstrap` installs everything this needs; nothing here is a manual
 step.
 
-Elevation goes through one polkit action (`io.crimson7.c7shell.update`,
-`auth_admin_keep`), so a single authorisation covers both the repo half and
-the AUR half of a run. `bin/c7up-root` is the trust boundary and takes a fixed
-verb — the AUR helper's install step is routed through it too, via
+Elevation goes through one polkit action (`io.crimson7.c7shell.update`), and a
+run asks for your password exactly once however long it takes. It needs root
+three times — the repo sync, the AUR helper's install of what it built, and the
+post-run service check — and those can be an hour apart, so what `pkexec`
+authorises is not a verb but `c7up-root session`: one root process that stays
+alive for the run and takes verbs down a pipe. (Three separate `pkexec` calls
+leaned on `auth_admin_keep` instead, which polkit keeps for five minutes, so
+any update longer than that asked again halfway through.) `bin/c7up-root` is
+still the trust boundary and still takes a fixed verb, one per line, through
+the same checks — the AUR helper's install step included, via
 `--sudo bin/c7up-sudo`, rather than a password prompt on a TTY the shell does
 not have.
 

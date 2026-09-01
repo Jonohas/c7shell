@@ -359,4 +359,60 @@ grep -q 'install.sh --no-bootstrap -f' <<<"$out" \
 grep -qE '^makepkg .*-[a-z]*f' "$here/../install.sh" \
   || fail 'install.sh does not pass -f to makepkg'
 
+# A shell that takes its windows down on `qs kill` and then wedges on the way
+# out is the case that left a machine with no shell at all: the instance stayed
+# listed, so the relaunch (--no-duplicate) was skipped, and the desktop it had
+# already stopped drawing never came back. The ask has to escalate to the
+# process.
+rm -f "$QS_STUB"/*
+cat > "$tmp/bin/qs" <<'QS'
+#!/bin/sh
+case "$1 $2" in
+  'list --all')
+    pid=$(cat "$QS_STUB/pid" 2>/dev/null) || exit 0
+    { [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; } || exit 0
+    printf 'Instance stub:\n  Process ID: %s\n  Config path: %s\n' \
+      "$pid" "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml"
+    ;;
+  # Asked, and ignored: the process stays alive and the instance stays listed.
+  'kill -c') printf '%s\n' "$3" > "$QS_STUB/asked" ;;
+  '-c c7shell')
+    printf '%s\n' "$*" > "$QS_STUB/launched"
+    sleep 60 & printf '%s\n' "$!" > "$QS_STUB/pid"
+    ;;
+esac
+QS
+chmod +x "$tmp/bin/qs"
+sleep 60 & wedged_pid=$!
+printf '%s\n' "$wedged_pid" > "$QS_STUB/pid"
+
+ship quickshell/c7shell/shell.qml 'v12 shell'
+out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
+[[ -e $QS_STUB/asked ]] || fail "the wedged shell was never asked to exit:\n$out"
+kill -0 "$wedged_pid" 2>/dev/null \
+  && fail "the wedged shell was left running and the desktop left with no bar:\n$out"
+grep -q -- '-d' "$QS_STUB/launched" 2>/dev/null \
+  || fail "no shell was relaunched after the wedged one was signalled:\n$out"
+grep -q 'restarted onto the new config' <<<"$out" \
+  || fail "the restart did not confirm that the new shell came up:\n$out"
+kill "$(cat "$QS_STUB/pid")" 2>/dev/null || true
+
+# And a relaunch that does not come up is said out loud rather than reported as
+# a restart: "restarted" is the line the user acts on by walking away.
+rm -f "$QS_STUB"/*
+cat > "$tmp/bin/qs" <<'QS'
+#!/bin/sh
+case "$1 $2" in
+  'list --all') [ -e "$QS_STUB/killed" ] || printf '  Config path: %s\n' "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml" ;;
+  'kill -c')    printf '%s\n' "$3" > "$QS_STUB/killed" ;;
+  '-c c7shell') printf '%s\n' "$*" > "$QS_STUB/launched" ;;   # and never comes up
+esac
+QS
+chmod +x "$tmp/bin/qs"
+ship quickshell/c7shell/shell.qml 'v13 shell'
+out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
+grep -q 'the new shell did not come up' <<<"$out" \
+  || fail "a relaunch that never came up was reported as a restart:\n$out"
+
 echo 'PASS: c7shell-upgrade'
+

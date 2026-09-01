@@ -25,7 +25,9 @@
 #   reboot             finish a pending kernel update
 #
 # Everything here runs unprivileged. The only root is bin/c7up-root, reached
-# through pkexec and the io.crimson7.c7shell.update polkit action.
+# through pkexec and the io.crimson7.c7shell.update polkit action -- once per
+# run, as a session that stays open for it, so the password is asked for once
+# however long the update takes. See root_open.
 set -uo pipefail
 
 # Overridable only so tests/test-c7up.sh can point the run at stubs. This is
@@ -104,7 +106,10 @@ make_tmpdb() {
   ((rc == 0 || rc == 2)) || return 1
   return 0
 }
-cleanup() { [[ -n $tmpdb && -d $tmpdb ]] && rm -rf "$tmpdb"; }
+cleanup() {
+  [[ -n $tmpdb && -d $tmpdb ]] && rm -rf "$tmpdb"
+  root_close
+}
 trap cleanup EXIT
 
 # "name old new" -> one JSON object, splitting on checkupdates' "old -> new".
@@ -286,6 +291,100 @@ do_verdict() {
     "$clean" "$checked" "$size" "$reboot" "$pac_json" "$aur_json" "$fp_json" "$dec_json" "$orphan_json")"
 }
 
+# ---------------------------------------------------------- root session ----
+# One authorisation for one run.
+#
+# A run needs root at three moments that can be many minutes apart: the repo
+# sync, the AUR helper's install of what it built, and the post-run service
+# check. Each of those used to be its own `pkexec c7up-root <verb>`, and the
+# action's auth_admin_keep was what kept them to a single password prompt --
+# for the five minutes polkit hardcodes. A full update is routinely longer than
+# that, and past it the prompt came back mid-run, which is the one thing this
+# flow exists not to do.
+#
+# So the program pkexec authorises is not a verb any more, it is c7up-root's
+# session loop: it stays alive for the length of the run and takes the same
+# fixed verbs, one per line, tab-separated, down a fifo.
+#
+# What root will do is unchanged -- the same verbs, through the same checks in
+# bin/c7up-root. What changes is *when*: for as long as the run lasts, anything
+# that can write to that fifo can ask for them. The fifos are 0600 inside a
+# directory of our own under $XDG_RUNTIME_DIR, which is 0700 and the user's, so
+# "anything" is this user's own processes -- who could equally have waited out
+# a keep window, or answered the prompt.
+readonly root_mark=$'\036'   # ends a response; no line of pacman output has it
+root_dir='' root_pid='' root_w='' root_r=''
+
+# The fifo is opened read-write on our side deliberately: a plain `>` on a fifo
+# blocks until someone opens the other end, and a pkexec that died before it
+# got that far would hang the run here rather than failing it.
+root_open() {
+  local base=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
+  root_dir=$(mktemp -d "$base/c7up-session-XXXXXX") || return 1
+  mkfifo -m 600 "$root_dir/in" "$root_dir/out" || return 1
+
+  pkexec "$libdir/c7up-root" session <"$root_dir/in" >"$root_dir/out" 2>&1 &
+  local pid=$!
+  exec {root_w}<>"$root_dir/in" || return 1
+  # Read-only, so that a session which goes away -- authorisation refused,
+  # root killed -- reaches us as end-of-file instead of a permanent wait.
+  exec {root_r}<"$root_dir/out" || return 1
+  root_pid=$pid
+
+  # How the AUR helper's --sudo shim finds the session: it is a process of its
+  # own, started by the helper minutes from now, and it inherits this. See
+  # bin/c7up-sudo.
+  export C7UP_SESSION_DIR=$root_dir
+
+  # A verb that does nothing, purely so that the reply proves the dialog is
+  # behind us. Everything after this point is authorised.
+  root_run ping >/dev/null
+}
+
+# Deliberately closes rather than waits. An idle session ends on the
+# end-of-file it gets when the last handle on its request fifo goes; a busy one
+# ends on the SIGPIPE its next line of output earns once nothing is reading the
+# reply fifo, which is what the abort button has always relied on to make
+# pacman roll the transaction back. Waiting for it would instead hang the run
+# it was told to abandon until the transaction finished.
+root_close() {
+  [[ -n $root_dir ]] || return 0
+  [[ -n $root_r ]] && exec {root_r}<&-
+  [[ -n $root_w ]] && exec {root_w}>&-
+  rm -rf "$root_dir"
+  root_dir='' root_pid='' root_w='' root_r=''
+  unset C7UP_SESSION_DIR
+}
+
+# Ask the session for one verb. Its output goes to our stdout and its exit
+# status becomes ours, so this drops straight into the pipelines the pkexec
+# calls it replaced were already in.
+root_run() {
+  [[ -n $root_pid ]] || { echo 'c7up: no root session' >&2; return 125; }
+  ( IFS=$'\t'; printf '%s\n' "$*" ) >&"$root_w"
+  local line
+  while IFS= read -r line <&"$root_r"; do
+    if [[ $line == *"$root_mark"* ]]; then
+      # The marker gets a line to itself unless the verb's own last write had
+      # no newline; then the bytes in front of it are still its output.
+      [[ -n ${line%%"$root_mark"*} ]] && printf '%s\n' "${line%%"$root_mark"*}"
+      return "${line##*"$root_mark"}"
+    fi
+    printf '%s\n' "$line"
+  done
+  # End-of-file: the session is gone. Refused authorisation looks like this.
+  root_pid=''
+  return 126
+}
+
+# Root through the run's session where there is one, and a pkexec of its own
+# where there is not: `c7up services` on its own is a single privileged call
+# and has no run to belong to.
+as_root() {
+  if [[ -n $root_pid ]]; then root_run "$@"
+  else pkexec "$libdir/c7up-root" "$@"; fi
+}
+
 # ------------------------------------------------------------------- run ----
 # One transaction, streamed. It never prompts: every question was answered in
 # step 1, and what the user declined arrives here as --skip and becomes an
@@ -332,18 +431,30 @@ do_run() {
   echo 0 > "$progress"
   local failed='' fail_text=''
 
+  # Root, once, before any of it. Every privileged moment below -- the repo
+  # sync, the AUR helper's install, the service check at the end -- goes
+  # through this one session, so the password is asked for once however long
+  # the run takes. A refused or dismissed dialog is the user changing their
+  # mind, not a failure: it exits the way the abort button does, and the
+  # wizard says the transaction was never started.
+  emit '{"ev":"auth","state":"waiting"}'
+  if ! root_open; then
+    emit '{"ev":"auth","state":"denied"}'
+    echo 'c7up: the update was not authorised' >&2
+    rm -f "$progress"
+    return 2
+  fi
+  emit '{"ev":"auth","state":"granted"}'
+
   # Stream one source's output into the log, the inline log view, and a running
   # count. pacman's "(9/12) upgrading mesa" is the only progress either half
   # of this ever offers, so it is what the bar is driven from.
   stream() {
     local src=$1 base=$2
-    local line first=1
+    local line
     while IFS= read -r line; do
       line=$(printf '%s' "$line" | strip_ansi | tr -d '\r')
       [[ -n ${line// } ]] || continue
-      # The first byte out of pkexec is proof the dialog is behind us; the
-      # wizard drops its "waiting for authorisation" state on this.
-      if ((first)); then first=0; emit '{"ev":"auth","state":"granted"}'; fi
       printf '%s\n' "$line" >> "$log"
       emit "$(printf '{"ev":"line","source":%s,"text":%s}' "$(j "$src")" "$(j "$line")")"
       if [[ $line =~ ^\(([0-9]+)/([0-9]+)\)\ (upgrading|installing|removing) ]]; then
@@ -357,9 +468,8 @@ do_run() {
   # -- repo ------------------------------------------------------------------
   if ((pac_n > 0)); then
     emit '{"ev":"phase","source":"pacman","state":"running"}'
-    emit '{"ev":"auth","state":"waiting"}'
     local t0=$SECONDS
-    if pkexec "$libdir/c7up-root" sync ${ignore[@]+"${ignore[@]}"} 2>&1 | stream pacman 0; then
+    if root_run sync ${ignore[@]+"${ignore[@]}"} 2>&1 | stream pacman 0; then
       emit "$(printf '{"ev":"phase","source":"pacman","state":"done","secs":%s}' "$((SECONDS - t0))")"
       : > "$statedir/last_updates_check_packages"
     else
@@ -526,7 +636,7 @@ collect_orphans() {
 
 collect_services() {
   local out
-  out=$(pkexec "$libdir/c7up-root" check-services 2>/dev/null \
+  out=$(as_root check-services 2>/dev/null \
     | grep '\.service' | cut -f2 -d"'")
   [[ -n $out ]] || { echo '[]'; return; }
   while IFS= read -r s; do
