@@ -117,10 +117,11 @@ Everything comes from the Arch `extra` repository — no AUR helper needed.
 
 The shell's palette lives in `~/.config/hypr/appearance.json`; Qt and KDE apps
 read `~/.config/kdeglobals`. `quickshell/c7shell/scripts/c7shell-theme-export.py`
-writes the second from the first and emits the signal that repaints running
-apps — the settings app runs it whenever the accent or variant changes, and
-`c7shell-setup` seeds it once at install time so a fresh session is not a
-themed shell beside a stock-looking dolphin.
+writes the second from the first, writes the lock screen's palette
+(`hyprlock-palette.conf`, see [Lock screen](#lock-screen)) beside it, and emits
+the signal that repaints running apps — the settings app runs it whenever the
+accent or variant changes, and `c7shell-setup` seeds it once at install time so
+a fresh session is not a themed shell beside a stock-looking dolphin.
 
 This only applies if you actually run a QWidget-based Qt/KDE app. The shell
 itself is QML — the bar, launcher and settings window take none of this — so
@@ -207,7 +208,8 @@ The shell's own palette does not follow this setting: picking `light` here makes
 apps light, not the bar. The light *variant* is the card marked "later" on the
 same page.
 
-To export by hand at any time — palette and preference both:
+To export by hand at any time — kdeglobals, the lock screen palette and the
+preference, all three:
 
 ```bash
 python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py
@@ -261,8 +263,19 @@ started with. Reopen them to see the change.
 
 `SUPER+L`, the power menu's lock row and hypridle's 5-minute idle timeout all
 run `hyprlock`, configured by `hypr/hyprlock.conf` — near-black, one centered
-field, crimson accent, the desktop blurred behind it, so it reads as the same
-surface as the greeter.
+field, the desktop blurred behind it, so it reads as the same surface as the
+greeter.
+
+Its accent is the one picked in the settings app. hyprlang does no variable
+expansion and cannot read JSON, so hyprlock cannot follow `appearance.json` on
+its own; what it can do is `source` a file, and the export script above writes
+`~/.config/hypr/hyprlock-palette.conf` from the same accent and variant it
+writes kdeglobals from. `hyprlock.conf` keeps the default crimson palette as a
+fallback — hyprlang takes the last definition of a variable, so the sourced file
+wins, and a machine that has never exported gets one `ERR` in the log rather
+than a lock screen with no colours in it. The glow behind it follows the accent
+too: `c7shell-lock` renders that PNG at lock time (see below) and reads
+`appearance.json` for the tint.
 
 That file is **not optional**. hyprlock refuses to start without a config
 (`Config path error: Could not find config`) and searches only
@@ -392,6 +405,7 @@ eat local edits by accident.
 | `quickshell/c7shell/bin/screenshare-picker.sh` | xdph `custom_picker_binary` wrapper |
 | `quickshell/c7shell/scripts/c7shell-appmenud.py` | `com.canonical.AppMenu.Registrar` for the global menu |
 | `~/.config/hypr/shell.json` | shell preferences the settings app writes (global menu) |
+| `~/.config/hypr/hyprlock-palette.conf` | generated: the lock screen's colours, from `appearance.json` |
 | `sddm/themes/c7shell/` | the greeter theme; `Main.qml` wires SDDM's models into `Greeter.qml` |
 | `sddm/themes/c7shell/theme.conf` | greeter settings (wallpaper, user list, lockout) |
 | `share/c7shell-network-dispatcher` | NetworkManager dispatcher script; publishes the connection for the greeter's network pill |

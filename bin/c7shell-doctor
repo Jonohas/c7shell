@@ -346,6 +346,16 @@ if command -v hyprlock >/dev/null && [[ -d $conf/hypr ]]; then
       note 'the now-playing and status lines will be blank. It ships with the'
       note 'package, so the config was refreshed without it: c7shell-upgrade'
     fi
+    # The accent. hyprlang has no variable expansion and cannot read JSON, so
+    # the lock screen follows appearance.json only through the file the export
+    # script writes and hyprlock.conf sources. Missing means a picked accent
+    # stops at the lock screen -- crimson, and nothing says why.
+    if grep -q 'hyprlock-palette.conf' "$lock_conf" \
+       && [[ ! -f $conf/hypr/hyprlock-palette.conf ]]; then
+      warn 'the lock screen has no exported palette, so it keeps the default'
+      note 'crimson whatever accent is picked in the settings app.'
+      note 'seed it:  python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py'
+    fi
     # SUPER+L, the power menu's lock row and hypridle all run c7shell-lock now.
     # It ships with the package while the keybind ships with the config, so a
     # ~/.config refreshed without a package rebuild (c7shell-upgrade

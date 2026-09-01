@@ -249,6 +249,74 @@ layered=$(grep -cE '^\s*zindex = 1$' "$conf")
 ((widgets == layered)) \
   || fail "$widgets widgets but $layered at zindex 1 -- one draws under the backdrop overlay on an unstable sort"
 
+# --- the palette, which follows the accent ---------------------------------
+# hyprlang has no variable expansion and cannot read JSON, so the only way the
+# lock screen follows appearance.json is the file the exporter writes and this
+# config sources. Two ways for that to break silently: the source line going
+# missing (the lock screen quietly keeps the crimson defaults below it), and a
+# variable name drifting between the two files (hyprlang leaves that one widget
+# on its default, and reports nothing).
+grep -qE '^source = \$HOME/\.config/hypr/hyprlock-palette\.conf$' "$conf" \
+  || fail 'hyprlock.conf does not source hyprlock-palette.conf, so the lock screen stays crimson whatever accent is picked'
+
+exporter=$here/../quickshell/c7shell/scripts/c7shell-theme-export.py
+[[ -f $exporter ]] || fail 'scripts/c7shell-theme-export.py is missing -- nothing writes the lock screen palette'
+python3 "$exporter" --selftest >/dev/null \
+  || fail 'the appearance exporter fails its own selftest'
+
+# Run it for real, against a config dir of our own and with a PATH holding
+# nothing but python3: the exporter also pokes gsettings, gdbus and hyprctl,
+# and none of that may reach the session running this test.
+export_to() { # <dir> <appearance.json contents>
+  mkdir -p "$1/.config/hypr" "$1/bin"
+  ln -sf "$(command -v python3)" "$1/bin/python3"
+  printf '%s\n' "$2" > "$1/.config/hypr/appearance.json"
+  env -i PATH="$1/bin" HOME="$1" XDG_CONFIG_HOME="$1/.config" \
+    XDG_DATA_HOME="$1/data" python3 "$exporter" \
+    || fail "the appearance exporter failed for appearance.json $2"
+  [[ -f $1/.config/hypr/hyprlock-palette.conf ]] \
+    || fail "the exporter wrote no hyprlock-palette.conf for appearance.json $2"
+}
+
+# A non-default accent has to reach the file, and the default crimson must not
+# survive anywhere in it -- that is the whole bug.
+green=$tmp/green
+export_to "$green" '{"accent": "#00a149", "theme": "oled"}'
+palette=$green/.config/hypr/hyprlock-palette.conf
+grep -q '00a149ff' "$palette" \
+  || fail "the picked accent did not reach the lock screen palette:\n$(cat "$palette")"
+grep -q 'e53a44' "$palette" \
+  && fail "the default crimson is still in the palette written for another accent:\n$(cat "$palette")"
+# oled is the darker of the two variants, and the panel is the one surface that
+# tracks it.
+grep -q '000000b3' "$palette" \
+  || fail "the oled variant did not reach the panel colour:\n$(cat "$palette")"
+
+# Every variable a widget is coloured with has to be one the exporter writes,
+# and every variable it writes has to have a fallback in this file.
+used=$(grep -oE '^[[:space:]]*[a-z_]*color[a-z_]*[[:space:]]*=[[:space:]]*\$[A-Za-z0-9]+' "$conf" \
+       | sed 's/.*\$//' | sort -u)
+[[ -n $used ]] || fail 'no widget in hyprlock.conf takes its colour from a variable'
+for v in $used; do
+  grep -qE "^\\\$$v[[:space:]]+=" "$palette" \
+    || fail "a widget is coloured with \$$v, which the exporter does not write: it keeps its default and does not follow the accent"
+done
+for v in $(sed -n 's/^\$\([A-Za-z0-9]*\) *=.*/\1/p' "$palette"); do
+  grep -qE "^\\\$$v[[:space:]]+=" "$conf" \
+    || fail "the exporter writes \$$v, which hyprlock.conf does not define: a machine that has never exported would draw that widget in hyprlang's fallback colour"
+done
+
+# And at the default accent the two agree exactly: the block in hyprlock.conf is
+# a fallback, so a change to the exporter's colours that is not mirrored there
+# would show up as the lock screen changing colour on first export.
+plain=$tmp/plain
+export_to "$plain" '{}'
+while read -r line; do
+  norm=$(sed -E 's/#.*//; s/[[:space:]]+//g' <<<"$line")
+  grep -qxF "$norm" <(sed -E 's/#.*//; s/[[:space:]]+//g' "$conf") \
+    || fail "the exporter's default palette line \"$line\" is not the fallback in hyprlock.conf"
+done < <(grep '^\$' "$plain/.config/hypr/hyprlock-palette.conf")
+
 # --- c7shell-lock, the backdrop decoration ---------------------------------
 # It replaces hyprlock at every call site, so its failure mode is the whole lock
 # screen. Everything below is about it degrading rather than dying.
@@ -306,6 +374,37 @@ w, h = struct.unpack(">II", d[16:24])
 sys.exit(0 if d[:8] == b"\x89PNG\r\n\x1a\n" and (w, h) == (1920, 1080)
          and d[24] == 8 and d[25] == 6 else 1)
 PYCHK
+
+# The glow is the accent's, like the palette above: appearance.json is the one
+# place the colour is picked, and a green desktop with a crimson glow under its
+# lock screen is the same bug in a different file. The accent is in the cache
+# file's name because otherwise the first PNG written would be reused forever.
+printf '{"accent": "#00a149"}\n' > "$lockdir/conf/hypr/appearance.json"
+runlock >/dev/null || fail "an accent in appearance.json broke c7shell-lock:\n$(cat "$lockdir/err")"
+png=$(grep -oE '/[^ ]*\.png' "$gen" | head -1)
+[[ $png == *-00a149.png ]] \
+  || fail "the overlay is not keyed on the accent, so a changed accent reuses the old glow: $png"
+python3 - "$png" <<'PYCHK' || fail 'the glow is still crimson after picking a green accent'
+import zlib, struct, sys
+d = open(sys.argv[1], "rb").read()
+w, h = struct.unpack(">II", d[16:24])
+i, idat = 8, b""
+while i < len(d):
+    ln = struct.unpack(">I", d[i:i+4])[0]
+    if d[i+4:i+8] == b"IDAT": idat += d[i+8:i+8+ln]
+    i += 12 + ln
+raw = zlib.decompress(idat)
+stride = w * 4 + 1
+# Bottom centre, where the glow peaks and no grid line runs.
+o = (h - 5) * stride + 1 + (w // 2 + 3) * 4
+r, g, b, a = raw[o:o+4]
+sys.exit(0 if a > 0 and g > r else 1)
+PYCHK
+# And the crimson one from the run before it is gone: a screen-sized RGBA image
+# per accent ever picked, kept forever, is what the cache would otherwise be.
+(($(find "$lockdir/cache/c7shell" -name 'lock-overlay-*.png' | wc -l) == 1)) \
+  || fail "stale overlays are left in the cache:\n$(find "$lockdir/cache/c7shell" -name 'lock-overlay-*.png')"
+rm -f "$lockdir/conf/hypr/appearance.json"
 
 # A HiDPI monitor. hyprlock lays widgets out in buffer pixels, not logical ones
 # (CSessionLockSurface sets size = logical * scale), so a scale-2 panel has a
@@ -376,18 +475,41 @@ command -v hyprlock >/dev/null || {
 # what it thinks of it, and then dies on the connection instead of locking a
 # real screen. It exits non-zero doing that, which is expected and ignored --
 # only its opinion of the config is under test.
+#
+# $HOME is ours too, because the source line above resolves out of it: pointed
+# at the export from earlier, this validates the generated palette as hyprlang
+# rather than only as text.
+parse() { # <HOME> <log>
+  # Through an inner shell with its stderr closed: hyprlock aborts on the failed
+  # connection, and it is the *shell* that prints "Aborted" for a signal death --
+  # noise in the test output for the one outcome that is expected here.
+  bash -c 'HOME=$1 WAYLAND_DISPLAY=c7shell-test-no-such-display timeout 30 \
+             hyprlock --config "$2" >"$3" 2>&1' \
+    _ "$1" "$conf" "$2" 2>/dev/null || true
+  grep -q 'Couldn.t connect to a wayland compositor' "$2" \
+    || fail "hyprlock did not get as far as connecting; it never validated the config:\n$(cat "$2")"
+}
+
 log=$tmp/parse.log
-# Through an inner shell with its stderr closed: hyprlock aborts on the failed
-# connection, and it is the *shell* that prints "Aborted" for a signal death --
-# noise in the test output for the one outcome that is expected here.
-bash -c 'WAYLAND_DISPLAY=c7shell-test-no-such-display timeout 30 hyprlock --config "$1" >"$2" 2>&1' \
-  _ "$conf" "$log" 2>/dev/null || true
-
-grep -q 'Couldn.t connect to a wayland compositor' "$log" \
-  || fail "hyprlock did not get as far as connecting; it never validated the config:\n$(cat "$log")"
-
+parse "$green" "$log"
 if grep -qE 'Config has errors|does not exist' "$log"; then
-  fail "hyprlock rejects hypr/hyprlock.conf:\n$(grep -E 'Config error|does not exist' "$log")"
+  fail "hyprlock rejects hypr/hyprlock.conf with the exported palette:\n$(grep -E 'Config error|does not exist|globbing' "$log")"
+fi
+
+# And with no palette on disk at all -- a machine that has never run the
+# exporter. hyprlang reports the missing source and carries on with the
+# fallbacks, which is the only reason the source line is safe to ship: the one
+# error in the log has to be that line and nothing else, or the lock screen is
+# gone rather than merely crimson.
+bare=$tmp/bare
+mkdir -p "$bare"
+log=$tmp/parse-bare.log
+parse "$bare" "$log"
+grep -q 'globbing error' "$log" \
+  || fail "a missing hyprlock-palette.conf did not even report itself; the source line may have stopped resolving \$HOME:\n$(cat "$log")"
+if grep -qE 'does not exist' "$log" \
+   || grep -E 'Config error' "$log" | grep -qv 'globbing error'; then
+  fail "without an exported palette hyprlock rejects more than the source line:\n$(grep -E 'Config error|does not exist' "$log")"
 fi
 
 echo 'PASS: lock screen config'

@@ -81,19 +81,30 @@ if [[ -f $xdph ]] && grep -q '\$HOME/\.config/quickshell' "$xdph"; then
   run sed -i "s#\$HOME/.config/quickshell#$conf/quickshell#" "$xdph"
 fi
 
+# hyprlock expands the environment but nothing else, so the palette it sources
+# is named by $HOME/.config -- which is only the config dir on a machine that
+# has not moved it. Left byte-identical to the shipped file in the common case.
+lockconf=$conf/hypr/hyprlock.conf
+if [[ -f $lockconf && $conf != "$HOME/.config" ]] \
+   && grep -q '\$HOME/\.config/hypr/hyprlock-palette\.conf' "$lockconf"; then
+  run sed -i "s#\$HOME/.config/hypr/hyprlock-palette.conf#$conf/hypr/hyprlock-palette.conf#" "$lockconf"
+fi
+
 # The palette and the preferred colour scheme live in appearance.json; Qt and
 # KDE apps read kdeglobals, and apps that detect a dark desktop read GSettings
-# through the portal. The settings app exports to both, but only when something
+# through the portal, and the lock screen reads the palette file the exporter
+# writes for it. The settings app exports to all three, but only when something
 # changes -- so on a fresh install nothing has exported yet, dolphin comes up
-# stock and every detecting app comes up light. Seed it once here. Non-fatal: it
-# is cosmetic, and it needs python3 plus the copy that was just made.
+# stock, every detecting app comes up light and the lock screen keeps the
+# crimson defaults baked into hyprlock.conf. Seed it once here. Non-fatal: it is
+# cosmetic, and it needs python3 plus the copy that was just made.
 exporter=$conf/quickshell/c7shell/scripts/c7shell-theme-export.py
 if [[ -f $exporter ]] && command -v python3 >/dev/null; then
   if ((dry)); then
-    printf '  would: python3 %s   (seed ~/.config/kdeglobals and the color-scheme preference)\n' "$exporter"
+    printf '  would: python3 %s   (seed ~/.config/kdeglobals, the lock screen palette and the color-scheme preference)\n' "$exporter"
   else
-    printf 'exporting the palette to %s/kdeglobals, and the color-scheme preference\n' "$conf"
-    python3 "$exporter" || printf 'c7shell-setup: the appearance export failed; Qt apps keep their own colours and apps that detect a theme stay light\n' >&2
+    printf 'exporting the palette to %s/kdeglobals and %s/hypr/hyprlock-palette.conf, and the color-scheme preference\n' "$conf" "$conf"
+    python3 "$exporter" || printf 'c7shell-setup: the appearance export failed; Qt apps keep their own colours, the lock screen keeps its default crimson and apps that detect a theme stay light\n' >&2
   fi
 fi
 
