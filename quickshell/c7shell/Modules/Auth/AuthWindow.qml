@@ -35,10 +35,16 @@ PanelWindow {
 
   anchors { top: true; bottom: true; left: true; right: true }
   // Ignore, not a zero zone. A zero zone reserves nothing but still RESPECTS
-  // the bar's own reservation, so the surface started 48px down the screen
-  // (Theme.barMarginTop + Theme.barHeight) and the 45% backdrop below stopped
-  // short of the bar: a modal holding an EXCLUSIVE keyboard grab, with the bar
-  // left undimmed above it. Same correction, same reason, as CaptureOverlay.
+  // the bar's own reservation, so the surface started Theme.barMarginTop +
+  // Theme.barHeight down the screen and the 45% backdrop below stopped short of
+  // the bar: a modal holding an EXCLUSIVE keyboard grab, with the bar left
+  // undimmed -- and still clickable -- above it. Same correction, same reason,
+  // as CaptureOverlay.
+  //
+  // Not a fixed number, which is why it is not written as one: barMarginTop is
+  // a slider on the topbar settings page (0..32 over a 38px bar), so the strip
+  // this window used to miss was anywhere from 38 to 70px tall, and it moved
+  // live while that slider was dragged.
   exclusionMode: ExclusionMode.Ignore
   exclusiveZone: 0
   color: "transparent"

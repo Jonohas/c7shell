@@ -192,14 +192,18 @@ fi
 # A layer surface anchored to all four edges is asking to cover the screen,
 # and `exclusiveZone: 0` does NOT give it that: a zero zone reserves nothing
 # but still RESPECTS what other surfaces reserved, so the bar's own zone
-# (Theme.barMarginTop + Theme.barHeight) shortens the window by 48px. Only
-# ExclusionMode.Ignore opts out.
+# (Theme.barMarginTop + Theme.barHeight) shortens the window by that much.
+# Only ExclusionMode.Ignore opts out.
 #
-# The symptom is never an error. CaptureOverlay found it as regions grabbed
-# 48px above the rectangle drawn for them; the launcher wore it as a panel
-# 24px below centre, and the auth prompt as a 45% backdrop that stopped short
-# of the bar -- a modal holding an exclusive keyboard grab with the bar left
-# undimmed above it.
+# The size is not a constant to check against: barMarginTop is a slider on the
+# topbar settings page (0..32 over a 38px bar), so the zone is 38-70px and the
+# error tracks the setting live.
+#
+# The symptom is never an error either. CaptureOverlay found it as regions
+# grabbed above the rectangle drawn for them; the launcher wore it as a panel
+# half the zone below centre, and the auth prompt as a 45% backdrop that
+# stopped short of the bar -- a modal holding an exclusive keyboard grab with
+# the bar left undimmed, and clickable, above it.
 # --------------------------------------------------------------------------
 while read -r f; do
   # Order varies between files, so match the four edges independently rather
@@ -212,8 +216,9 @@ while read -r f; do
     grep -q 'exclusionMode' "$f" && continue
     fail "$(basename "$f") anchors a layer surface to all four edges without
   \`exclusionMode: ExclusionMode.Ignore\`. A zero exclusive zone still respects
-  the bar's reservation, so the window is 48px shorter than the screen it means
-  to cover -- silently, and with nothing in the log:\n  $line"
+  the bar's reservation, so the window is Theme.barMarginTop + Theme.barHeight
+  shorter than the screen it means to cover -- silently, with nothing in the
+  log, and by an amount the topbar margin slider changes:\n  $line"
   done < <(grep -hE '^[[:space:]]*anchors[[:space:]]*\{.*\}' "$f")
 done < <(find "$src" -name '*.qml')
 

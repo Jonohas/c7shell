@@ -102,9 +102,15 @@ Scope {
     // dismissal for free. Nothing is reserved from the layout.
     //
     // Ignore, not a zero zone: a zero zone reserves nothing but still RESPECTS
-    // the bar's reservation, so this window was 48px shorter than the screen
-    // (Theme.barMarginTop + Theme.barHeight) and the panel's `centerIn: parent`
-    // put it 24px below true centre. See CaptureOverlay for the same fix.
+    // the bar's reservation, so this window came up Theme.barMarginTop +
+    // Theme.barHeight shorter than the screen, starting that far down it, and
+    // the panel's `centerIn: parent` landed HALF that below true centre. See
+    // CaptureOverlay for the same fix.
+    //
+    // Half of a configurable number, not of 48: barMarginTop is a slider on the
+    // topbar settings page (0..32 over a 38px bar), so the panel sat 19-35px
+    // low depending on it -- and slid while the slider moved, which is a
+    // topbar setting quietly repositioning the launcher.
     anchors { top: true; bottom: true; left: true; right: true }
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
