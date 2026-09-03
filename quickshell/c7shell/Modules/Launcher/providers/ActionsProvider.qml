@@ -4,7 +4,10 @@ import Quickshell.Io
 import qs.Services
 import "Search.js" as Search
 
-// User scripts from ~/.config/qs/scripts plus the shell's own system actions.
+// User scripts from ~/.local/share/c7shell/scripts plus the shell's own system
+// actions. That is user data, not config: c7shell-setup --force replaces the
+// whole of ~/.config/quickshell/c7shell, so a script dropped in there would be
+// moved aside by the next setup run.
 // Providers are the service layer for the launcher, so running processes here
 // is fine -- the view files must not.
 Item {
@@ -13,7 +16,17 @@ Item {
   readonly property string name: "actions"
   property var results: []
 
-  readonly property string scriptDir: `${Quickshell.env("HOME")}/.config/qs/scripts`
+  readonly property string dataHome: Quickshell.env("XDG_DATA_HOME")
+    || `${Quickshell.env("HOME")}/.local/share`
+  readonly property string scriptDir: `${root.dataHome}/c7shell/scripts`
+  // Rows are narrow, so the subtitle shows the tilde form when the directory
+  // really is under $HOME and the full path otherwise.
+  readonly property string scriptDirLabel: {
+    const home = Quickshell.env("HOME") ?? ""
+    return home !== "" && root.scriptDir.startsWith(`${home}/`)
+      ? `~${root.scriptDir.slice(home.length)}`
+      : root.scriptDir
+  }
   // [{ title, sub, meta, mono, run: [argv] }] -- scripts fill in after the scan.
   property var scripts: []
 
@@ -62,7 +75,7 @@ Item {
   function take(text) {
     root.scripts = text.split("\0").filter(line => line !== "").map(file => ({
       title: file,
-      sub: `action · ~/.config/qs/scripts`,
+      sub: `action · ${root.scriptDirLabel}`,
       meta: "run",
       mono: Search.initials(file),
       run: [`${root.scriptDir}/${file}`]

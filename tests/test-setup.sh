@@ -19,6 +19,7 @@ export XDG_CONFIG_HOME=$tmp/conf
 # HOME as well as the state dir, so nothing here can reach a real home at all.
 export C7SHELL_STATE=$tmp/state
 export XDG_STATE_HOME=$tmp/xdg-state
+export XDG_DATA_HOME=$tmp/data
 export HOME=$tmp/home
 mkdir -p "$HOME"
 mkdir -p "$C7SHELL_SHARE"/{hypr,quickshell/c7shell,xdg-desktop-portal}
@@ -42,12 +43,17 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 "$setup" --dry-run >/dev/null
 [[ ! -e $XDG_CONFIG_HOME/kdeglobals ]] || fail '--dry-run exported the palette'
 [[ ! -e $XDG_CONFIG_HOME/hypr ]] || fail '--dry-run created files'
+[[ ! -e $XDG_DATA_HOME/c7shell/scripts ]] || fail '--dry-run created the script dir'
 
 # fresh install copies both parts
 "$setup" >/dev/null
 [[ $(cat "$XDG_CONFIG_HOME/hypr/hyprland.lua") == v1 ]] || fail 'hypr not installed'
 [[ $(cat "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml") == v1 ]] || fail 'quickshell not installed'
 [[ $(cat "$XDG_CONFIG_HOME/xdg-desktop-portal/hyprland-portals.conf") == v1 ]] || fail 'portal config not installed'
+
+# the launcher's action-script directory exists, so there is somewhere to drop
+# one -- the provider shows nothing and says nothing when it is missing
+[[ -d $XDG_DATA_HOME/c7shell/scripts ]] || fail 'the launcher script dir was not created'
 
 # the palette is seeded, so Qt apps match without touching a setting first
 grep -q 'ColorScheme=C7Shell' "$XDG_CONFIG_HOME/kdeglobals" \
@@ -68,7 +74,12 @@ rc=0; "$setup" >/dev/null 2>&1 || rc=$?
 [[ $(cat "$XDG_CONFIG_HOME/hypr/hyprland.lua") == mine ]] || fail 'clobbered an existing config without --force'
 
 # --force replaces and keeps a backup holding the old content
+echo mine > "$XDG_DATA_HOME/c7shell/scripts/mine.sh"
 "$setup" --force >/dev/null
+# the whole reason the scripts live outside the config tree: --force moves that
+# tree aside, and a user's action scripts must not go with it
+[[ $(cat "$XDG_DATA_HOME/c7shell/scripts/mine.sh") == mine ]] \
+  || fail '--force lost a user action script'
 [[ $(cat "$XDG_CONFIG_HOME/hypr/hyprland.lua") == v2 ]] || fail '--force did not update'
 backup=$(echo "$XDG_CONFIG_HOME"/hypr.bak-*)
 [[ -d $backup && $(cat "$backup/hyprland.lua") == mine ]] || fail 'backup missing or wrong'
