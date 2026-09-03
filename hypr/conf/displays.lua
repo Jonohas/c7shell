@@ -78,6 +78,83 @@ function M.mode(v, modes)
     return nil
 end
 
+-- -- encode ----------------------------------------------------------------
+-- The write side of the pair. conf/json.lua decodes only, because until now
+-- nothing in the hyprland config had anything to say back; displays-state.json
+-- is the first thing it does. Deliberately minimal: the state document is the
+-- only value ever passed here.
+
+local ESCAPE = { ['"'] = '\\"', ["\\"] = "\\\\", ["\n"] = "\\n",
+                 ["\r"] = "\\r", ["\t"] = "\\t" }
+
+local function esc(s)
+    return (s:gsub('[%c"\\]', function(c)
+        return ESCAPE[c] or string.format("\\u%04x", c:byte())
+    end))
+end
+
+--- A table with only 1..n integer keys encodes as an array. An empty table is
+--- ambiguous and encodes as `[]`; the state document contains no empty objects,
+--- and a profile with no displays is rejected before it gets here.
+local function is_array(t)
+    local n = 0
+    for k in pairs(t) do
+        if type(k) ~= "number" then return false end
+        n = n + 1
+    end
+    return n == #t
+end
+
+--- JSON for the subset the state file uses: nil, booleans, finite numbers,
+--- strings, arrays and string-keyed tables. Anything else encodes as null
+--- rather than raising -- this runs inside the compositor's config load.
+function M.encode(v)
+    local t = type(v)
+    if v == nil then return "null" end
+    if t == "boolean" then return tostring(v) end
+    if t == "number" then
+        -- NaN and infinities have no JSON spelling, and math.type is 5.3+.
+        if v ~= v or v == math.huge or v == -math.huge then return "null" end
+        return string.format("%.14g", v)
+    end
+    if t == "string" then return '"' .. esc(v) .. '"' end
+    if t ~= "table" then return "null" end
+
+    local out = {}
+    if is_array(v) then
+        for _, item in ipairs(v) do out[#out + 1] = M.encode(item) end
+        return "[" .. table.concat(out, ",") .. "]"
+    end
+    -- Sorted, so an unchanged layout rewrites a byte-identical file and the
+    -- settings app's FileView does not see a change that is not one.
+    local keys = {}
+    for k in pairs(v) do
+        if type(k) == "string" then keys[#keys + 1] = k end
+    end
+    table.sort(keys)
+    for _, k in ipairs(keys) do
+        out[#out + 1] = '"' .. esc(k) .. '":' .. M.encode(v[k])
+    end
+    return "{" .. table.concat(out, ",") .. "}"
+end
+
+-- -- state -----------------------------------------------------------------
+-- Machine-written, read-only to the user: the list of profiles conf/monitors.lua
+-- knows about and which one won. It is the only way the settings app can see a
+-- profile that lives in lua, since it never reads that file.
+
+M.STATE_PATH = os.getenv("HOME") .. "/.config/hypr/displays-state.json"
+
+--- Returns false rather than raising. This is called from inside the config
+--- load; a read-only $HOME must not take the desktop down with it.
+function M.write_state(doc, path)
+    local f = io.open(path or M.STATE_PATH, "w")
+    if not f then return false end
+    local ok = pcall(function() f:write(M.encode(doc)) end)
+    f:close()
+    return ok
+end
+
 -- -- load ------------------------------------------------------------------
 
 --- The saved layout for this set of enabled descriptions, as
