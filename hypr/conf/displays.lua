@@ -26,7 +26,9 @@ local json = require("conf/json")
 
 local M = {}
 
-local PATH = os.getenv("HOME") .. "/.config/hypr/displays.json"
+-- Public so the selftest can point the readers at a temporary file. Nothing
+-- else reassigns it.
+M.PATH = os.getenv("HOME") .. "/.config/hypr/displays.json"
 
 --- Sorted "|"-joined descriptions. Both sides compute it the same way.
 function M.signature(descriptions)
@@ -162,10 +164,64 @@ end
 --- unreadable or corrupt file, or a signature never saved, is an empty one and
 --- monitors.lua then behaves exactly as it did before this file existed.
 function M.layout(descriptions)
-    local doc = json.decode(json.read_file(PATH))
+    local doc = json.decode(json.read_file(M.PATH))
     if type(doc) ~= "table" or type(doc.layouts) ~= "table" then return {} end
     local saved = doc.layouts[M.signature(descriptions)]
     return type(saved) == "table" and saved or {}
+end
+
+--- One profile, or nil. Unlike M.layout -- which overrides a position the
+--- profile already chose -- a profile decides which monitors are ON at all, so
+--- a partly-understood one is more dangerous than no profile: an unusable
+--- entry drops the whole thing and monitors.lua takes the next candidate.
+--- `mode` is the exception, passed through unchecked, because deciding whether
+--- a mode exists needs the monitor's available_modes and this module has no
+--- monitors. monitors.lua runs it through M.mode at apply time.
+function M.profile(p)
+    if type(p) ~= "table" then return nil end
+    if type(p.name) ~= "string" or p.name == "" then return nil end
+    if type(p.displays) ~= "table" then return nil end
+
+    local displays, n = {}, 0
+    for desc, fields in pairs(p.displays) do
+        if type(desc) ~= "string" or desc == "" then return nil end
+        if type(fields) ~= "table" then return nil end
+        local position = M.position(fields.position)
+        if not position then return nil end
+        displays[desc] = {
+            position = position,
+            mode     = type(fields.mode) == "string" and fields.mode or nil,
+            scale    = M.scale(fields.scale),
+        }
+        n = n + 1
+    end
+    -- A profile that names nothing would match every desk and enable nothing.
+    if n == 0 then return nil end
+
+    return { name = p.name, displays = displays }
+end
+
+--- Every valid profile the settings app has written, in file order. File order
+--- is match precedence, the same way the order of PROFILES is in monitors.lua.
+function M.profiles()
+    local doc = json.decode(json.read_file(M.PATH))
+    if type(doc) ~= "table" or type(doc.profiles) ~= "table" then return {} end
+    local out = {}
+    for _, p in ipairs(doc.profiles) do
+        local clean = M.profile(p)
+        if clean then out[#out + 1] = clean end
+    end
+    return out
+end
+
+--- The profile the user has pinned from the settings app, or nil for
+--- auto-match. A name that matches nothing available is not an error here;
+--- monitors.lua simply falls back to auto-match.
+function M.active()
+    local doc = json.decode(json.read_file(M.PATH))
+    if type(doc) ~= "table" then return nil end
+    if type(doc.active) ~= "string" or doc.active == "" then return nil end
+    return doc.active
 end
 
 return M

@@ -86,4 +86,74 @@ assert(json.decode(json.read_file(tmp)).active == "x")
 os.remove(tmp)
 assert(d.write_state({ active = "x" }, "/proc/nonexistent/nope.json") == false)
 
+-- -- profiles ---------------------------------------------------------------
+-- A profile decides which monitors are ON, so a half-understood one is worse
+-- than none: anything unrecognised drops the profile whole, and monitors.lua
+-- falls through to the next candidate.
+local function profile(t) return d.profile(t) end
+
+local ok = profile({ name = "office",
+                     displays = { ["LG x"] = { position = "0x0", mode = "2560x1440@60.00", scale = 1 } } })
+assert(ok.name == "office")
+assert(ok.displays["LG x"].position == "0x0")
+assert(ok.displays["LG x"].mode == "2560x1440@60.00")   -- checked later, against available_modes
+assert(ok.displays["LG x"].scale == 1)
+
+-- a bad mode or scale is dropped to nil; the catalog value then stands
+local soft = profile({ name = "o", displays = { ["LG x"] = { position = "0x0", mode = 7, scale = 99 } } })
+assert(soft.displays["LG x"].mode == nil)
+assert(soft.displays["LG x"].scale == nil)
+assert(soft.displays["LG x"].position == "0x0")
+
+-- a bad position kills the profile: it can put a screen where nothing reaches it
+for _, bad in ipairs({
+  { name = "o", displays = { ["LG x"] = { position = "auto" } } },
+  { name = "o", displays = { ["LG x"] = { position = "999999x0" } } },
+  { name = "o", displays = { ["LG x"] = {} } },
+  { name = "o", displays = { ["LG x"] = "0x0" } },
+  { name = "o", displays = { [""] = { position = "0x0" } } },
+  { name = "o", displays = {} },
+  { name = "o" },
+  { name = "", displays = { ["LG x"] = { position = "0x0" } } },
+  { displays = { ["LG x"] = { position = "0x0" } } },
+  "office",
+}) do
+  assert(profile(bad) == nil, "profile should reject: " .. tostring(bad))
+end
+
+-- profiles()/active() read the same file M.layout does, and survive it being
+-- missing, corrupt, or the wrong shape
+local tmp = os.tmpname()
+local realpath = d.PATH
+d.PATH = tmp
+
+local function write(text)
+  local f = assert(io.open(tmp, "w")); f:write(text); f:close()
+end
+
+write('{"profiles":[{"name":"a","displays":{"X":{"position":"0x0"}}},'
+   .. '{"name":"bad","displays":{"X":{"position":"nope"}}},'
+   .. '{"name":"b","displays":{"Y":{"position":"10x0"}}}],"active":"b"}')
+local ps = d.profiles()
+assert(#ps == 2, "the invalid profile is dropped, the valid ones keep their order")
+assert(ps[1].name == "a" and ps[2].name == "b")
+assert(d.active() == "b")
+
+write('{"layouts":{}}')
+assert(#d.profiles() == 0)
+assert(d.active() == nil)
+
+write('{"profiles":"nope","active":42}')
+assert(#d.profiles() == 0)
+assert(d.active() == nil)
+
+write('{ not json')
+assert(#d.profiles() == 0)
+assert(d.active() == nil)
+
+os.remove(tmp)
+assert(#d.profiles() == 0)
+assert(d.active() == nil)
+d.PATH = realpath
+
 print("conf selftest ok")
