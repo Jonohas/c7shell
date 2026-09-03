@@ -245,8 +245,34 @@ local function detect()
     return out
 end
 
--- Filled in by the next task. Declared here so apply_inner can call it.
-local function write_state() end
+--- The read-only half of the settings app's view. Written after every apply,
+--- listing every profile this file knows about -- hand-written and settings-app
+--- alike -- and which one won. Nothing reads it back; it exists because the
+--- settings app deliberately does not parse lua.
+local function write_state(cands, usable, profile, forced)
+    local list = {}
+    for _, c in ipairs(cands) do
+        local at = {}
+        for desc, f in pairs(c.at) do
+            at[desc] = { position = f.position, mode = f.mode, scale = f.scale }
+        end
+        list[#list + 1] = {
+            name      = c.name,
+            source    = c.source,
+            shadows   = c.shadows == true,
+            -- What the page greys out. Computed here rather than in QML because
+            -- "available" includes the lid, and the lid is only legible here.
+            available = matches(c, usable),
+            displays  = at,
+        }
+    end
+
+    displays.write_state({
+        active   = profile and profile.name or nil,
+        forced   = forced == true,
+        profiles = list,
+    })
+end
 
 local function apply_inner()
     local by_key = detect()

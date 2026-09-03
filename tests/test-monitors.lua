@@ -4,6 +4,7 @@
 -- require("conf/...") resolves: `lua tests/test-monitors.lua` from the package
 -- tree, `lua test_monitors.lua` from ~/.config/hypr.
 local PATH = arg[1] or "conf/monitors.lua"
+local json = require("conf/json")
 
 local LG     = { name = "DP-3",  description = "LG Electronics LG ULTRAWIDE 0x0001ABCD" }
 local IIYAMA = { name = "DP-3",  description = "Iiyama North America PL3466WQ 1174003000146" }
@@ -179,5 +180,50 @@ check("active naming an unavailable profile falls back to auto-match", { LG, EDP
 local PROJECTOR = { name = "HDMI-A-1", description = "Acme Projector 42" }
 check("an unknown monitor is left alone, not disabled", { EDP, PROJECTOR }, false,
   { "eDP-1 @ 0x0" }, {})
+
+-- -- the state file ---------------------------------------------------------
+-- The settings app never reads conf/monitors.lua, so this document is the only
+-- way it can list a profile that lives in lua, or say which one won.
+local function checkState(label, fn, monitors, lidClosed, displaysJson)
+  local _, _, state = run(monitors, lidClosed, displaysJson)
+  local ok, err = pcall(fn, state and json.decode(state))
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  if not ok then print("          " .. tostring(err)) end
+end
+
+checkState("state lists the lua profiles and names the winner", function(s)
+  assert(s, "no state written")
+  assert(s.active == "ultrawide", "active was " .. tostring(s.active))
+  assert(s.forced == false)
+  local seen = {}
+  for _, p in ipairs(s.profiles) do seen[p.name] = p end
+  assert(seen["ultrawide"], "the winning lua profile is listed")
+  assert(seen["mobile"], "a lua profile that does not fit is still listed")
+  assert(seen["ultrawide"].source == "lua")
+  assert(seen["ultrawide"].available == true)
+  assert(seen["ultrawideHome"].available == false, "a profile whose screens are absent is listed, but not as available")
+  assert(seen["ultrawide"].displays[LG.description].position == "0x0")
+end, { LG, EDP }, false)
+
+checkState("state marks a shadowed profile and the forced flag", function(s)
+  local seen = {}
+  for _, p in ipairs(s.profiles) do seen[p.name] = p end
+  assert(seen["ultrawide"].source == "json", "the json profile took the name")
+  assert(seen["ultrawide"].shadows == true, "and says so, so the page can offer revert")
+  assert(s.active == "ultrawide")
+  assert(s.forced == true)
+  local n = 0
+  for _, p in ipairs(s.profiles) do if p.name == "ultrawide" then n = n + 1 end end
+  assert(n == 1, "the shadowed lua profile is not listed twice")
+end, { LG, EDP }, false,
+  '{"active":"ultrawide","profiles":[{"name":"ultrawide","displays":{"'
+    .. LG.description .. '":{"position":"0x0"}}}]}')
+
+checkState("state is written even when no profile matches", function(s)
+  assert(s, "no state written")
+  assert(s.active == nil)
+  assert(s.forced == false)
+end, { { name = "HDMI-A-1", description = "Acme Projector 42" } }, false)
 
 os.exit(fails == 0 and 0 or 1)
