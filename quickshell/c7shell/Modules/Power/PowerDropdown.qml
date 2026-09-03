@@ -100,7 +100,8 @@ PopupSurface {
 
   // A row is either a plain click (lock / logout / suspend) or a hold-to-confirm
   // (reboot / shutdown) -- the crimson tint and the "hold ↵" hint mark which.
-  component PowerRow: Rectangle {
+  // `active` is the tint, so a destructive row is simply the accented one.
+  component PowerRow: ListRow {
     id: row
 
     property string icon
@@ -112,18 +113,23 @@ PopupSurface {
     function focusHold() { if (row.destructive) hold.forceActiveFocus() }
 
     width: parent.width
-    height: 32
+    implicitHeight: 32
     radius: Theme.radiusChip
+    inset: 10
+    leadingSize: 13
+    titleSize: 11
+    titleWeight: row.destructive ? 600 : 500
+    title: row.label
+    active: row.destructive
+    hoverFill: Theme.surface05
+    // A destructive row is driven by the sweep underneath, not by a click.
+    hoverable: !row.destructive
 
-    color: row.destructive ? Theme.accentFill
-      : click.containsMouse ? Theme.surface05
-      : "transparent"
-    border.width: row.destructive ? 1 : 0
-    border.color: Theme.accentBorder
+    onClicked: row.triggered()
 
-    // The sweep only. Its MouseArea fills the row, and the label above it has
-    // none of its own, so presses reach it through the content.
-    HoldButton {
+    // The sweep only. It sits above the row's fill and below its label, which
+    // has no MouseArea of its own, so presses reach it through the content.
+    underlay: HoldButton {
       id: hold
       anchors.fill: parent
       fillRadius: row.radius
@@ -136,49 +142,17 @@ PopupSurface {
       onHeld: row.triggered()
     }
 
-    Row {
-      anchors {
-        left: parent.left; right: parent.right
-        leftMargin: 10; rightMargin: 10
-        verticalCenter: parent.verticalCenter
-      }
-      spacing: 11
-
-      Icon {
-        anchors.verticalCenter: parent.verticalCenter
-        name: row.icon
-        size: 13
-        tint: row.destructive ? Theme.accentSoft : Theme.alpha(Theme.text, 0.75)
-      }
-      Text {
-        anchors.verticalCenter: parent.verticalCenter
-        width: parent.width - 13 - 11 * 2 - hintText.width
-        text: row.label
-        font {
-          family: Theme.fontMono
-          pixelSize: 11
-          weight: row.destructive ? 600 : 500
-        }
-        color: row.destructive ? Theme.text : Theme.alpha(Theme.text, 0.85)
-        elide: Text.ElideRight
-      }
-      Text {
-        id: hintText
-        anchors.verticalCenter: parent.verticalCenter
-        text: row.destructive ? "hold ↵" : row.hint
-        font { family: Theme.fontMono; pixelSize: 9; weight: 400 }
-        color: row.destructive ? Theme.accentSoft : Theme.text3
-      }
+    leading: Icon {
+      name: row.icon
+      size: 13
+      tint: row.destructive ? Theme.accentSoft : Theme.alpha(Theme.text, 0.75)
     }
 
-    // Topmost, but disabled on destructive rows so their presses fall through to
-    // the sweep below.
-    MouseArea {
-      id: click
-      anchors.fill: parent
-      hoverEnabled: true
-      enabled: !row.destructive
-      onClicked: row.triggered()
+    Text {
+      anchors.verticalCenter: parent.verticalCenter
+      text: row.destructive ? "hold ↵" : row.hint
+      font { family: Theme.fontMono; pixelSize: 9; weight: 400 }
+      color: row.destructive ? Theme.accentSoft : Theme.text3
     }
   }
 }
