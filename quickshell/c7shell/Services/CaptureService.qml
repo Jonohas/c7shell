@@ -23,6 +23,43 @@ Singleton {
   function close() { root.overlayOpen = false }
   function toggle() { root.overlayOpen = !root.overlayOpen }
 
+  // -- the toolbar's "3s" chip -------------------------------------------
+  // The countdown lives here rather than on the overlay because the overlay is
+  // unmapped for the whole of it -- it has to be, or grim would photograph the
+  // dim -- so the seconds are drawn by CountdownPill, which is a different
+  // surface and can only read shared state.
+  readonly property int delaySeconds: 3
+  property int countdown: 0
+  // Latched at arm time, like FinishedToast's card: the pointer may leave the
+  // output the capture was set up on, and the pill must not follow it.
+  property string countdownMonitor: ""
+  // Not "take the shot": the pill is still mapped at this point and the caller
+  // owns the recomposite grace that gets it off the screen first.
+  signal countdownElapsed()
+
+  function startCountdown(monitor) {
+    root.countdownMonitor = monitor
+    root.countdown = root.delaySeconds
+    ticker.restart()
+  }
+
+  function cancelCountdown() {
+    ticker.stop()
+    root.countdown = 0
+  }
+
+  Timer {
+    id: ticker
+    interval: 1000
+    repeat: true
+    onTriggered: {
+      root.countdown -= 1
+      if (root.countdown > 0) return
+      ticker.stop()
+      root.countdownElapsed()
+    }
+  }
+
   // geometry "x,y wxh" for region and window targets · output = a monitor name
   // for one screen · both empty = every screen.
   function shoot(geometry, output, copy) {

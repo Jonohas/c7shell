@@ -97,8 +97,10 @@ PanelWindow {
       return
     }
     // A capture armed just before the overlay was reopened would otherwise fire
-    // into this new session with the old session's geometry.
+    // into this new session with the old session's geometry -- and a countdown
+    // left running would arm it again a second later, so both go.
     fire.stop()
+    CaptureService.cancelCountdown()
     win.notice = ""
     win.selW = 0
     win.selH = 0
@@ -176,14 +178,29 @@ PanelWindow {
     fire.record = win.mode === "rec"
 
     CaptureService.close()
-    // Even without the 3s chip there is a short delay: the surface has to be
-    // unmapped and the frame recomposited before grim reads the screen.
-    fire.interval = win.delayed && !fire.record ? 3000 : 150
-    fire.restart()
+    // The 3s chip is a visible countdown, not a longer sleep: the pill draws
+    // the seconds while the overlay is down and hands back here at zero.
+    if (win.delayed && !fire.record)
+      CaptureService.startCountdown(win.mon?.name ?? win.screen?.name ?? "")
+    else
+      fire.restart()
+  }
+
+  // Zero on the pill, not the shutter: the pill is a layer surface too, so it
+  // needs the same recomposite grace the overlay does before grim reads the
+  // screen -- which is exactly what `fire` is.
+  Connections {
+    target: CaptureService
+    function onCountdownElapsed() { fire.restart() }
   }
 
   Timer {
     id: fire
+    // Every capture waits this out, delayed or not: the overlay -- and the
+    // countdown pill after it -- has to be unmapped and the frame
+    // recomposited before grim reads the screen.
+    interval: 150
+
     property string geometry: ""
     property string output: ""
     property bool record: false

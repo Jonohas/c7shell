@@ -23,6 +23,9 @@ Scope {
   Bar {}
   CommandWindow {}
   CaptureOverlay {}
+  // The "3s" chip's seconds. Its own surface because the overlay is unmapped
+  // for the whole countdown -- see CountdownPill.qml.
+  CountdownPill {}
 
   // One instance each, not per-screen: a popover anchors itself to whichever
   // bar item opened it.
