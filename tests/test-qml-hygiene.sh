@@ -222,4 +222,33 @@ while read -r f; do
   done < <(grep -hE '^[[:space:]]*anchors[[:space:]]*\{.*\}' "$f")
 done < <(find "$src" -name '*.qml')
 
+# --------------------------------------------------------------------------
+# Two objects in one file may not share an `id`. QML reports "id is not
+# unique", and like every other error here that fails the load of the file,
+# everything that imports it, and so the whole shell -- ClockPill.qml carried a
+# duplicated block for two days and the desktop came up with no bar at all.
+#
+# It got in through a merge, not through anyone writing it: the same component
+# had been added on both sides of a branch, so the text merged cleanly into two
+# copies of itself, ids included. That is invisible in a diff of either parent,
+# which is why it wants a check rather than more care.
+#
+# Ids are matched at the start of a line so a string or comment mentioning one
+# does not count. Inline components (`component Foo: ...`) do open a scope of
+# their own, so a repeat across two of them would be legal -- the tree has none,
+# and one reported by mistake is renamed more cheaply than this is worth
+# parsing for.
+# --------------------------------------------------------------------------
+while read -r f; do
+  # `|| true`: a file with no id at all is normal, and under pipefail an
+  # empty grep would end the run with no output and a bare exit 1.
+  dupes=$( { grep -oE '^[[:space:]]*id:[[:space:]]*[A-Za-z_][A-Za-z0-9_]*' "$f" || true; } \
+    | sed -E 's/.*id:[[:space:]]*//' | sort | uniq -d)
+  [[ -z $dupes ]] && continue
+  fail "$(basename "$f") declares the same id more than once, which is \"id is
+  not unique\" and fails the whole configuration load, not just that object.
+  Usually a block that got merged in twice -- check for a duplicated component
+  before renaming anything:\n$(sed 's/^/  id: /' <<<"$dupes")"
+done < <(find "$src" -name '*.qml')
+
 echo 'test-qml-hygiene.sh: all checks passed'

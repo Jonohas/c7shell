@@ -117,7 +117,7 @@ SettingsPage {
 
   // -- delegates -------------------------------------------------------------
 
-  component DeviceRow: SettingsRow {
+  component DeviceRow: ListRow {
     id: device
 
     required property var node
