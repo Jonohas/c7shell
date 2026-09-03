@@ -52,15 +52,18 @@ local function run(monitors, lidClosed, displaysJson)
   io.open = realopen
   io.popen = realpopen
 
-  local enabled, disabled = {}, {}
+  local enabled, disabled, specs = {}, {}, {}
   for _, c in ipairs(calls) do
     if c.output ~= "" then
+      -- Keyed by output so a case can also inspect a field check() does not
+      -- compare, e.g. the resolved mode.
+      specs[c.output] = c
       if c.disabled == true then disabled[#disabled + 1] = c.output
       else enabled[#enabled + 1] = c.output .. " @ " .. tostring(c.position) end
     end
   end
   table.sort(enabled); table.sort(disabled)
-  return enabled, disabled, state
+  return enabled, disabled, state, specs
 end
 
 local fails = 0
@@ -73,6 +76,18 @@ local function check(label, monitors, lidClosed, wantEnabled, wantDisabled, disp
   print((ok and "  PASS  " or "  FAIL  ") .. label)
   print("          got:  " .. got)
   if not ok then print("          want: " .. want) end
+end
+
+-- Same shape as check(), but asserts the resolved mode of one output instead
+-- of the enabled/disabled sets -- the field check() has no way to see.
+local function checkMode(label, monitors, lidClosed, displaysJson, wantOutput, wantMode)
+  local _, _, _, specs = run(monitors, lidClosed, displaysJson)
+  local got = specs[wantOutput] and specs[wantOutput].mode
+  local ok = got == wantMode
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  print("          got:  " .. tostring(got))
+  if not ok then print("          want: " .. tostring(wantMode)) end
 end
 
 print("== " .. PATH)
@@ -121,6 +136,22 @@ check("lid shut skips a json profile that names the laptop", { LG, EDP }, true,
 check("json profile with an absent display is skipped", { LG, EDP }, false,
   { "desc:LG Electronics LG ULTRAWIDE @ 0x0", "eDP-1 @ 1000x1440" }, {},
   json_profiles('{"name":"other-desk","displays":{"Some Other Panel":{"position":"0x0"}}}'))
+
+-- -- mode validation ----------------------------------------------------------
+-- A JSON mode is whitelisted against available_modes; the old `cond and a or b`
+-- line handed back the raw, unvalidated string on a reject instead of nil.
+local LG_MODES = { name = LG.name, description = LG.description,
+  available_modes = { { width = 3440, height = 1440, refresh_rate = 100.0 } } }
+
+checkMode("json mode absent from available_modes falls back to preferred",
+  { LG_MODES, EDP }, false,
+  json_profiles('{"name":"lg-only","displays":{' .. LG_AT .. ':{"position":"0x0","mode":"1920x1080@60"}}}'),
+  "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", "preferred")
+
+checkMode("json mode present in available_modes is used",
+  { LG_MODES, EDP }, false,
+  json_profiles('{"name":"lg-only","displays":{' .. LG_AT .. ':{"position":"0x0","mode":"3440x1440@100"}}}'),
+  "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", "3440x1440@100")
 
 -- -- the active override ----------------------------------------------------
 -- Pinning a profile picks it even though an earlier candidate also fits.

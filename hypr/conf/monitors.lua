@@ -133,6 +133,9 @@ local function lua_candidates(by_key)
 
         for _, key in ipairs(p.need) do
             local mon = by_key[key]
+            -- A key with no live monitor leaves `need` silently short an entry;
+            -- that is only safe because matches() checks `unresolved` before it
+            -- ever reads `need`. Keep both in step if this candidate shape moves.
             if mon then need[#need + 1] = mon.description else unresolved = true end
         end
 
@@ -297,7 +300,13 @@ local function apply_inner()
         -- that fails validation, falls through to the profile's own value.
         local s = saved[desc] or {}
         local modes = mon and mon.available_modes
-        local want = f.checked and displays.mode(f.mode, modes) or f.mode
+        -- A JSON mode is whitelisted against available_modes; a CATALOG mode is
+        -- hand-written for a panel known to offer it and is passed through. Not
+        -- an `and/or` ternary: a rejected JSON mode must become nil and fall
+        -- through to "preferred", and `cond and nil or f.mode` would hand back
+        -- the unvalidated string instead.
+        local want = f.mode
+        if f.checked then want = displays.mode(f.mode, modes) end
         hl.monitor({
             output        = f.output,
             mode          = displays.mode(s.mode, modes) or want or "preferred",
