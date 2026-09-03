@@ -135,6 +135,10 @@ check() {
   cd hypr
   lua ../tests/test-monitors.lua
   lua ../tests/test-gpu.lua
+  # The pure modules conf/monitors.lua is built on: the json decoder, the JSON
+  # encoder the state file needs, and the validators that stand between a
+  # hand-edited displays.json and hl.monitor().
+  lua conf/selftest.lua
 }
 
 package() {

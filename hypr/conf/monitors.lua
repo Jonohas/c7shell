@@ -114,19 +114,120 @@ local PROFILES = {
     },
 }
 
--- Pure: given a set of present keys, return the winning profile (or nil).
-local function pick(found)
+-- -- candidates ---------------------------------------------------------------
+-- A candidate is a profile flattened into descriptions:
+--   { name, source = "lua"|"json", shadows, unresolved,
+--     need = { "<desc>", ... },
+--     at   = { ["<desc>"] = { output, position, mode, scale, ... } } }
+-- lua PROFILES and the settings app's JSON profiles become the same shape here,
+-- which is the only reason they can be ordered against each other at all.
+
+--- The lua PROFILES, resolved through CATALOG onto the descriptions of the
+--- monitors that are actually plugged in. `by_key` is detect()'s output, so a
+--- CATALOG entry matched by prefix resolves to the panel's FULL description,
+--- serial and all -- which is what displays.json is keyed on.
+local function lua_candidates(by_key)
+    local out = {}
     for _, p in ipairs(PROFILES) do
-        local complete = true
+        local need, at, unresolved = {}, {}, false
+
         for _, key in ipairs(p.need) do
-            if not found[key] then
-                complete = false
-                break
+            local mon = by_key[key]
+            -- A key with no live monitor leaves `need` silently short an entry;
+            -- that is only safe because matches() checks `unresolved` before it
+            -- ever reads `need`. Keep both in step if this candidate shape moves.
+            if mon then need[#need + 1] = mon.description else unresolved = true end
+        end
+
+        for key, position in pairs(p.at) do
+            local def = CATALOG[key]
+            local mon = by_key[key]
+            if mon and def then
+                at[mon.description] = {
+                    -- The output name this profile has always used. Keeping it
+                    -- rather than the live connector name means a CATALOG entry
+                    -- can still be desc-matched, which is the whole point of it.
+                    output        = def.name or ("desc:" .. def.desc),
+                    position      = position,
+                    mode          = def.mode,
+                    scale         = def.scale,
+                    transform     = def.transform,
+                    bitdepth      = def.bitdepth,
+                    cm            = def.cm,
+                    sdrbrightness = def.sdrbrightness,
+                    -- CATALOG modes are hand-written for a panel that is known
+                    -- to offer them, so they are not checked against
+                    -- available_modes. A JSON mode is.
+                    checked       = false,
+                }
+            else
+                unresolved = true
             end
         end
-        if complete then return p end
+
+        out[#out + 1] = { name = p.name, source = "lua", shadows = false,
+                          need = need, at = at, unresolved = unresolved }
     end
-    return nil
+    return out
+end
+
+--- The settings app's profiles, already description-keyed. Membership IS the
+--- requirement: a profile names every display it wants on, and nothing else.
+local function json_candidates()
+    local out = {}
+    for _, p in ipairs(displays.profiles()) do
+        local need, at = {}, {}
+        for desc, f in pairs(p.displays) do
+            need[#need + 1] = desc
+            at[desc] = { output = "desc:" .. desc, position = f.position,
+                         mode = f.mode, scale = f.scale, checked = true }
+        end
+        -- Deterministic, so the state file does not reshuffle between applies.
+        table.sort(need)
+        out[#out + 1] = { name = p.name, source = "json", shadows = false,
+                          need = need, at = at, unresolved = false }
+    end
+    return out
+end
+
+--- JSON first, then the lua profiles that no JSON profile has taken the name of.
+--- Same name means the settings app has edited a hand-written profile; the lua
+--- file is never rewritten, so the JSON one shadows it and deleting the JSON one
+--- brings it back.
+local function candidates(by_key)
+    local out, taken = json_candidates(), {}
+    for _, c in ipairs(out) do taken[c.name] = c end
+    for _, c in ipairs(lua_candidates(by_key)) do
+        if taken[c.name] then taken[c.name].shadows = true else out[#out + 1] = c end
+    end
+    return out
+end
+
+--- Every display the candidate needs is present and usable. A candidate with an
+--- unresolved requirement -- a CATALOG entry matched by connector name that is
+--- not plugged in -- can never match, which is what PROFILES did before this.
+local function matches(c, usable)
+    if c.unresolved then return false end
+    for _, desc in ipairs(c.need) do
+        if not usable[desc] then return false end
+    end
+    return true
+end
+
+--- The pinned profile if it fits, otherwise the first candidate that does.
+--- Returns the candidate and whether it was pinned. A pin naming something
+--- unavailable is not an error: falling back to auto-match beats leaving the
+--- desk with no layout at all.
+local function choose(cands, usable, active)
+    if active then
+        for _, c in ipairs(cands) do
+            if c.name == active and matches(c, usable) then return c, true end
+        end
+    end
+    for _, c in ipairs(cands) do
+        if matches(c, usable) then return c, false end
+    end
+    return nil, false
 end
 
 -- Map connected monitors onto CATALOG keys, keeping the live HL.Monitor rather
@@ -144,65 +245,112 @@ local function detect()
     return out
 end
 
+--- The read-only half of the settings app's view. Written after every apply,
+--- listing every profile this file knows about -- hand-written and settings-app
+--- alike -- and which one won. Nothing reads it back; it exists because the
+--- settings app deliberately does not parse lua.
+local function write_state(cands, usable, profile, forced)
+    local list = {}
+    for _, c in ipairs(cands) do
+        local at = {}
+        for desc, f in pairs(c.at) do
+            at[desc] = { position = f.position, mode = f.mode, scale = f.scale }
+        end
+        list[#list + 1] = {
+            name      = c.name,
+            source    = c.source,
+            shadows   = c.shadows == true,
+            -- What the page greys out. Computed here rather than in QML because
+            -- "available" includes the lid, and the lid is only legible here.
+            available = matches(c, usable),
+            displays  = at,
+        }
+    end
+
+    displays.write_state({
+        active   = profile and profile.name or nil,
+        forced   = forced == true,
+        profiles = list,
+    })
+end
+
 local function apply_inner()
     local by_key = detect()
-    local present = {}
-    for key in pairs(by_key) do present[key] = true end
 
-    -- A shut lid means the panel is there but unusable, so hide it from the
-    -- profile match. Every profile below that needs `laptop` then falls
-    -- through to its lid-closed sibling.
+    local by_desc = {}
+    for _, m in ipairs(hl.get_monitors()) do by_desc[m.description] = m end
+
+    -- A shut lid means the panel is there but unusable, so it drops out of the
+    -- set profiles are matched against. Every profile that names it -- by
+    -- CATALOG key or by description -- then falls through to a lid-closed
+    -- sibling, which is exactly what happened before profiles were described in
+    -- two places.
     local usable = {}
-    for key in pairs(present) do usable[key] = true end
-    if lid_closed() then usable.laptop = nil end
+    for desc in pairs(by_desc) do usable[desc] = true end
+    if lid_closed() and by_key.laptop then usable[by_key.laptop.description] = nil end
 
-    local profile = pick(usable)
-    -- No profile: nothing known is plugged in. The catch-all above already
-    -- gave every output a sane preferred/auto layout, so leave it alone. That
-    -- also covers a shut lid with no external panel -- better to leave the
-    -- screen as it is than to disable the only output there is.
+    local cands = candidates(by_key)
+    local profile, forced = choose(cands, usable, displays.active())
+
+    write_state(cands, usable, profile, forced)
+
+    -- No profile: nothing known is plugged in. The catch-all above already gave
+    -- every output a sane preferred/auto layout, so leave it alone. That also
+    -- covers a shut lid with no external panel -- better to leave the screen as
+    -- it is than to disable the only output there is.
     if not profile then return end
 
-    -- displays.json is keyed on the set of monitors this layout leaves ENABLED,
-    -- which is exactly the list the settings app sees in Hyprland's monitor
-    -- list, so both sides compute the same key. Connected-but-dropped panels
-    -- (the shut lid) are excluded on both sides for the same reason.
-    local dropped = {}
-    for key in pairs(present) do
-        if not profile.at[key] then dropped[by_key[key].description] = true end
+    -- Only a description something claims to understand is ever turned OFF: one
+    -- CATALOG matched, or one some profile names. A meeting-room projector is
+    -- known to nobody and keeps the catch-all rule, rather than going dark
+    -- because the laptop-only profile does not mention it.
+    local known = {}
+    for _, m in pairs(by_key) do known[m.description] = true end
+    for _, c in ipairs(cands) do
+        for desc in pairs(c.at) do known[desc] = true end
     end
+
+    -- displays.json's layouts are keyed on the set of monitors this layout
+    -- leaves ENABLED, which is the list the settings app sees in Hyprland's
+    -- monitor list, so both sides compute the same key.
     local enabled = {}
-    for _, m in ipairs(hl.get_monitors()) do
-        if not dropped[m.description] then enabled[#enabled + 1] = m.description end
+    for desc in pairs(by_desc) do
+        if profile.at[desc] or not known[desc] then enabled[#enabled + 1] = desc end
     end
     local saved = displays.layout(enabled)
 
-    for key, position in pairs(profile.at) do
-        local def = CATALOG[key]
-        local mon = by_key[key]
+    for desc, f in pairs(profile.at) do
+        local mon = by_desc[desc]
         -- Saved values OVERRIDE the profile's position and the catalog's
-        -- mode/scale, one field at a time; anything the user never changed,
-        -- or that fails validation, falls through to the hand-written value.
-        local s = (mon and saved[mon.description]) or {}
+        -- mode/scale, one field at a time; anything the user never changed, or
+        -- that fails validation, falls through to the profile's own value.
+        local s = saved[desc] or {}
+        local modes = mon and mon.available_modes
+        -- A JSON mode is whitelisted against available_modes; a CATALOG mode is
+        -- hand-written for a panel known to offer it and is passed through. Not
+        -- an `and/or` ternary: a rejected JSON mode must become nil and fall
+        -- through to "preferred", and `cond and nil or f.mode` would hand back
+        -- the unvalidated string instead.
+        local want = f.mode
+        if f.checked then want = displays.mode(f.mode, modes) end
         hl.monitor({
-            output    = def.name or ("desc:" .. def.desc),
-            mode      = displays.mode(s.mode, mon and mon.available_modes) or def.mode,
-            position  = displays.position(s.position) or position,
-            scale     = displays.scale(s.scale) or def.scale,
-            transform = def.transform,
-            bitdepth      = def.bitdepth,
-            cm            = def.cm,
-            sdrbrightness = def.sdrbrightness,
-            disabled  = false, -- clears an earlier disable when the lid reopens
+            output        = f.output,
+            mode          = displays.mode(s.mode, modes) or want or "preferred",
+            position      = displays.position(s.position) or f.position,
+            scale         = displays.scale(s.scale) or f.scale,
+            transform     = f.transform,
+            bitdepth      = f.bitdepth,
+            cm            = f.cm,
+            sdrbrightness = f.sdrbrightness,
+            disabled      = false, -- clears an earlier disable when the lid reopens
         })
     end
 
-    -- Connected but left out of the winning profile: drop it from the layout
-    -- so its workspaces move to a monitor that is actually visible.
-    for key in pairs(present) do
-        if not profile.at[key] then
-            local def = CATALOG[key]
-            hl.monitor({ output = def.name or ("desc:" .. def.desc), disabled = true })
+    -- Connected, known, and left out of the winning profile: drop it from the
+    -- layout so its workspaces move to a monitor that is actually visible.
+    for desc, m in pairs(by_desc) do
+        if known[desc] and not profile.at[desc] then
+            hl.monitor({ output = m.name, disabled = true })
         end
     end
 

@@ -52,4 +52,108 @@ assert(d.mode("3440x1440@144", modes) == nil)                    -- not offered
 assert(d.mode("preferred", modes) == nil)
 assert(d.mode("2880x1920@120.00", nil) == nil)                   -- nothing to check against
 
+-- encode: enough JSON for the state file conf/monitors.lua writes, and nothing
+-- more. Round-tripped through the decoder above rather than compared as text,
+-- because key order in a lua table is not the property worth asserting.
+assert(d.encode(nil) == "null")
+assert(d.encode(true) == "true")
+assert(d.encode(1) == "1")
+assert(d.encode(1.5) == "1.5")
+assert(d.encode(0 / 0) == "null")       -- NaN is not JSON
+assert(d.encode("a") == '"a"')
+assert(d.encode('a"b\\c') == '"a\\"b\\\\c"')
+assert(d.encode("a\nb") == '"a\\nb"')
+assert(d.encode({}) == "[]")            -- ambiguous; the state doc has no empty objects
+assert(d.encode({ 1, 2 }) == "[1,2]")
+-- string keys are sorted, so an unchanged layout writes a byte-identical file
+-- and a watcher does not see a change that is not one
+assert(d.encode({ b = 1, a = 2 }) == '{"a":2,"b":1}')
+local round = json.decode(d.encode({
+  active = "office", forced = true,
+  profiles = { { name = "office", source = "lua", available = true,
+                 displays = { ["LG x"] = { position = "0x0", scale = 1 } } } },
+}))
+assert(round.active == "office" and round.forced == true)
+assert(round.profiles[1].displays["LG x"].position == "0x0")
+assert(round.profiles[1].displays["LG x"].scale == 1)
+
+-- write_state round-trips through a real file and reports failure rather than
+-- raising: a settings page that cannot show its picker beats a config reload
+-- that errors out.
+local tmp = os.tmpname()
+assert(d.write_state({ active = "x" }, tmp) == true)
+assert(json.decode(json.read_file(tmp)).active == "x")
+os.remove(tmp)
+assert(d.write_state({ active = "x" }, "/proc/nonexistent/nope.json") == false)
+
+-- -- profiles ---------------------------------------------------------------
+-- A profile decides which monitors are ON, so a half-understood one is worse
+-- than none: anything unrecognised drops the profile whole, and monitors.lua
+-- falls through to the next candidate.
+local function profile(t) return d.profile(t) end
+
+local ok = profile({ name = "office",
+                     displays = { ["LG x"] = { position = "0x0", mode = "2560x1440@60.00", scale = 1 } } })
+assert(ok.name == "office")
+assert(ok.displays["LG x"].position == "0x0")
+assert(ok.displays["LG x"].mode == "2560x1440@60.00")   -- checked later, against available_modes
+assert(ok.displays["LG x"].scale == 1)
+
+-- a bad mode or scale is dropped to nil; the catalog value then stands
+local soft = profile({ name = "o", displays = { ["LG x"] = { position = "0x0", mode = 7, scale = 99 } } })
+assert(soft.displays["LG x"].mode == nil)
+assert(soft.displays["LG x"].scale == nil)
+assert(soft.displays["LG x"].position == "0x0")
+
+-- a bad position kills the profile: it can put a screen where nothing reaches it
+for _, bad in ipairs({
+  { name = "o", displays = { ["LG x"] = { position = "auto" } } },
+  { name = "o", displays = { ["LG x"] = { position = "999999x0" } } },
+  { name = "o", displays = { ["LG x"] = {} } },
+  { name = "o", displays = { ["LG x"] = "0x0" } },
+  { name = "o", displays = { [""] = { position = "0x0" } } },
+  { name = "o", displays = {} },
+  { name = "o" },
+  { name = "", displays = { ["LG x"] = { position = "0x0" } } },
+  { displays = { ["LG x"] = { position = "0x0" } } },
+  "office",
+}) do
+  assert(profile(bad) == nil, "profile should reject: " .. tostring(bad))
+end
+
+-- profiles()/active() read the same file M.layout does, and survive it being
+-- missing, corrupt, or the wrong shape
+local tmp = os.tmpname()
+local realpath = d.PATH
+d.PATH = tmp
+
+local function write(text)
+  local f = assert(io.open(tmp, "w")); f:write(text); f:close()
+end
+
+write('{"profiles":[{"name":"a","displays":{"X":{"position":"0x0"}}},'
+   .. '{"name":"bad","displays":{"X":{"position":"nope"}}},'
+   .. '{"name":"b","displays":{"Y":{"position":"10x0"}}}],"active":"b"}')
+local ps = d.profiles()
+assert(#ps == 2, "the invalid profile is dropped, the valid ones keep their order")
+assert(ps[1].name == "a" and ps[2].name == "b")
+assert(d.active() == "b")
+
+write('{"layouts":{}}')
+assert(#d.profiles() == 0)
+assert(d.active() == nil)
+
+write('{"profiles":"nope","active":42}')
+assert(#d.profiles() == 0)
+assert(d.active() == nil)
+
+write('{ not json')
+assert(#d.profiles() == 0)
+assert(d.active() == nil)
+
+os.remove(tmp)
+assert(#d.profiles() == 0)
+assert(d.active() == nil)
+d.PATH = realpath
+
 print("conf selftest ok")
