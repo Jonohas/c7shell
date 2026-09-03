@@ -365,6 +365,20 @@ grep -q 'c7shell-lock-info, which is not installed' <<<"$out" \
   && fail "the helper is on PATH and still reported missing:\n$out"
 rm -f "$bin/c7shell-lock-info"
 
+# The exported palette is the only way the lock screen follows the accent, and
+# nothing else in the session notices it is missing: the lock screen simply
+# stays crimson.
+printf 'source = $HOME/.config/hypr/hyprlock-palette.conf\n' \
+  >> "$conf/hypr/hyprlock.conf"
+out=$(run 2>&1) || fail "an unexported lock palette should warn, not fail:\n$out"
+grep -q 'lock screen has no exported palette' <<<"$out" \
+  || fail "the missing lock screen palette was not reported:\n$out"
+: > "$conf/hypr/hyprlock-palette.conf"
+out=$(run 2>&1) || fail "an exported lock palette should be silent:\n$out"
+grep -q 'lock screen has no exported palette' <<<"$out" \
+  && fail "the palette is there and still reported missing:\n$out"
+rm -f "$conf/hypr/hyprlock-palette.conf"
+
 # SUPER+L runs c7shell-lock, which ships with the package while the keybind
 # ships with the config -- so --config-only leaves the bind calling a command
 # that is not installed and nothing locks at all.
