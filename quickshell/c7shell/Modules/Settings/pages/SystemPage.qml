@@ -34,6 +34,7 @@ SettingsPage {
 
         Text {
           text: UpdatesService.running ? "updating"
+              : !UpdatesService.hasVerdict ? "checking for updates"
               : UpdatesService.total > 0 ? `${UpdatesService.total} updates pending`
               : "up to date"
           font { family: Theme.fontMono; pixelSize: 11; weight: 500 }

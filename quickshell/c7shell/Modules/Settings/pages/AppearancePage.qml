@@ -133,7 +133,7 @@ SettingsPage {
       }
 
       Row {
-        anchors { right: fromWallpaper.left; rightMargin: 12; verticalCenter: parent.verticalCenter }
+        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
         spacing: 8
 
         Repeater {
@@ -161,25 +161,6 @@ SettingsPage {
               onClicked: AppearanceStore.values.accent = swatch.modelData
             }
           }
-        }
-      }
-
-      Row {
-        id: fromWallpaper
-        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-        spacing: 8
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: "from wallpaper"
-          font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-          color: Theme.alpha(Theme.text, 0.4)
-        }
-        TogglePill {
-          anchors.verticalCenter: parent.verticalCenter
-          checked: AppearanceStore.fromWallpaper
-          // Spec §11: the toggle persists, the extraction itself lands later.
-          onToggled: AppearanceStore.values.fromWallpaper = !AppearanceStore.fromWallpaper
         }
       }
     }

@@ -99,6 +99,10 @@ Window {
     // would offer "review & update →" over nothing to review.
     root.check(UpdatesService.clean, "the flow is not clean before the first dry run")
     root.check(UpdatesService.total === 0, "total is not zero before the first dry run")
+    // ...but "no verdict yet" and "nothing pending" are different answers, and
+    // the views tell them apart with this. Without it, the seconds after a run
+    // -- when the verdict is deliberately dropped -- read as "up to date".
+    root.check(!UpdatesService.hasVerdict, "hasVerdict was true before the first dry run")
 
     UpdatesService.verdict = {
       clean: false,
@@ -112,6 +116,7 @@ Window {
       ],
       decisions: [{ id: "kernel:linux", kind: "kernel", title: "linux", detail: "", note: "" }]
     }
+    root.check(UpdatesService.hasVerdict, "a verdict landed and hasVerdict stayed false")
     root.check(UpdatesService.total === 2, `total across sources = ${UpdatesService.total}`)
     root.check(!UpdatesService.clean, "an escalated verdict still read as clean")
     root.check(UpdatesService.kernelPending, "a kernel decision did not tint the bar")

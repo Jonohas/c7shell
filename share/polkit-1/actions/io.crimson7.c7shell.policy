@@ -8,10 +8,15 @@
 
   <!-- Without an action of our own, pkexec falls back to
        org.freedesktop.policykit.exec, whose dialog names the binary rather
-       than the task. This one says what is about to happen, and
-       auth_admin_keep means the AUR half of the same run does not ask again.
-       The program it authorises takes a fixed verb, never a command line -
-       see bin/c7up-root. -->
+       than the task. This one says what is about to happen. The program it
+       authorises takes a fixed verb, never a command line - see bin/c7up-root.
+
+       auth_admin_keep is for the clicks *after* a run: resolving a pacnew,
+       restarting a service, removing orphans. It is deliberately not what
+       keeps a run to one prompt - polkit keeps an admin authorisation for
+       five minutes and a full update is routinely longer, so the run holds a
+       single authorised root session open instead (c7up-root's `session`
+       verb). -->
   <action id="io.crimson7.c7shell.update">
     <description>Apply system updates</description>
     <message>Authentication is required to apply system updates</message>

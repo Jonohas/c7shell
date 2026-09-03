@@ -41,13 +41,10 @@ force=0
 # it is a line in /etc/sddm.conf.d that no package may write. An install from
 # before the theme existed has the files and not the selection, which is exactly
 # the gap this step closes.
-# Bumped whenever a step is added after the package half below, or an existing
-# one changes in a way that matters on the run that installs the change. That
-# half replaces this very script, so it is otherwise the *old* code that runs
-# the rest -- see the hand-over after the package step. Rev 3 is the fixed
-# restart step: on the upgrade that brings it, the old code is the code that
-# leaves the session with no bar, so the new one has to take over here.
-upgrade_revision=3
+# Bumped whenever a step is added after the package half below. That half
+# replaces this very script, so on the upgrade that introduces a step it is the
+# *old* code that would run it -- see the hand-over after the package step.
+upgrade_revision=2
 
 etc_root=${C7SHELL_ROOT:-}
 sddm_dropin=$etc_root/etc/sddm.conf.d/10-c7shell.conf
@@ -84,8 +81,7 @@ env: C7SHELL_REPO   (default $repo)
      C7SHELL_CACHE  (default \$XDG_CACHE_HOME/c7shell)
      C7SHELL_STATE  (default \$XDG_STATE_HOME/c7shell)
 
-exit: 0 up to date, 1 something went wrong (a shell that would not come back
-      up on the new config counts), 4 updated but files need merging
+exit: 0 up to date, 1 something went wrong, 4 updated but files need merging
 USAGE
 }
 
@@ -241,11 +237,6 @@ removed=0
 # Only a write under quickshell/ makes the running shell stale. A hypr-only
 # upgrade changes nothing quickshell has loaded, and has nothing to restart for.
 shell_dirty=0
-# Set when the restart step could not leave a shell running. It is reported in
-# the summary and in the exit status, because the terminal that ran the upgrade
-# is often the only place the failure is visible -- there is no bar left to
-# show a notification on.
-shell_failed=0
 touches_shell() { case $1 in quickshell/*) shell_dirty=1 ;; esac; }
 
 if ((do_config)); then
@@ -392,121 +383,71 @@ fi
 # half-migrated shell, so it is restarted onto the whole one.
 #
 # Matched by config path rather than by name: `qs kill -c c7shell` would also
-# reach an instance running somebody else's tree, and this must never touch a
+# reach an instance running somebody else's tree, and this must never kill a
 # shell whose files this run did not touch (tests/test-upgrade.sh runs the whole
 # config half against a temporary $XDG_CONFIG_HOME, on a machine whose real
-# shell is up). Every signal below therefore goes to a pid that `qs list`
-# reported against our own config path, never to a config name.
+# shell is up).
 shell_config=$conf/quickshell/c7shell/shell.qml
 shell_running() { qs list --all 2>/dev/null | grep -qF "Config path: $shell_config"; }
 
-# `qs list --all` prints a block per instance; the pid of a block is ours only
-# if that same block's config path is ours.
+# The pids behind that, for when asking has not worked. `qs list` groups the
+# process id and the config path under one Instance block, so the id is
+# whichever one was last seen above the path we are looking for.
 shell_pids() {
-  qs list --all 2>/dev/null | awk -v want="Config path: $shell_config" '
-    /^Instance / { pid = "" }
-    $1 == "Process" && $2 == "ID:" { pid = $3 }
-    index($0, want) && pid { print pid; pid = "" }'
+  qs list --all 2>/dev/null | awk -v cfg="  Config path: $shell_config" '
+    /^[[:space:]]*Process ID:/ { pid = $NF }
+    $0 == cfg && pid != "" { print pid; pid = "" }'
 }
 
-# The command hypr uses, quoted so the user can paste it. Kept next to the
-# launch below -- the two must not drift, or the advice starts the shell in an
-# environment the autostart never uses.
-shell_argv='QT_WAYLAND_DISABLE_WINDOWDECORATION=1 setsid qs -c c7shell -d -n'
+# Wait for `qs list` to agree with what we just did. Six seconds: a shell exits
+# in well under one and comes up in about one, and anything past that is not a
+# delay, it is the thing this waits to find out about.
+wait_gone()  { local _; for _ in $(seq 30); do shell_running || return 0; sleep 0.2; done; return 1; }
+wait_there() { local _; for _ in $(seq 30); do shell_running && return 0; sleep 0.2; done; return 1; }
 
-# Every path out of this step that leaves no shell running ends here. The old
-# code said "restart it yourself" and stopped there, which is the one piece of
-# advice that needs a command attached: there is no service to start, and the
-# hypr autostart line only runs at login.
-restart_hint() {
-  info 'start it again with the command hypr autostarts it with:'
-  info "  $shell_argv"
-  info 'or log out and back in. if it exits immediately, run it in the'
-  info 'foreground to see why:   qs -c c7shell'
-}
-
-# Poll budgets for the two waits below, in 0.2s ticks: 6s for an instance to
-# go away, 15s for one to come up (a cold start compiles QML). Overridable so
-# the test suite can drive the give-up paths without waiting them out.
-stop_ticks=${C7SHELL_STOP_TICKS:-30}
-start_ticks=${C7SHELL_START_TICKS:-75}
-
-shell_gone() {
-  local i
-  for ((i = 0; i < stop_ticks; i++)); do shell_running || return 0; sleep 0.2; done
-  return 1
-}
-
-# `qs kill` asks over IPC and the shell exits on its own -- except when the
-# configuration it is on failed to load, where the request is logged and the
-# process then sits there holding the wayland connection and drawing nothing.
-# That is precisely the state this whole step exists to clear: the mid-copy
-# reload described above is what breaks the load in the first place. So the ask
-# escalates to a signal rather than giving up, because a hung instance also
-# blocks the relaunch below -- it is --no-duplicate, so it would find the
-# corpse, decline to start, and leave the session with no bar and no message.
-shell_stop() {
-  local pid sig pids
-  for pid in $(shell_pids); do qs kill --pid "$pid" >/dev/null 2>&1 || true; done
-  shell_gone && return 0
-  for sig in TERM KILL; do
-    pids=$(shell_pids)
-    [[ -n $pids ]] || return 0
-    warn "the shell ignored the exit request; sending SIG$sig to ${pids//$'\n'/ }"
-    # shellcheck disable=SC2086  # deliberate: one signal to every matching pid
-    kill -"$sig" $pids 2>/dev/null || true
-    shell_gone && return 0
-  done
-  return 1
-}
-
-# Launch, then confirm. A configuration that fails to load takes quickshell
-# down with it, so the old "launch and print restarted" was a claim rather than
-# a result: the one upgrade that breaks the shell was also the one that said it
-# had restarted it.
-shell_start() {
-  QT_WAYLAND_DISABLE_WINDOWDECORATION=1 setsid qs -c c7shell -d -n >/dev/null 2>&1 &
-  local i
-  for ((i = 0; i < start_ticks; i++)); do shell_running && break; sleep 0.2; done
-  shell_running || return 1
-  # It can also register and then die on the first reload, so give it a moment
-  # and look again instead of reporting the instance that existed for 200ms.
-  sleep 1
-  shell_running
-}
-
-if ((shell_dirty)) && command -v qs >/dev/null; then
+if ((shell_dirty)) && command -v qs >/dev/null && shell_running; then
   step 'restarting the shell'
   if ((dry)); then
-    if shell_running; then
-      info "would restart the quickshell instance running $shell_config"
-    else
-      info "would report that no shell is running $shell_config"
-    fi
-  elif ! shell_running; then
-    # Not an error: an upgrade over ssh, or from a TTY, has no shell to restart.
-    # It is still worth saying, because the other way to arrive here is a shell
-    # that already died on a half-copied tree -- and then this is the message
-    # that gets the desktop back.
-    info "no shell is running $shell_config, so there is nothing to restart"
-    restart_hint
-  elif ! shell_stop; then
-    warn 'the running shell will not exit, not even on SIGKILL -- it is still'
-    warn 'on the old config, and a relaunch would refuse to duplicate it'
-    restart_hint
-    shell_failed=1
-  elif shell_start; then
-    info 'restarted onto the new config'
+    info "would restart the quickshell instance running $shell_config"
   else
-    warn 'the shell did not come up on the new config'
-    info 'the configuration it was given fails to load. see the error with:'
-    info '  qs -c c7shell'
-    info "the last run's log is also kept:   qs log -c c7shell"
-    if ((${#conflicts[@]})); then
-      info 'you have .new files left to merge (listed at the end) -- a config'
-      info 'that is half yours and half shipped is a load failure on its own.'
+    qs kill -c c7shell >/dev/null 2>&1 || true
+    # The relaunch is --no-duplicate, so wait for the old one to actually be
+    # gone: two shells drawing the same bars is worse than one stale shell.
+    #
+    # `qs kill` is a request, though, and a shell can take its windows down and
+    # then wedge on the way out -- the instance is still listed, still holding
+    # the name the relaunch needs, and the desktop it was drawing is already
+    # gone. Leaving that alone used to be the cautious branch. It is not: it is
+    # a session with no bar and no launcher until the user logs out, which is
+    # worse than either outcome the caution was weighing. So the request
+    # escalates to the process behind it.
+    if ! wait_gone; then
+      mapfile -t stuck < <(shell_pids)
+      if ((${#stuck[@]})); then
+        info "the shell has not exited -- signalling ${stuck[*]}"
+        kill -TERM "${stuck[@]}" 2>/dev/null || true
+        wait_gone || { kill -KILL "${stuck[@]}" 2>/dev/null || true; wait_gone || true; }
+      fi
     fi
-    shell_failed=1
+
+    if shell_running; then
+      warn 'the running shell did not exit -- it is still on the old config'
+      info 'restart it yourself, or log out and back in'
+    else
+      # Nothing supervises quickshell: hypr autostarts it once and that is the
+      # only launch there is. Same command, same environment as
+      # hypr/conf/autostart.lua, detached so it outlives this terminal.
+      QT_WAYLAND_DISABLE_WINDOWDECORATION=1 setsid qs -c c7shell -d -n >/dev/null 2>&1 &
+      # And then check, because "restarted" is the one line in this whole
+      # command the user acts on by walking away. A launch that failed and said
+      # nothing is how you find out at the next reboot that you have no shell.
+      if wait_there; then
+        info 'restarted onto the new config'
+      else
+        warn 'the new shell did not come up'
+        info 'start it yourself: qs -c c7shell -d -n'
+      fi
+    fi
   fi
 fi
 
@@ -603,11 +544,6 @@ fi
 step 'summary'
 ((do_config)) && info "added $added, updated $updated, removed $removed, kept ${#conflicts[@]}"
 if [[ -n $greeter_note ]]; then info "$greeter_note"; fi
-if ((shell_failed)); then
-  warn 'nothing is running the new config -- the package and the configs are'
-  warn 'updated, but the desktop is stale or has no bar at all'
-  restart_hint
-fi
 if ((${#conflicts[@]})); then
   printf '\nThese files you had edited, and the shipped version changed too. Yours is\nuntouched; the new one is beside it as <file>.new:\n\n'
   for rel in "${conflicts[@]}"; do printf '  %s\n' "$conf/$rel"; done
@@ -616,6 +552,5 @@ if ((${#conflicts[@]})); then
   exit 4
 fi
 ((dry)) && { printf '\n--dry-run: nothing was changed.\n'; exit 0; }
-((shell_failed)) && exit 1
 echo
 echo 'Up to date. Log out and back in to pick up a new session entry or config.'

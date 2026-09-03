@@ -26,10 +26,16 @@ PanelWindow {
   // The capture card latches the monitor its capture happened on and must not
   // migrate; a notification belongs on the screen actually being used. While a
   // capture card is up its choice wins, since it is the shorter-lived one.
+  //
+  // The first screen is the last resort, not null: both name matches above can
+  // fail after a hotplug (see CaptureOverlay.qml), and a null screen is a window
+  // that cannot map while `visible` still goes true -- notifications, capture
+  // cards and update toasts would all stop appearing with nothing in the log.
   screen: (capture.visible
     ? Quickshell.screens.find(s => s.name === capture.monitor)
     : null)
     ?? Quickshell.screens.find(s => s.name === Hyprland.focusedMonitor?.name)
+    ?? Quickshell.screens[0]
     ?? null
 
   // dnd is filtered at the source in NotifServer.onNotification, so anything

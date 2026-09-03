@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import qs.Theme
 import qs.Common
 import qs.Services
@@ -19,9 +20,12 @@ Rectangle {
   // pill's highlight, not MediaPopover's identity.
   property bool active: false
 
-  visible: MprisService.hasPlayer
+  // Hidden with no player, and hidden wholesale in "compact" media style: there
+  // the "something is playing" signal lives in the clock pill (the dynamic
+  // island) instead, and the title/art/transport move to the calendar card.
+  visible: MprisService.hasPlayer && ShellStore.mediaPillStyle !== "compact"
 
-  implicitWidth: content.implicitWidth + 12   // content tuning, not a token
+  implicitWidth: content.implicitWidth + 24   // 12px horizontal padding each side
   implicitHeight: Theme.pillHeight
   radius: Theme.pillRadius
   color: root.active ? Theme.accentFillActive
@@ -54,18 +58,40 @@ Rectangle {
       }
 
       Image {
+        id: art
         anchors.fill: parent
         source: MprisService.artUrl
         fillMode: Image.PreserveAspectCrop
         // Hidden until it is actually loaded, so a 404 from a stale art URL
-        // leaves the placeholder rather than Qt's broken-image glyph.
-        visible: status === Image.Ready
+        // leaves the placeholder rather than Qt's broken-image glyph. Masked
+        // rather than drawn directly -- `clip` only clips to the rectangular
+        // bounds, so the corners would poke square over the r6 placeholder.
+        visible: false
         asynchronous: true
         sourceSize: Qt.size(44, 44)   // 2x, downscaled so it stays crisp
       }
+
+      MultiEffect {
+        anchors.fill: parent
+        source: art
+        visible: art.status === Image.Ready
+        maskEnabled: true
+        maskSource: mask
+      }
+
+      // Rounded-rect mask, rendered offscreen. Its r6 corners are what clip the
+      // art -- a plain `clip` only cuts to the rectangular bounds.
+      Item {
+        id: mask
+        anchors.fill: parent
+        layer.enabled: true
+        visible: false
+        Rectangle { anchors.fill: parent; radius: 6 }
+      }
     }
 
-    // Four crimson bars. They animate only while playing and FREEZE on pause --
+    // Four accentSoft bars, matching the bar family's accent tone rather than
+    // the raw accent. They animate only while playing and FREEZE on pause --
     // `paused`, not `running`, because stopping the animation would snap every
     // bar back to its starting height and read as a reset rather than a hold.
     Row {
@@ -81,7 +107,7 @@ Rectangle {
           anchors.verticalCenter: parent.verticalCenter
           width: 2
           height: 5
-          color: Theme.accent
+          color: Theme.accentSoft
 
           SequentialAnimation on height {
             running: true

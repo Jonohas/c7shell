@@ -111,19 +111,14 @@ Scope {
           height: parent.height
           // Was zero-width: the children centre themselves inside it and
           // nothing ever measured it. The islands-mode pill behind it does, so
-          // it now takes the width of whichever child is actually showing.
-          width: RecordingService.active ? rec.width : clock.width
+          // it takes the clock's width -- which grows to hold the recording
+          // section, since that lives inside the clock pill.
+          width: clock.width
 
           ClockPill {
             id: clock
             anchors.centerIn: parent
-            visible: !RecordingService.active
             onClicked: PopoverManager.toggle("calendar", clock)
-          }
-          RecordingIsland {
-            id: rec
-            anchors.centerIn: parent
-            visible: RecordingService.active
           }
         }
 
