@@ -41,10 +41,17 @@ force=0
 # it is a line in /etc/sddm.conf.d that no package may write. An install from
 # before the theme existed has the files and not the selection, which is exactly
 # the gap this step closes.
-# Bumped whenever a step is added after the package half below. That half
-# replaces this very script, so on the upgrade that introduces a step it is the
-# *old* code that would run it -- see the hand-over after the package step.
-upgrade_revision=2
+# Bumped whenever a step is added after the package half below, or an existing
+# one changes in a way that matters on the run that installs the change. That
+# half replaces this very script, so it is otherwise the *old* code that runs
+# the rest -- see the hand-over after the package step.
+#
+# Rev 3 is the restart step below. Rev 2 shipped a fix to it and did not bump,
+# so the run that installed that fix went on using the code it replaced -- the
+# report from the machine it happened on is a shell wedged on a failed load and
+# a "restart it yourself" with no command in it, which is precisely the pair of
+# things rev 2 had just fixed.
+upgrade_revision=3
 
 etc_root=${C7SHELL_ROOT:-}
 sddm_dropin=$etc_root/etc/sddm.conf.d/10-c7shell.conf
@@ -81,7 +88,8 @@ env: C7SHELL_REPO   (default $repo)
      C7SHELL_CACHE  (default \$XDG_CACHE_HOME/c7shell)
      C7SHELL_STATE  (default \$XDG_STATE_HOME/c7shell)
 
-exit: 0 up to date, 1 something went wrong, 4 updated but files need merging
+exit: 0 up to date, 1 something went wrong (no shell left running the new
+      config counts), 4 updated but files need merging
 USAGE
 }
 
@@ -237,6 +245,10 @@ removed=0
 # Only a write under quickshell/ makes the running shell stale. A hypr-only
 # upgrade changes nothing quickshell has loaded, and has nothing to restart for.
 shell_dirty=0
+# Set when the restart step could not leave a shell running the new config. It
+# reaches the summary and the exit status, because the terminal that ran the
+# upgrade is the only place it can: there is no bar left to notify on.
+shell_failed=0
 touches_shell() { case $1 in quickshell/*) shell_dirty=1 ;; esac; }
 
 if ((do_config)); then
@@ -401,16 +413,52 @@ shell_pids() {
 
 # Wait for `qs list` to agree with what we just did. Six seconds: a shell exits
 # in well under one and comes up in about one, and anything past that is not a
-# delay, it is the thing this waits to find out about.
-wait_gone()  { local _; for _ in $(seq 30); do shell_running || return 0; sleep 0.2; done; return 1; }
-wait_there() { local _; for _ in $(seq 30); do shell_running && return 0; sleep 0.2; done; return 1; }
+# delay, it is the thing this waits to find out about. Overridable only so the
+# test suite can drive the give-up branches without waiting them out.
+wait_ticks=${C7SHELL_WAIT_TICKS:-30}
+wait_gone()  { local _; for _ in $(seq "$wait_ticks"); do shell_running || return 0; sleep 0.2; done; return 1; }
+wait_there() { local _; for _ in $(seq "$wait_ticks"); do shell_running && return 0; sleep 0.2; done; return 1; }
 
-if ((shell_dirty)) && command -v qs >/dev/null && shell_running; then
+# The command hypr autostarts the shell with, quoted so it can be pasted. Kept
+# beside the launch below; the two must not drift, or this starts the shell in
+# an environment the autostart never uses.
+shell_argv='QT_WAYLAND_DISABLE_WINDOWDECORATION=1 setsid qs -c c7shell -d -n'
+
+# Every branch that ends with nothing drawing the desktop comes through here.
+# "restart it yourself, or log out and back in" was the whole of the old
+# advice, and it is the one instruction in this command that needs an actual
+# command attached: nothing supervises quickshell, and the hypr autostart line
+# only runs at login, so there is no service to start and no obvious thing to
+# retype.
+restart_hint() {
+  info 'start it again with the command hypr autostarts it with:'
+  info "  $shell_argv"
+  info 'or log out and back in. if it exits straight away, run it in the'
+  info 'foreground to see why:  qs -c c7shell'
+  info "the last run's log is kept too:  qs log -c c7shell"
+}
+
+if ((shell_dirty)) && command -v qs >/dev/null; then
   step 'restarting the shell'
   if ((dry)); then
-    info "would restart the quickshell instance running $shell_config"
+    if shell_running; then
+      info "would restart the quickshell instance running $shell_config"
+    else
+      info "would report that nothing is running $shell_config"
+    fi
+  elif ! shell_running; then
+    # Not a failure: an upgrade over ssh or from a TTY has no shell to restart,
+    # and this step used to say nothing at all in that case. It is worth a line
+    # anyway, because the other way to arrive here is a shell that already died
+    # on the half-copied tree -- and then this is the message that gets the
+    # desktop back.
+    info "nothing is running $shell_config, so there is nothing to restart"
+    restart_hint
   else
-    qs kill -c c7shell >/dev/null 2>&1 || true
+    # By pid rather than `qs kill -c c7shell`: the note above about never
+    # touching a shell this run did not touch applies to the polite request as
+    # much as to the signal, and a config name matches somebody else's tree.
+    for pid in $(shell_pids); do qs kill --pid "$pid" >/dev/null 2>&1 || true; done
     # The relaunch is --no-duplicate, so wait for the old one to actually be
     # gone: two shells drawing the same bars is worse than one stale shell.
     #
@@ -431,8 +479,11 @@ if ((shell_dirty)) && command -v qs >/dev/null && shell_running; then
     fi
 
     if shell_running; then
-      warn 'the running shell did not exit -- it is still on the old config'
-      info 'restart it yourself, or log out and back in'
+      warn 'the running shell will not exit, not even on SIGKILL -- it is still'
+      warn 'on the old config, and the relaunch is --no-duplicate, so it would'
+      warn 'decline to start beside it'
+      restart_hint
+      shell_failed=1
     else
       # Nothing supervises quickshell: hypr autostarts it once and that is the
       # only launch there is. Same command, same environment as
@@ -441,11 +492,21 @@ if ((shell_dirty)) && command -v qs >/dev/null && shell_running; then
       # And then check, because "restarted" is the one line in this whole
       # command the user acts on by walking away. A launch that failed and said
       # nothing is how you find out at the next reboot that you have no shell.
-      if wait_there; then
+      #
+      # Twice, a second apart: a configuration that loads and then fails on its
+      # first reload registers an instance and drops it again, so one look can
+      # report a shell that lasted 200ms.
+      if wait_there && { sleep 1; shell_running; }; then
         info 'restarted onto the new config'
       else
-        warn 'the new shell did not come up'
-        info 'start it yourself: qs -c c7shell -d -n'
+        warn 'the shell did not come up on the new config'
+        info 'the configuration it was handed fails to load -- see the error:'
+        info '  qs -c c7shell'
+        if ((${#conflicts[@]})); then
+          info 'you have .new files left to merge (listed at the end): a config'
+          info 'that is half yours and half shipped is a load failure by itself.'
+        fi
+        shell_failed=1
       fi
     fi
   fi
@@ -544,6 +605,11 @@ fi
 step 'summary'
 ((do_config)) && info "added $added, updated $updated, removed $removed, kept ${#conflicts[@]}"
 if [[ -n $greeter_note ]]; then info "$greeter_note"; fi
+if ((shell_failed)); then
+  warn 'nothing is running the new config -- the package and the configs are'
+  warn 'updated, but the desktop is stale or has no bar at all'
+  restart_hint
+fi
 if ((${#conflicts[@]})); then
   printf '\nThese files you had edited, and the shipped version changed too. Yours is\nuntouched; the new one is beside it as <file>.new:\n\n'
   for rel in "${conflicts[@]}"; do printf '  %s\n' "$conf/$rel"; done
@@ -552,5 +618,6 @@ if ((${#conflicts[@]})); then
   exit 4
 fi
 ((dry)) && { printf '\n--dry-run: nothing was changed.\n'; exit 0; }
+((shell_failed)) && exit 1
 echo
 echo 'Up to date. Log out and back in to pick up a new session entry or config.'

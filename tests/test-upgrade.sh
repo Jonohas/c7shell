@@ -291,12 +291,19 @@ grep -q 'MediaPill' "$real_conf/quickshell/c7shell/Modules/Bar/Bar.qml" \
 ship quickshell/c7shell/shell.qml 'v9 shell'
 out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
 grep -q 'update  quickshell/c7shell/shell.qml' <<<"$out" || fail "the shell file was not updated:\n$out"
-grep -q 'restarting the shell' <<<"$out" && fail "restarted a shell that is not running this config:\n$out"
+grep -q 'restarted onto the new config' <<<"$out" \
+  && fail "restarted a shell that is not running this config:\n$out"
+# Nothing to restart is still worth a line, with the command in it. The other
+# way to reach this state is a shell that already died on the half-copied tree,
+# and then this message is all that stands between the user and a bare desktop.
+grep -q 'nothing to restart' <<<"$out" || fail "the absent shell went unmentioned:\n$out"
+grep -qF 'setsid qs -c c7shell -d -n' <<<"$out" \
+  || fail "said to restart the shell without saying how:\n$out"
 
 # A hypr-only change has nothing to restart for either, whatever is running.
 ship hypr/hyprland.lua 'v9 entry'
 out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
-grep -q 'restarting the shell' <<<"$out" && fail "a hypr-only change restarted the shell:\n$out"
+grep -q 'restarting the shell' <<<"$out" && fail "a hypr-only change looked at the shell:\n$out"
 
 # With a quickshell that does claim this tree, the restart is kill-then-relaunch
 # and the relaunch is detached, so it has to outlive the upgrade that started
@@ -304,11 +311,25 @@ grep -q 'restarting the shell' <<<"$out" && fail "a hypr-only change restarted t
 # killed, which is also what the wait loop is reading.
 export QS_STUB=$tmp/qs-stub
 mkdir -p "$QS_STUB"
+# The stub speaks the real `qs list --all` block format: the exit request now
+# goes to a pid, and the instance it names has to be the one whose *own* block
+# carries our config path. Both pids are above every kernel's pid_max, so a run
+# that matches them wrong cannot signal a real process on this machine.
 cat > "$tmp/bin/qs" <<'QS'
 #!/bin/sh
+# Two instances, and only the second is ours.
+report() {
+  printf 'Instance notmine:\n  Process ID: 4194305\n  Config path: %s\n' \
+    "$XDG_CONFIG_HOME/quickshell/other/shell.qml"
+  printf 'Instance stubinst:\n  Process ID: 4194304\n  Config path: %s\n' \
+    "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml"
+}
 case "$1 $2" in
-  'list --all') [ -e "$QS_STUB/killed" ] || printf '  Config path: %s\n' "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml" ;;
-  'kill -c')    printf '%s\n' "$3" > "$QS_STUB/killed" ;;
+  # Listed until killed, and listed again once relaunched: the step waits for
+  # the instance to go away and then for it to come back.
+  'list --all')
+    if [ ! -e "$QS_STUB/killed" ] || [ -e "$QS_STUB/launched" ]; then report; fi ;;
+  'kill --pid') printf '%s\n' "$3" >> "$QS_STUB/killed" ;;
   '-c c7shell') printf '%s\n' "$*" > "$QS_STUB/launched" ;;
 esac
 QS
@@ -317,10 +338,11 @@ chmod +x "$tmp/bin/qs"
 ship quickshell/c7shell/shell.qml 'v10 shell'
 out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
 grep -q 'restarting the shell' <<<"$out" || fail "the shell was not restarted:\n$out"
-[[ $(cat "$QS_STUB/killed") == c7shell ]] || fail 'the restart killed the wrong config'
-for _ in $(seq 25); do [[ -e $QS_STUB/launched ]] && break; sleep 0.2; done
+[[ $(cat "$QS_STUB/killed") == 4194304 ]] \
+  || fail "the exit request went to an instance on another config: $(cat "$QS_STUB/killed")"
 grep -q -- '-d' "$QS_STUB/launched" 2>/dev/null \
   || fail "the shell was killed and not relaunched: $(cat "$QS_STUB/launched" 2>/dev/null)"
+grep -q 'restarted onto the new config' <<<"$out" || fail "the restart went unconfirmed:\n$out"
 
 # --dry-run plans the restart and does not perform it
 rm -f "$QS_STUB/killed" "$QS_STUB/launched"
@@ -375,7 +397,7 @@ case "$1 $2" in
       "$pid" "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml"
     ;;
   # Asked, and ignored: the process stays alive and the instance stays listed.
-  'kill -c') printf '%s\n' "$3" > "$QS_STUB/asked" ;;
+  'kill --pid') printf '%s\n' "$3" > "$QS_STUB/asked" ;;
   '-c c7shell')
     printf '%s\n' "$*" > "$QS_STUB/launched"
     sleep 60 & printf '%s\n' "$!" > "$QS_STUB/pid"
@@ -388,7 +410,8 @@ printf '%s\n' "$wedged_pid" > "$QS_STUB/pid"
 
 ship quickshell/c7shell/shell.qml 'v12 shell'
 out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
-[[ -e $QS_STUB/asked ]] || fail "the wedged shell was never asked to exit:\n$out"
+[[ $(cat "$QS_STUB/asked" 2>/dev/null) == "$wedged_pid" ]] \
+  || fail "the wedged shell was never asked to exit by pid:\n$out"
 kill -0 "$wedged_pid" 2>/dev/null \
   && fail "the wedged shell was left running and the desktop left with no bar:\n$out"
 grep -q -- '-d' "$QS_STUB/launched" 2>/dev/null \
@@ -403,16 +426,47 @@ rm -f "$QS_STUB"/*
 cat > "$tmp/bin/qs" <<'QS'
 #!/bin/sh
 case "$1 $2" in
-  'list --all') [ -e "$QS_STUB/killed" ] || printf '  Config path: %s\n' "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml" ;;
-  'kill -c')    printf '%s\n' "$3" > "$QS_STUB/killed" ;;
+  'list --all')
+    [ -e "$QS_STUB/killed" ] || printf 'Instance stub:\n  Process ID: 4194304\n  Config path: %s\n' \
+      "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml" ;;
+  'kill --pid') printf '%s\n' "$3" > "$QS_STUB/killed" ;;
   '-c c7shell') printf '%s\n' "$*" > "$QS_STUB/launched" ;;   # and never comes up
 esac
 QS
 chmod +x "$tmp/bin/qs"
 ship quickshell/c7shell/shell.qml 'v13 shell'
-out=$("$upgrade" --config-only --no-doctor --no-greeter 2>&1) || true
-grep -q 'the new shell did not come up' <<<"$out" \
+rc=0
+out=$(C7SHELL_WAIT_TICKS=3 "$upgrade" --config-only --no-doctor --no-greeter 2>&1) || rc=$?
+grep -q 'did not come up on the new config' <<<"$out" \
   || fail "a relaunch that never came up was reported as a restart:\n$out"
+grep -q 'qs -c c7shell' <<<"$out" || fail "did not say how to see the load error:\n$out"
+# The exit status carries it too. A desktop with no bar on it is the one
+# outcome of this command that must not look like success to whatever ran it.
+((rc == 1)) || fail "a shell that never came back exited $rc, not 1:\n$out"
+
+# And the shell that stays listed even after SIGKILL. The relaunch is
+# --no-duplicate, so it must not be attempted beside the corpse -- and this is
+# the branch that used to end at "restart it yourself" with no command in it.
+rm -f "$QS_STUB"/*
+cat > "$tmp/bin/qs" <<'QS'
+#!/bin/sh
+case "$1 $2" in
+  # Never goes away, whatever is sent to it. 4194304 is above pid_max, so the
+  # signals the step escalates to cannot land on anything real.
+  'list --all') printf 'Instance stub:\n  Process ID: 4194304\n  Config path: %s\n' \
+                  "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml" ;;
+  'kill --pid') printf '%s\n' "$3" > "$QS_STUB/killed" ;;
+  '-c c7shell') printf '%s\n' "$*" > "$QS_STUB/launched" ;;
+esac
+QS
+chmod +x "$tmp/bin/qs"
+ship quickshell/c7shell/shell.qml 'v14 shell'
+rc=0
+out=$(C7SHELL_WAIT_TICKS=2 "$upgrade" --config-only --no-doctor --no-greeter 2>&1) || rc=$?
+grep -qF 'setsid qs -c c7shell -d -n' <<<"$out" \
+  || fail "said to restart the shell without saying how:\n$out"
+[[ ! -e $QS_STUB/launched ]] || fail 'launched a second shell beside one that never exited'
+((rc == 1)) || fail "a desktop left with no bar exited $rc, not 1:\n$out"
 
 echo 'PASS: c7shell-upgrade'
 
