@@ -30,6 +30,9 @@ GlassPanel {
     spacing: 4
 
     Rectangle {   // shot | rec segmented control
+      // Nothing to switch to on a still frame: a recording cannot start from
+      // a picture of the screen.
+      visible: !bar.overlay.frozen
       anchors.verticalCenter: parent.verticalCenter
       width: segments.implicitWidth + 6
       height: segments.implicitHeight + 6
@@ -73,6 +76,8 @@ GlassPanel {
     }
     Chip {
       icon: "screens"; label: "all screens"
+      // The still is one output, so there are no others left to include.
+      visible: !bar.overlay.frozen
       active: bar.overlay.target === "all"
       onClicked: bar.setTarget("all")
     }
@@ -85,7 +90,8 @@ GlassPanel {
 
     Chip {   // 5a extras
       icon: "timer"; label: "3s"
-      visible: bar.overlay.mode === "shot"
+      // Already spent by the time the still is up.
+      visible: bar.overlay.mode === "shot" && !bar.overlay.frozen
       active: bar.overlay.delayed
       onClicked: bar.overlay.delayed = !bar.overlay.delayed
     }
