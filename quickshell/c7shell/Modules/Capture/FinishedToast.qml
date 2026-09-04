@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import Quickshell.Hyprland
 import qs.Theme
 import qs.Common
@@ -8,11 +7,9 @@ import qs.Services
 // Mockup 5b, top right: what you just captured, and the three things you are
 // likely to do with it. Auto-hides; the file actions run in CaptureService.
 //
-// A card, not a window: it shares the top-right host with the notification
-// stack. Two windows in that corner is what drew the two cards on top of each
-// other, and the hand-off that patched it needed a service property to carry
-// one window's bottom edge to the other.
-Item {
+// The shadow, the glass and the countdown are ToastCard's -- this file is the
+// content and the capture-specific lifetime.
+ToastCard {
   id: root
 
   property string path: ""
@@ -23,8 +20,14 @@ Item {
   // pointer while it is up. The host reads this to place itself.
   property string monitor: ""
 
-  visible: root.path !== ""
-  implicitHeight: root.visible ? card.height : 0
+  shown: root.path !== ""
+  life: 6000
+  onTimeout: root.path = ""
+
+  // Shrink to fit, unlike the other cards in the stack: this one is a pill
+  // around a 52px thumbnail and three words.
+  cardWidth: content.implicitWidth + 24
+  cardHeight: content.implicitHeight + 18
 
   Connections {
     target: CaptureService
@@ -41,130 +44,78 @@ Item {
   function show(path) {
     root.monitor = Hyprland.focusedMonitor?.name ?? ""
     root.path = path
-    life.restart()
+    // A second capture while the first card is still up leaves `shown` true,
+    // so the countdown needs restarting by hand.
+    root.kick()
   }
 
-  Timer { id: life; interval: 6000; onTriggered: root.path = "" }
+  Row {
+    id: content
+    anchors.centerIn: parent
+    spacing: 10
 
-  RectangularShadow {
-    anchors.fill: card
-    radius: card.radius
-    color: Theme.panelShadowColor
-    offset.y: 12
-    blur: 40
-    z: -1
-  }
+    Item {   // thumbnail, or stripes when there is nothing to show one from
+      anchors.verticalCenter: parent.verticalCenter
+      width: 52; height: 32
+      clip: true
 
-  GlassPanel {
-    id: card
-
-    anchors { right: parent.right; top: parent.top }
-    width: content.implicitWidth + 24
-    height: content.implicitHeight + 18
-    radius: Theme.pillRadius
-    glassAlpha: Theme.glassAlphaPanel
-
-    Row {
-      id: content
-      anchors.centerIn: parent
-      spacing: 10
-
-      Item {   // thumbnail, or stripes when there is nothing to show one from
-        anchors.verticalCenter: parent.verticalCenter
-        width: 52; height: 32
-        clip: true
-
-        Rectangle {
-          anchors.fill: parent
-          radius: Theme.radiusPip
-          color: Theme.surface04
-        }
-
-        Item {   // 45° stripes, the mockup's placeholder
-          anchors.fill: parent
-          visible: thumb.status !== Image.Ready
-
-          Repeater {
-            model: 12
-            Rectangle {
-              required property int index
-              x: index * 8 - 20
-              y: -16
-              width: 4
-              height: 64
-              rotation: 45
-              color: Theme.surface07
-            }
-          }
-        }
-
-        Image {
-          id: thumb
-          anchors.fill: parent
-          // Video has no decodable first frame here; the stripes stay for those.
-          source: root.path ? `file://${root.path}` : ""
-          sourceSize: Qt.size(104, 64)
-          fillMode: Image.PreserveAspectCrop
-          asynchronous: true
-          visible: thumb.status === Image.Ready
-        }
+      Rectangle {
+        anchors.fill: parent
+        radius: Theme.radiusPip
+        color: Theme.surface04
       }
 
-      Column {
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: 2
+      Item {   // 45° stripes, the mockup's placeholder
+        anchors.fill: parent
+        visible: thumb.status !== Image.Ready
 
-        Text {
-          text: root.filename
-          font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
-          color: Theme.text
-        }
-
-        Row {
-          spacing: 0
-          ToastAction { label: "open"; accent: true; onTriggered: CaptureService.openFile(root.path) }
-          Separator {}
-          ToastAction { label: "folder"; onTriggered: CaptureService.openFolder(root.path) }
-          Separator {}
-          ToastAction {
-            label: "delete"
-            onTriggered: CaptureService.discard(root.path)
+        Repeater {
+          model: 12
+          Rectangle {
+            required property int index
+            x: index * 8 - 20
+            y: -16
+            width: 4
+            height: 64
+            rotation: 45
+            color: Theme.surface07
           }
         }
       }
+
+      Image {
+        id: thumb
+        anchors.fill: parent
+        // Video has no decodable first frame here; the stripes stay for those.
+        source: root.path ? `file://${root.path}` : ""
+        sourceSize: Qt.size(104, 64)
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        visible: thumb.status === Image.Ready
+      }
     }
 
-    MouseArea {   // hovering holds the toast open while you aim at an action
-      anchors.fill: parent
-      hoverEnabled: true
-      acceptedButtons: Qt.NoButton
-      onEntered: life.stop()
-      onExited: life.restart()
-    }
-  }
+    Column {
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: 2
 
-  component Separator: Text {
-    text: " · "
-    font { family: Theme.fontMono; pixelSize: 9; weight: 400 }
-    color: Theme.text3
-  }
+      Text {
+        text: root.filename
+        font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
+        color: Theme.text
+      }
 
-  component ToastAction: Text {
-    id: act
-    property string label
-    property bool accent: false
-    signal triggered()
-
-    text: act.label
-    font { family: Theme.fontMono; pixelSize: 9; weight: 400 }
-    color: act.accent ? Theme.accentSoft : Theme.text3
-
-    MouseArea {
-      anchors.fill: parent
-      anchors.margins: -4
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: act.triggered()
+      Row {
+        spacing: 0
+        ToastAction { label: "open"; accent: true; onTriggered: CaptureService.openFile(root.path) }
+        ToastSeparator {}
+        ToastAction { label: "folder"; onTriggered: CaptureService.openFolder(root.path) }
+        ToastSeparator {}
+        ToastAction {
+          label: "delete"
+          onTriggered: CaptureService.discard(root.path)
+        }
+      }
     }
   }
 }
