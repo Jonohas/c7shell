@@ -189,7 +189,7 @@ GlassPopover {
     Text {
       anchors.verticalCenter: parent.verticalCenter
       text: near.error !== "" ? near.error
-        : near.device.pairing ? "pairing…"
+        : BluetoothService.isPairing(near.device) ? "pairing…"
         : near.device.paired || near.device.bonded ? "connect"
         : "pair"
       font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
