@@ -113,7 +113,7 @@ Row {
   Tooltip {
     id: tip
 
-    visible: root.hovered
+    open: root.hovered
     anchorItem: root
     panelHeight: rows.implicitHeight + 22
     panelRadius: Theme.radiusMenu

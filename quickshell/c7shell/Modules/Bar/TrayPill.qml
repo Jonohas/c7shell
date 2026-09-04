@@ -32,6 +32,20 @@ Rectangle {
     // Whichever entry the cursor is over, or null. Drives the shared tooltip.
     property var hovered: null
 
+    // What the tooltip would say about it, or "" when there is nothing to say.
+    //
+    // The delegate and the tray item it draws have different lifetimes: an SNI
+    // that unregisters under the cursor leaves the delegate alive holding a
+    // modelData Qt has already torn down, and every field on it reads back
+    // undefined. Showing the tooltip off `hovered` rather than off this is what
+    // left an empty glass card hanging under the bar until the next icon was
+    // hovered -- the window was up because the cursor was somewhere, not
+    // because there was a name to print.
+    readonly property string hoveredName: {
+      const item = root.hovered?.modelData
+      return item ? (item.tooltipTitle || item.title || item.id || "") : ""
+    }
+
     // Hyprland has no minimize, and it ignores the wlr set_minimized request, so a
     // hidden special workspace is the stand-in: the window is genuinely off every
     // visible workspace rather than shoved off the edge of one.
@@ -81,6 +95,9 @@ Rectangle {
 
         onEntered: root.hovered = entry
         onExited: if (root.hovered === entry) root.hovered = null
+        // An id moving into hiddenItems collapses the entry under the cursor,
+        // and Qt sends no leave to an item it has just hidden.
+        onVisibleChanged: if (!entry.visible && root.hovered === entry) root.hovered = null
 
         // Right click (or a menu-only item) hands off to the app's own DBus menu,
         // which display() renders as a native popup - no menu building here.
@@ -160,7 +177,7 @@ Rectangle {
     Tooltip {
       id: tip
 
-      visible: root.hovered !== null
+      open: root.hoveredName !== ""
       anchorItem: root.hovered
       panelWidth: label.implicitWidth + 12
       panelHeight: label.implicitHeight + 8
@@ -171,10 +188,7 @@ Rectangle {
         anchors.centerIn: parent
         color: Theme.text2
         font { family: Theme.fontMono; pixelSize: 10 }
-        text: {
-          const item = root.hovered?.modelData
-          return item ? (item.tooltipTitle || item.title || item.id) : ""
-        }
+        text: root.hoveredName
       }
     }
   }
