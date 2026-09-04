@@ -243,6 +243,22 @@ need_cmd c7-askpass c7shell 'what SUDO_ASKPASS points at, so sudo -A prompts thr
 need_cmd grim        grim         'screenshots'
 need_cmd wf-recorder wf-recorder  'screen recording'
 need_cmd wl-copy     wl-clipboard 'copying captures to the clipboard'
+# The delayed screenshot's second half. Its shutter fires before the rectangle
+# is drawn -- that is the point of it, since the hover menu you are capturing
+# is gone the moment you move the pointer to draw -- so the region is cut out
+# of the captured frame afterwards, by scripts/c7shell-crop.py through
+# gdk-pixbuf. grim reads the compositor and cannot re-crop a file.
+#
+# Checked as a typelib import rather than a command: nothing here is on PATH,
+# and gdk-pixbuf2 arrives transitively through gtk3 on most machines, which is
+# exactly why its absence would otherwise surface as one broken chip rather
+# than as a missing package.
+if python3 -c 'import gi; gi.require_version("GdkPixbuf", "2.0"); from gi.repository import GdkPixbuf' 2>/dev/null; then
+  ok 'gdk-pixbuf (delayed screenshot crop)'
+else
+  bad 'the GdkPixbuf typelib is missing -- the delayed screenshot cannot crop its frame (package: gdk-pixbuf2)'
+  want_pkg gdk-pixbuf2
+fi
 need_cmd notify-send libnotify    'notifications from the shell scripts'
 need_cmd wpctl       wireplumber  'the volume and mute keybinds'
 need_cmd bluetoothctl bluez-utils 'the bluetooth applet'

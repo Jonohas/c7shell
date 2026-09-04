@@ -85,15 +85,42 @@ PanelWindow {
     return `${x},${y} ${Math.round(win.selW)}x${Math.round(win.selH)}`
   }
 
+  // -- the still, once a delayed capture's shutter has already gone --------
+  // The delay exists to capture what is only on screen while the pointer is
+  // on it, so its rectangle cannot be drawn beforehand: see CaptureService's
+  // note. While this is up the surface is showing a picture of the screen,
+  // not the screen, and ↵ cuts the rectangle out of that picture.
+  readonly property bool frozen: CaptureService.frozen !== ""
+  // The still is the output's own pixels, so its native width over this
+  // surface's logical width is exactly the ratio grim worked in. Measured
+  // rather than read off the monitor: one scale factor, from the file that
+  // actually has to be cut.
+  readonly property real deviceRatio: still.implicitWidth > 0 && win.width > 0
+    ? still.implicitWidth / win.width
+    : 1
+
   // What the hint line says instead of its usual text, for a beat.
   property string notice: ""
   Timer { id: noticeLife; interval: 1600; onTriggered: win.notice = "" }
+
+  // Top left. A notice wins for a beat; otherwise this says what the stage the
+  // capture is actually at is waiting for.
+  readonly property string hint: {
+    if (win.notice !== "") return win.notice
+    const pick = win.target === "window" ? "hover a window" : "drag to select"
+    if (win.frozen) return `frozen frame · ${pick} · ↵ captures · esc discards`
+    if (win.target === "window") return "hover a window · ↵ captures · esc cancels"
+    return "drag to select · space moves selection · esc cancels"
+  }
 
   onVisibleChanged: {
     if (!win.visible) {
       // Re-latch on the way down: focus may have moved while the overlay held
       // `mon` frozen, and the next open must not start in that stale frame.
       win.mon = Hyprland.focusedMonitor
+      // Closing on a still nobody cut throws it away. cropFrozen() claims the
+      // frame first, so the capture path never reaches this.
+      CaptureService.discardFrozen()
       return
     }
     // A capture armed just before the overlay was reopened would otherwise fire
@@ -104,7 +131,9 @@ PanelWindow {
     win.notice = ""
     win.selW = 0
     win.selH = 0
-    win.target = "region"
+    // A frozen reopen is one capture continuing, so the target chosen before
+    // the countdown still stands. A fresh open starts at region.
+    if (!win.frozen) win.target = "region"
     // hyprctl's client list is only refreshed on demand, and a stale one would
     // snap the window target to geometry a window no longer has.
     Hyprland.refreshToplevels()
@@ -158,40 +187,89 @@ PanelWindow {
   // Hide first, capture after. The overlay is a layer surface like any other and
   // grim would otherwise photograph the dim and the toolbar.
   function arm() {
-    // No rectangle means no capture. Falling through would silently grab the
-    // whole default output instead, which is not what either target asked for --
-    // and an overlay that just ignores ↵ is its own kind of silent failure, so
-    // the hint says what is missing.
-    if ((win.target === "region" || win.target === "window") && !win.hasSelection) {
-      win.notice = win.target === "window" ? "hover a window first" : "drag a region first"
-      noticeLife.restart()
+    // Second stage of a delayed capture: the surface is showing a still, so ↵
+    // cuts the rectangle out of it rather than taking anything new.
+    if (win.frozen) { win.cut(); return }
+
+    // region and window do not know their rectangle yet; screen and all
+    // screens do, by definition.
+    const needsRectangle = win.target === "region" || win.target === "window"
+
+    // First stage of a delayed one. Nothing is selected, on purpose: with the
+    // delay on, a rectangle drawn now cannot be around the hover menu the
+    // delay was turned on for. So the shutter takes the whole output and the
+    // rectangle is drawn on the frame it brings back.
+    if (win.delayed && win.mode === "shot") {
+      win.loadShutter(needsRectangle ? "freeze" : "shoot")
+      CaptureService.close()
+      // A visible countdown, not a longer sleep: the pill draws the seconds
+      // while the overlay is down, so you can see when to be hovering.
+      CaptureService.startCountdown(win.mon?.name ?? win.screen?.name ?? "")
       return
     }
 
-    win.clampSelection()
-    fire.geometry = win.geometryArg
-    // wf-recorder records one output, so "all screens" in rec mode means the
-    // focused one. Screenshots really can span every output, with no -o at all.
-    fire.output = win.target === "screen" || (win.mode === "rec" && win.target === "all")
-      ? (win.mon?.name ?? "")
-      : ""
-    fire.record = win.mode === "rec"
+    // No rectangle means no capture. Falling through would silently grab the
+    // whole default output instead, which is not what either target asked for.
+    if (needsRectangle && win.nothingSelected()) return
 
+    win.loadShutter(win.mode === "rec" ? "record" : "shoot")
     CaptureService.close()
-    // The 3s chip is a visible countdown, not a longer sleep: the pill draws
-    // the seconds while the overlay is down and hands back here at zero.
-    if (win.delayed && !fire.record)
-      CaptureService.startCountdown(win.mon?.name ?? win.screen?.name ?? "")
-    else
-      fire.restart()
+    fire.restart()
   }
 
-  // Zero on the pill, not the shutter: the pill is a layer surface too, so it
-  // needs the same recomposite grace the overlay does before grim reads the
-  // screen -- which is exactly what `fire` is.
+  // Says so, and reports it, rather than letting ↵ do nothing: an overlay that
+  // just ignores the key is its own kind of silent failure, so the hint line
+  // says which of the two things is missing.
+  function nothingSelected() {
+    if (win.hasSelection) return false
+    win.notice = win.target === "window" ? "hover a window first" : "drag a region first"
+    noticeLife.restart()
+    return true
+  }
+
+  // What the shutter will do, and to what. Latched onto the timer rather than
+  // read when it triggers: `mon` and the selection have both moved on by then,
+  // and a delayed one waits three seconds before reading any of it.
+  function loadShutter(action) {
+    win.clampSelection()
+    fire.action = action
+    // A freeze is always the whole output -- the rectangle is the next stage's
+    // business, not grim's.
+    fire.geometry = action === "freeze" ? "" : win.geometryArg
+    // wf-recorder records one output, so "all screens" in rec mode means the
+    // focused one. Screenshots really can span every output, with no -o at all.
+    fire.output = action === "freeze" || win.target === "screen"
+        || (win.mode === "rec" && win.target === "all")
+      ? (win.mon?.name ?? "")
+      : ""
+  }
+
+  // The rectangle drawn on the still, cut out of the file. Logical pixels on
+  // this surface, device pixels in the PNG: the still is the output at its
+  // real resolution, which on a fractionally scaled output is not the same
+  // number.
+  function cut() {
+    if (win.nothingSelected()) return
+    win.clampSelection()
+    const r = win.deviceRatio
+    CaptureService.cropFrozen(win.selX * r, win.selY * r, win.selW * r, win.selH * r)
+    // No recomposite grace on this one: cutting a file does not care what is
+    // on the screen.
+    CaptureService.close()
+  }
+
   Connections {
     target: CaptureService
+
+    // Zero on the pill, not the shutter: the pill is a layer surface too, so
+    // it needs the same recomposite grace the overlay does before grim reads
+    // the screen -- which is exactly what `fire` is.
     function onCountdownElapsed() { fire.restart() }
+
+    // The frame is in. Back up, on the still this time.
+    function onFrozenChanged() {
+      if (CaptureService.frozen !== "") CaptureService.open()
+    }
   }
 
   Timer {
@@ -203,10 +281,12 @@ PanelWindow {
 
     property string geometry: ""
     property string output: ""
-    property bool record: false
+    // shoot | record | freeze -- freeze being the delayed capture's first
+    // half, which takes the whole output so the rectangle can be drawn on it.
+    property string action: "shoot"
 
     onTriggered: {
-      if (fire.record) {
+      if (fire.action === "record") {
         RecordingService.start({
           geometry: fire.geometry,
           output: fire.output,
@@ -214,6 +294,8 @@ PanelWindow {
           sysAudio: win.sysAudio,
           fps60: win.fps60
         })
+      } else if (fire.action === "freeze") {
+        CaptureService.freeze(fire.output, win.copyToClipboard)
       } else {
         CaptureService.shoot(fire.geometry, fire.output, win.copyToClipboard)
       }
@@ -235,6 +317,21 @@ PanelWindow {
     }
     Keys.onReleased: event => {
       if (event.key === Qt.Key_Space) { keys.spaceHeld = false; event.accepted = true }
+    }
+
+    Image {   // the frozen frame, under the dim
+      id: still
+      anchors.fill: parent
+      visible: win.frozen
+      source: CaptureService.frozenUrl
+      // The output's own pixels drawn back onto the output at 1:1, so no
+      // aspect juggling -- and no smoothing, which would be a lie about what
+      // was on the screen at the shutter.
+      fillMode: Image.Stretch
+      smooth: false
+      // The URL is new for every capture (CaptureService says why), so there
+      // is nothing to gain by keeping the last full-screen frame in the cache.
+      cache: false
     }
 
     Rectangle {   // the dim
@@ -355,9 +452,7 @@ PanelWindow {
 
     Text {   // hint, top left
       anchors { top: parent.top; left: parent.left; topMargin: 14; leftMargin: 20 }
-      text: win.notice !== "" ? win.notice
-        : win.target === "window" ? "hover a window · ↵ captures · esc cancels"
-        : "drag to select · space moves selection · esc cancels"
+      text: win.hint
       font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: win.notice !== "" ? Theme.accentSoft : Theme.text3
     }

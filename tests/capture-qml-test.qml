@@ -38,6 +38,42 @@ Window {
     function onCountdownChanged() { root.ticks = root.ticks.concat([CaptureService.countdown]) }
   }
 
+  // The second half of a delayed capture: the shutter has already fired and
+  // the overlay is selecting on the still it produced. Only the bookkeeping is
+  // reachable here -- grim and the crop are processes -- but the bookkeeping is
+  // what decides whether a full screenshot of the desktop is left in the
+  // runtime dir, and whether the frame is still there to cut when it is.
+  function frozenFrame() {
+    root.check(CaptureService.frozen === "", "a frozen frame was set before anything froze one")
+    root.check(String(CaptureService.frozenUrl) === "",
+      `an empty frame still produced a url: "${CaptureService.frozenUrl}"`)
+
+    CaptureService.frozen = "/run/user/1000/c7shell-freeze-1.png"
+    // The overlay draws this with an Image, which needs a url and not a path.
+    root.check(String(CaptureService.frozenUrl) === "file:///run/user/1000/c7shell-freeze-1.png",
+      `the overlay would be handed "${CaptureService.frozenUrl}" to draw`)
+
+    // cropFrozen claims the frame. The overlay closes immediately after
+    // calling it, and closing discards whatever is still frozen -- so if the
+    // claim does not happen, the capture deletes its own source.
+    CaptureService.cropFrozen(0, 0, 10, 10)
+    root.check(CaptureService.frozen === "",
+      "cropping did not claim the frame, so the overlay's own close would delete it mid-crop")
+    CaptureService.discardFrozen()
+    root.check(CaptureService.frozen === "", "discarding a claimed frame put one back")
+
+    // esc on the still: nothing is cut and the frame does not survive as a
+    // full screenshot of the desktop sitting in the runtime dir.
+    CaptureService.frozen = "/run/user/1000/c7shell-freeze-2.png"
+    CaptureService.discardFrozen()
+    root.check(CaptureService.frozen === "",
+      "discarding left the frame in place; the next capture would draw this one")
+
+    // Nothing frozen and something asks for a crop anyway.
+    CaptureService.cropFrozen(0, 0, 10, 10)
+    root.check(CaptureService.frozen === "", "cropping nothing invented a frame")
+  }
+
   Component.onCompleted: root.step(() => {
     root.check(CaptureService.countdown === 0,
       "the countdown was already running before anything armed a capture")
@@ -97,6 +133,7 @@ Window {
         "a cancelled countdown still reached the shutter -- that capture would be taken with the next session's geometry")
       root.check(CaptureService.countdown === 0,
         `the countdown restarted itself after being cancelled: ${CaptureService.countdown}`)
+      root.frozenFrame()
       console.log("CAPTURE-TEST-PASS")
       Qt.exit(0)
     })
