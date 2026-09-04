@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Build a QML import tree an editor can actually resolve `qs.*` against.
+
+Quickshell invents the `qs.` prefix: it registers the config root as the module
+root at runtime, so `import qs.Theme` works with no qmldir anywhere in this
+repository. Nothing else knows that trick. qmllint, qmlls and every editor that
+drives them resolve `qs.Theme` the standard way -- by looking for
+`<import path>/qs/Theme/qmldir` -- find nothing, and give up on the whole file:
+one failed import turns every `Theme.text` in it into "unqualified access" and
+every component into an unknown type.
+
+Rather than committing qmldir files this project does not need at runtime (and
+would have to keep in step by hand on every new file), this builds a throwaway
+mirror outside the repository: one directory per source directory, a symlink per
+.qml file, and a generated qmldir. Point the editor's QML import path at it.
+Re-run it after adding, renaming or deleting a .qml file.
+
+  tools/qml-imports                 # mirror this checkout, default location
+  tools/qml-imports --print         # just say where the tree is
+  tools/qml-imports /path/to/config --out /path/to/tree
+"""
+
+import argparse
+import os
+import pathlib
+import shutil
+import sys
+
+
+def default_root() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parent.parent / "quickshell" / "c7shell"
+
+
+def default_out() -> pathlib.Path:
+    cache = os.environ.get("XDG_CACHE_HOME") or (pathlib.Path.home() / ".cache")
+    return pathlib.Path(cache) / "c7shell" / "qml-imports"
+
+
+def qmldir_lines(uri: str, directory: pathlib.Path, qmls: list[str]) -> list[str]:
+    lines = [f"module {uri}"]
+    for name in qmls:
+        # shell.qml is an entry point, not a type: a lowercase name cannot be
+        # referenced from QML and qmldir will not accept it.
+        if not name[0].isupper():
+            continue
+        # The singleton keyword is not cosmetic -- without it `Theme.text` reads
+        # as an attached property on an uncreatable type and every use is an
+        # error.
+        singleton = "pragma Singleton" in (directory / name).read_text()
+        lines.append(f"{'singleton ' if singleton else ''}{name[:-4]} 1.0 {name}")
+    return lines
+
+
+def build(root: pathlib.Path, out: pathlib.Path) -> int:
+    if not root.is_dir():
+        sys.exit(f"not a directory: {root}")
+
+    # Rebuilt rather than updated: a stale symlink to a renamed file resolves to
+    # nothing and reads in the editor as a type that vanished.
+    shutil.rmtree(out, ignore_errors=True)
+
+    dirs = 0
+    for parent, _, files in os.walk(root):
+        directory = pathlib.Path(parent)
+        qmls = sorted(f for f in files if f.endswith(".qml"))
+        if not qmls:
+            continue
+
+        rel = directory.relative_to(root)
+        uri = ".".join(("qs",) + rel.parts)
+        mirror = out / "qs" / rel
+        mirror.mkdir(parents=True, exist_ok=True)
+
+        for name in qmls:
+            (mirror / name).symlink_to(directory / name)
+        (mirror / "qmldir").write_text("\n".join(qmldir_lines(uri, directory, qmls)) + "\n")
+        dirs += 1
+
+    return dirs
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("root", nargs="?", type=pathlib.Path, default=default_root(),
+                    help="quickshell config root (default: this checkout's)")
+    ap.add_argument("--out", type=pathlib.Path, default=default_out(),
+                    help="where to write the mirror")
+    ap.add_argument("--print", dest="print_only", action="store_true",
+                    help="print the import path and exit without rebuilding")
+    args = ap.parse_args()
+
+    if args.print_only:
+        print(args.out)
+        return
+
+    dirs = build(args.root.resolve(), args.out)
+    print(f"{dirs} modules mirrored from {args.root}")
+    print(f"QML import path: {args.out}")
+
+
+if __name__ == "__main__":
+    main()
