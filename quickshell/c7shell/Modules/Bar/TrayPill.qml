@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Services.SystemTray
+import qs.Common
 import qs.Theme
 
 Rectangle {
@@ -156,37 +157,23 @@ Rectangle {
     }
 
     // One tooltip window reused across icons - it just re-anchors to the hovered one.
-    PopupWindow {
+    Tooltip {
       id: tip
 
       visible: root.hovered !== null
-      grabFocus: false
-      color: "transparent"
-      implicitWidth: label.implicitWidth + 12
-      implicitHeight: label.implicitHeight + 8
+      anchorItem: root.hovered
+      panelWidth: label.implicitWidth + 12
+      panelHeight: label.implicitHeight + 8
+      panelRadius: Theme.radiusChip
 
-      anchor {
-        item: root.hovered
-        edges: Edges.Bottom
-        gravity: Edges.Bottom
-      }
-
-      Rectangle {
-        anchors.fill: parent
-        radius: Theme.radiusChip
-        color: Theme.alpha(Theme.glassBase, Theme.glassAlphaPanel)
-        border.width: 1
-        border.color: Theme.hairline
-
-        Text {
-          id: label
-          anchors.centerIn: parent
-          color: Theme.text2
-          font { family: Theme.fontMono; pixelSize: 10 }
-          text: {
-            const item = root.hovered?.modelData
-            return item ? (item.tooltipTitle || item.title || item.id) : ""
-          }
+      Text {
+        id: label
+        anchors.centerIn: parent
+        color: Theme.text2
+        font { family: Theme.fontMono; pixelSize: 10 }
+        text: {
+          const item = root.hovered?.modelData
+          return item ? (item.tooltipTitle || item.title || item.id) : ""
         }
       }
     }

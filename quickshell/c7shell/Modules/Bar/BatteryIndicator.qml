@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell
 import qs.Theme
 import qs.Common
 import qs.Services
@@ -111,66 +110,49 @@ Row {
     }
   }
 
-  PopupWindow {
+  Tooltip {
     id: tip
 
     visible: root.hovered
-    grabFocus: false
-    color: "transparent"
-    implicitWidth: 224
-    implicitHeight: card.implicitHeight + 16
+    anchorItem: root
+    panelHeight: rows.implicitHeight + 22
+    panelRadius: Theme.radiusMenu
 
-    anchor {
-      item: root
-      edges: Edges.Bottom
-      gravity: Edges.Bottom
-    }
+    Column {
+      id: rows
 
-    GlassPanel {
-      id: card
+      anchors {
+        left: parent.left; right: parent.right; top: parent.top
+        leftMargin: 12; rightMargin: 12; topMargin: 11
+      }
+      spacing: 6
 
-      x: 12
-      y: 6
-      width: 200
-      implicitHeight: rows.implicitHeight + 22
-      radius: Theme.radiusMenu
-
-      Column {
-        id: rows
-
-        anchors {
-          left: parent.left; right: parent.right; top: parent.top
-          leftMargin: 12; rightMargin: 12; topMargin: 11
-        }
-        spacing: 6
-
-        TipRow {
-          key: "charge"
-          value: `${BatteryService.percent}% · ${BatteryService.energyWh.toFixed(1)} Wh`
-        }
-        TipRow {
-          key: "draw"
-          value: BatteryService.idleOnPower
-            ? "on power" : `${BatteryService.watts.toFixed(1)} W`
-        }
-        TipRow {
-          // The estimate is UPower's, and it is missing for the first minute
-          // after a state change -- an absent row beats "0 m".
-          visible: ShellStore.batteryTimeRemaining && BatteryService.secondsLeft > 0
-          key: BatteryService.charging ? "until full" : "remaining"
-          value: BatteryService.duration(BatteryService.secondsLeft)
-        }
-        TipRow {
-          visible: BatteryService.health >= 0
-          key: "health"
-          value: `${BatteryService.health}%`
-        }
-        TipRow {
-          // Plenty of packs do not export a cycle count at all.
-          visible: BatteryService.cycles > 0
-          key: "cycles"
-          value: `${BatteryService.cycles}`
-        }
+      TipRow {
+        key: "charge"
+        value: `${BatteryService.percent}% · ${BatteryService.energyWh.toFixed(1)} Wh`
+      }
+      TipRow {
+        key: "draw"
+        value: BatteryService.idleOnPower
+          ? "on power" : `${BatteryService.watts.toFixed(1)} W`
+      }
+      TipRow {
+        // The estimate is UPower's, and it is missing for the first minute
+        // after a state change -- an absent row beats "0 m".
+        visible: ShellStore.batteryTimeRemaining && BatteryService.secondsLeft > 0
+        key: BatteryService.charging ? "until full" : "remaining"
+        value: BatteryService.duration(BatteryService.secondsLeft)
+      }
+      TipRow {
+        visible: BatteryService.health >= 0
+        key: "health"
+        value: `${BatteryService.health}%`
+      }
+      TipRow {
+        // Plenty of packs do not export a cycle count at all.
+        visible: BatteryService.cycles > 0
+        key: "cycles"
+        value: `${BatteryService.cycles}`
       }
     }
   }
