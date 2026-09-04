@@ -22,11 +22,17 @@ Singleton {
   // radio busy and fills the list with strangers' devices for nothing.
   property bool wantScan: false
 
+  // A pairing is in flight from the moment it is asked for -- including the
+  // wait for the scan to stop -- until the process exits.
+  readonly property bool pairing: root.pending !== null || pair.running
+
   Binding {
     target: root.adapter
     property: "discovering"
-    // Paused while pairing — an active scan makes BlueZ's pairing attempt flaky.
-    value: root.wantScan && root.enabled && !pair.running
+    // Paused for the whole pairing rather than just the process: an active scan
+    // makes BlueZ's pairing attempt flaky, and asking for the stop is a D-Bus
+    // round-trip the request has to wait out rather than race.
+    value: root.wantScan && root.enabled && !root.pairing
     when: root.adapter !== null
   }
 
@@ -56,7 +62,7 @@ Singleton {
     case BluetoothDeviceState.Disconnecting: return "disconnecting…"
     case BluetoothDeviceState.Connected: return `connected · ${root.profile(dev)}`
     }
-    if (dev?.pairing || dev === pair.device) return "pairing…"
+    if (root.isPairing(dev)) return "pairing…"
     return dev?.paired || dev?.bonded ? "not connected" : "not paired"
   }
 
@@ -98,16 +104,55 @@ Singleton {
   // "just works" pairings unattended, which covers headsets, mice and
   // controllers. A device insisting on a typed PIN still needs a real agent.
   function pairDevice(dev) {
-    if (pair.running) {
+    if (root.pairing) {
       root.pairErrorAddress = dev?.address ?? ""
       root.pairErrorText = "another pairing is running"
       return
     }
     root.pairErrorAddress = ""
     root.pairErrorText = ""
-    pair.device = dev
     pair.address = dev?.address ?? ""
+    root.pending = dev
+    settle.restart()
+    // Already idle is the common case -- nothing to wait for.
+    root.startPending()
+  }
+
+  // The device whose pairing is waiting on the scan, null the rest of the time.
+  // Clearing the Binding above does not stop discovery by itself: BlueZ reports
+  // it stopped a round-trip later, so the process starts from the property
+  // actually going false rather than from having asked.
+  property var pending: null
+
+  function isPairing(dev) {
+    return !!dev && (dev.pairing || dev === pair.device || dev === root.pending)
+  }
+
+  function startPending() {
+    if (root.pending === null) return
+    if (root.adapter?.discovering ?? false) return
+    root.beginPair()
+  }
+
+  function beginPair() {
+    settle.stop()
+    pair.device = root.pending
+    root.pending = null
     pair.running = true
+  }
+
+  Connections {
+    target: root.adapter
+    function onDiscoveringChanged() { root.startPending() }
+  }
+
+  Timer {
+    id: settle
+    interval: 1500
+    // The scan never went idle, so something outside this shell holds a
+    // discovery session. Pairing through one is flaky rather than impossible,
+    // and silently never starting is worse than trying.
+    onTriggered: if (root.pending !== null) root.beginPair()
   }
 
   // One pairing runs at a time, so one error slot is enough: the address it
@@ -155,9 +200,11 @@ Singleton {
     // desktop settings panel behaves.
     onExited: (code, status) => {
       const dev = pair.device
+        ?? Bluetooth.devices.values.find(d => d.address === pair.address)
+        ?? null
       pair.device = null
 
-      if (dev?.paired) {
+      if (dev?.paired || dev?.bonded) {
         dev.trusted = true
         dev.connect()
         return
