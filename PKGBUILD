@@ -156,6 +156,11 @@ package() {
   cp -a hypr quickshell xdg-desktop-portal "$pkgdir/usr/share/$pkgname/"
   # Dev-facing only, and setup copies whatever is here into the user's config.
   rm -rf "$pkgdir/usr/share/$pkgname/quickshell/c7shell/docs"
+  # The preview harness has to live beside shell.qml to resolve `qs.*`, but it
+  # is a development tool -- and PreviewRegistry.qml is generated, so a stale
+  # one would ship naming components the release no longer has.
+  rm -f "$pkgdir/usr/share/$pkgname/quickshell/c7shell/preview.qml" \
+        "$pkgdir/usr/share/$pkgname/quickshell/c7shell/PreviewRegistry.qml"
   chmod -R u=rwX,go=rX "$pkgdir/usr/share/$pkgname"
   chmod 755 "$pkgdir/usr/share/$pkgname/quickshell/c7shell/scripts/c7shell-appmenud.py" \
             "$pkgdir/usr/share/$pkgname/quickshell/c7shell/bin/screenshare-picker.sh"
