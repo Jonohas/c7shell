@@ -6,7 +6,7 @@ import qs.Theme
 // The shell's one dropdown: a chip showing the current value, a popup list of
 // options. QtQuick.Controls is not imported by any view here and a ComboBox
 // would drag its whole style in, so this is hand-rolled from the same chip
-// vocabulary ActionChip uses.
+// vocabulary Chip uses.
 //
 // The list is reparented to the window's contentItem. Settings pages scroll
 // inside a clipping Flickable, so a popup drawn as a child of its row would be

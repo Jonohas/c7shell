@@ -40,9 +40,8 @@ SettingsPage {
         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
         spacing: 6
 
-        ActionChip {
+        Chip {
           text: "auto"
-          accented: false
           // Hyprland re-places every output left to right in its own order.
           // Not saved: "auto" is a request to let hyprland decide, which is
           // what having no saved entry already means.
@@ -52,11 +51,9 @@ SettingsPage {
           }
         }
 
-        ActionChip {
+        Chip {
           text: "use profile"
-          accented: false
           enabled: DisplayService.hasSaved
-          opacity: enabled ? 1 : 0.4
           // Drops this desk's saved layout and reloads, so hyprland comes back
           // up on conf/monitors.lua's own profile.
           onTriggered: DisplayService.forget()

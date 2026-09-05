@@ -47,10 +47,9 @@ SettingsPage {
         }
       }
 
-      ActionChip {
+      Chip {
         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
         text: UpdatesService.checking ? "checking…" : "check now"
-        accented: false
         onTriggered: UpdatesService.refresh()
       }
     }
@@ -126,9 +125,10 @@ SettingsPage {
         font { family: Theme.fontMono; pixelSize: 11; weight: 400 }
         color: Theme.text2
       }
-      ActionChip {
+      Chip {
         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
         text: "reboot now"
+        accented: true
         onTriggered: UpdatesService.reboot()
       }
     }
