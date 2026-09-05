@@ -6,7 +6,10 @@ import QtQuick
 
 // Everything the wifi popover needs to know, so the view stays a view. All the
 // NetworkManager work is quickshell's own Networking module; only the IPv4
-// address has to come from the kernel, because NetworkDevice.address is the MAC.
+// address has to come from the kernel, because NetworkDevice.address is the MAC,
+// and the gateway and the metered flag have to come from nmcli, because the
+// module exports neither -- Network.nmSettings is a list of a type it does not
+// export, so it is an opaque pointer from QML.
 Singleton {
   id: root
 
@@ -141,13 +144,55 @@ Singleton {
     return Math.round(strength * 50 - 100)
   }
 
-  // -- IPv4 address -------------------------------------------------------
-  // Polled only while the popover is open; nothing here is worth a timer
-  // behind a closed panel.
+  // -- link details -------------------------------------------------------
+  // Polled only while the popover or the wi-fi page is open; nothing here is
+  // worth a timer behind a closed panel.
   property string ip: ""
 
-  onPrimaryInterfaceChanged: root.ip = ""
-  onWantScanChanged: if (!root.wantScan) root.ip = ""
+  // The wi-fi link's own gateway, not the primary one: this is what the wi-fi
+  // page shows, and it would be the wire's address half the time otherwise.
+  property string gateway: ""
+
+  // NetworkManager's own words for the wi-fi device: "yes", "no", "unknown", or
+  // "yes (guessed)" / "no (guessed)" when the profile leaves it to NM and NM has
+  // decided for itself.
+  property string meteredState: ""
+
+  readonly property bool metered: root.meteredState.startsWith("yes")
+
+  // What the saved profile holds, which is the only one of the three a picker
+  // can write: a guess means the profile says "unknown".
+  readonly property string meteredChoice:
+    root.meteredState === "" || root.meteredState === "unknown"
+      || root.meteredState.includes("guessed") ? "unknown"
+    : root.metered ? "yes" : "no"
+
+  function clearDetails() {
+    root.ip = ""
+    root.gateway = ""
+    root.meteredState = ""
+  }
+
+  onPrimaryInterfaceChanged: root.clearDetails()
+  onInterfaceNameChanged: root.clearDetails()
+  onWantScanChanged: if (!root.wantScan) root.clearDetails()
+
+  // The poll stops when the association drops rather than reading back empty,
+  // so the last gateway and metered flag would otherwise stay on screen.
+  onConnectedChanged: if (root.connected === null) {
+    root.gateway = ""
+    root.meteredState = ""
+  }
+
+  // Metered is a property of the saved connection, so it is written to the
+  // profile rather than the device. NetworkManager applies the change to a
+  // currently activated connection immediately -- nothing is reactivated, and
+  // the association is not dropped.
+  function setMetered(choice) {
+    if (root.interfaceName === "" || root.connected === null) return
+    apply.choice = choice
+    uuidRead.exec(["nmcli", "-t", "-f", "UUID,DEVICE", "connection", "show", "--active"])
+  }
 
   Process {
     id: probe
@@ -166,6 +211,75 @@ Singleton {
     }
   }
 
+  // One field per call: -g prints the value alone, so there is nothing to parse
+  // and an empty line is simply "no gateway on this link".
+  Process {
+    id: gwProbe
+
+    stdout: StdioCollector { onStreamFinished: root.gateway = text.trim() }
+    stderr: StdioCollector {}
+
+    onExited: code => {
+      if (code === 0) return
+      root.gateway = ""
+      console.warn(`network: nmcli gateway for ${root.interfaceName} exited ${code}`)
+    }
+  }
+
+  Process {
+    id: meteredProbe
+
+    // A read that was already in flight when the picker was used would put the
+    // old value back for a tick; the write's own readback is the newer truth.
+    stdout: StdioCollector {
+      onStreamFinished: if (!uuidRead.running && !apply.running) root.meteredState = text.trim()
+    }
+    stderr: StdioCollector {}
+
+    onExited: code => {
+      if (code === 0) return
+      root.meteredState = ""
+      console.warn(`network: nmcli metered for ${root.interfaceName} exited ${code}`)
+    }
+  }
+
+  // The device names the profile that owns it, rather than the SSID naming it:
+  // several saved profiles can carry the same name, and only one of them is up.
+  Process {
+    id: uuidRead
+
+    stdout: StdioCollector {
+      // One "<uuid>:<device>" a line. Neither field can hold a colon, so the
+      // split needs no unescaping.
+      onStreamFinished: {
+        const uuid = text.split("\n")
+          .find(l => l.endsWith(`:${root.interfaceName}`))
+          ?.split(":")[0] ?? ""
+        if (uuid === "") {
+          console.warn(`network: no active profile on ${root.interfaceName}`)
+          return
+        }
+        apply.exec(["nmcli", "connection", "modify", uuid, "connection.metered", apply.choice])
+      }
+    }
+    stderr: StdioCollector {}
+  }
+
+  Process {
+    id: apply
+
+    // "yes", "no", or "unknown" to hand it back to NetworkManager's heuristics.
+    property string choice: ""
+
+    stderr: StdioCollector {
+      onStreamFinished: if (text.trim() !== "") console.warn(`network: ${text.trim()}`)
+    }
+
+    // Only on success: a polkit refusal leaves the profile alone, and the poll
+    // below would otherwise have three seconds to contradict the picker.
+    onExited: code => { if (code === 0) root.meteredState = apply.choice }
+  }
+
   Timer {
     interval: 3000
     repeat: true
@@ -176,8 +290,15 @@ Singleton {
     // separately leaves the process never started. argv, not `sh -c`: no shell
     // means nothing to quote and no interface-name guard to get wrong.
     onTriggered: {
-      if (probe.running) return
-      probe.exec(["ip", "-4", "-o", "addr", "show", root.primaryInterface])
+      if (!probe.running)
+        probe.exec(["ip", "-4", "-o", "addr", "show", root.primaryInterface])
+
+      // Both are the wi-fi link's, and neither means anything without one.
+      if (root.interfaceName === "" || root.connected === null) return
+      if (!gwProbe.running)
+        gwProbe.exec(["nmcli", "-g", "IP4.GATEWAY", "device", "show", root.interfaceName])
+      if (!meteredProbe.running && !apply.running)
+        meteredProbe.exec(["nmcli", "-g", "GENERAL.METERED", "device", "show", root.interfaceName])
     }
   }
 }

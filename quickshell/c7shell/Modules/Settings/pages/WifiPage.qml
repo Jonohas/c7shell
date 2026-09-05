@@ -82,6 +82,64 @@ SettingsPage {
       }
     }
 
+    // The link's own gateway, read from the wi-fi device: the address the
+    // connected row carries is this machine's, and neither of them is the other.
+    ListRow {
+      width: parent.width
+      visible: NetworkService.gateway !== ""
+      hoverable: false
+      leadingSize: 15
+      title: "gateway"
+      subtitle: `${NetworkService.interfaceName} · default route`
+
+      leading: Icon {
+        size: 15
+        name: "ethernet"
+        tint: Theme.text3
+      }
+
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        text: NetworkService.gateway
+        font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
+        color: Theme.accentSoft
+      }
+    }
+
+    // Metered is a property of the saved profile, so there has to be a link to
+    // save it against. "auto" is NetworkManager's own guess -- worth keeping as
+    // a choice, because it is the only one that follows the network rather than
+    // being remembered against it.
+    ListRow {
+      width: parent.width
+      visible: NetworkService.connected !== null
+      hoverable: false
+      leadingSize: 15
+      title: "metered connection"
+      subtitle: NetworkService.meteredChoice === "unknown"
+        ? `guessed · treated as ${NetworkService.metered ? "metered" : "unmetered"}`
+        : NetworkService.metered
+          ? "saved on this network · background transfers held back"
+          : "saved on this network · no limits applied"
+
+      leading: Icon {
+        size: 15
+        name: "gauge"
+        tint: NetworkService.metered ? Theme.accentSoft : Theme.text3
+      }
+
+      Segmented {
+        anchors.verticalCenter: parent.verticalCenter
+        options: [
+          { value: "unknown", label: "auto" },
+          { value: "yes", label: "metered" },
+          { value: "no", label: "unmetered" }
+        ]
+        value: NetworkService.meteredChoice
+        onPicked: v => NetworkService.setMetered(v)
+      }
+    }
+
     // Sits in the radio card because that is what it switches -- all of them,
     // through rfkill, which is also what the laptop's own airplane key throws.
     // So this row and the Fn key mean the same thing, and unlike the wi-fi
