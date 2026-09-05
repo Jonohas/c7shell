@@ -79,8 +79,10 @@ Scope {
     }
 
     sourceComponent: FloatingWindow {
-      // The window tracks the component, so a 20px glyph and a 700px panel both
-      // come up at their own proportions rather than a guessed default.
+      // The window asks to track the component, so a 20px glyph and a 700px
+      // panel come up at their own proportions. Hyprland tiles it anyway unless
+      // the title is floated -- see the README -- but the component stays
+      // centred either way, so this is a hint, not a guarantee.
       implicitWidth: Math.max(160, holder.width * root.zoom + 64)
       implicitHeight: Math.max(120, holder.height * root.zoom + 64)
       title: `preview: ${root.target}`

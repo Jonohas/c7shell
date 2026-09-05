@@ -593,6 +593,14 @@ component and checks it for `anchors`: a visual `Item` is reparented into a
 `FloatingWindow` sized to it, and a `Scope` that owns its own window is left
 alone as the top level it already is.
 
+Under Hyprland the window is tiled like any other, so a glyph at `--zoom 8`
+gets a whole tile with a screen of empty space around it. `preview.qml` asks for
+a size that fits the component, but that is a hint a tiling compositor is free
+to ignore. Every preview window titles itself `preview: <target>`, which is
+enough to float them with a rule in `hypr/conf/rules.lua` shaped like the
+`float-c7shell-settings` one already there — quickshell cannot set a per-window
+class, so a title match is the only identity available.
+
 Editing a previewed file reloads it in place, the same as the running shell.
 
 ### When the preview will not build
