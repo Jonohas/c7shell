@@ -44,6 +44,37 @@ Rectangle {
     input.text = ""
   }
 
+  // -- keeping the row alive long enough to type into ----------------------
+  // The scan list re-sorts on every signal-strength update NetworkManager
+  // pushes, and a Repeater rebuilds every delegate when its model array
+  // changes -- taking this field, its text and its focus with it. So a row
+  // that is asking freezes the list until it stops asking. Hung off `asking`
+  // rather than ask(), because onConnectionFailed re-asks without going
+  // through it.
+  onAskingChanged: {
+    if (!root.asking) {
+      root.releaseList()
+      return
+    }
+    root.claimed = root.network?.name ?? ""
+    NetworkService.pskTarget = root.claimed
+  }
+
+  // Remembered rather than read back off the network: a row can be torn down
+  // with `network` already null, and reading it then would leave the list
+  // frozen with nothing left able to unfreeze it.
+  property string claimed: ""
+
+  // Guarded on the freeze still being ours, so a row torn down after another
+  // has claimed it does not unfreeze that one.
+  function releaseList() {
+    if (root.claimed !== "" && NetworkService.pskTarget === root.claimed)
+      NetworkService.pskTarget = ""
+    root.claimed = ""
+  }
+
+  Component.onDestruction: root.releaseList()
+
   visible: root.asking
   implicitHeight: 28
   radius: Theme.radiusTile
