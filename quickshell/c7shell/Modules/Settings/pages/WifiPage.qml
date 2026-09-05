@@ -75,9 +75,10 @@ SettingsPage {
         font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
         color: Theme.accentSoft
       }
-      ActionChip {
+      Chip {
         anchors.verticalCenter: parent.verticalCenter
         text: "disconnect"
+        accented: true
         onTriggered: NetworkService.connected?.disconnect()
       }
     }
@@ -184,9 +185,10 @@ SettingsPage {
       anchors { left: parent.left; verticalCenter: parent.verticalCenter }
       text: NetworkService.enabled ? "other networks" : "wi-fi is off"
     }
-    ActionChip {
+    Chip {
       anchors { right: parent.right; verticalCenter: parent.verticalCenter }
       text: NetworkService.scanning ? "scanning…" : "⟳ rescan"
+      accented: true
       onTriggered: NetworkService.rescan()
     }
   }
@@ -252,10 +254,11 @@ SettingsPage {
         else NetworkService.connect(row.network)
       }
 
-      ActionChip {
+      Chip {
         anchors.verticalCenter: parent.verticalCenter
         visible: row.network.known && line.hovered
         text: "forget"
+        accented: true
         onTriggered: NetworkService.forget(row.network)
       }
       Icon {

@@ -42,7 +42,7 @@ SettingsPage {
         Repeater {
           model: ["dark", "light"]
 
-          ActionChip {
+          Chip {
             id: schemeChip
 
             required property string modelData

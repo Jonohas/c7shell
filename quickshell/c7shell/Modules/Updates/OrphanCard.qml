@@ -1,4 +1,5 @@
 import QtQuick
+import qs.Common
 import qs.Theme
 import qs.Services
 
@@ -53,8 +54,8 @@ Rectangle {
     Row {
       spacing: 6
 
-      Choice {
-        label: UpdatesService.removingOrphans ? "removing…" : "remove them"
+      Chip {
+        text: UpdatesService.removingOrphans ? "removing…" : "remove them"
         highlight: !UpdatesService.removingOrphans
         // The polkit dialog is the slow part and it is somebody else's
         // window, so the button says what is happening rather than looking
@@ -62,44 +63,11 @@ Rectangle {
         enabled: !UpdatesService.removingOrphans
         onTriggered: UpdatesService.removeOrphans(UpdatesService.orphanNames())
       }
-      Choice {
-        label: "keep them"
+      Chip {
+        text: "keep them"
         enabled: !UpdatesService.removingOrphans
         onTriggered: root.dismissed()
       }
-    }
-  }
-
-  component Choice: Rectangle {
-    id: choice
-    property string label
-    property bool highlight: false
-    signal triggered()
-
-    implicitWidth: choiceText.implicitWidth + 16
-    implicitHeight: 21
-    radius: Theme.radiusChip
-    color: choiceHover.hovered && choice.enabled ? Theme.surface07 : Theme.surface04
-    border.width: 1
-    border.color: choice.highlight ? Theme.hairlineStrong : Theme.hairline
-    opacity: choice.enabled ? 1 : 0.6
-
-    Text {
-      id: choiceText
-      anchors.centerIn: parent
-      text: choice.label
-      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-      color: choice.highlight ? Theme.text : Theme.text2
-    }
-
-    HoverHandler {
-      id: choiceHover
-      enabled: choice.enabled
-      cursorShape: Qt.PointingHandCursor
-    }
-    TapHandler {
-      enabled: choice.enabled
-      onTapped: choice.triggered()
     }
   }
 }

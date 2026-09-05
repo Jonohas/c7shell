@@ -1,4 +1,5 @@
 import QtQuick
+import qs.Common
 import qs.Theme
 import qs.Services
 
@@ -57,40 +58,18 @@ Rectangle {
     Row {
       spacing: 6
 
-      Choice { label: "keep mine"; onTriggered: UpdatesService.resolvePacnew("keep", root.file.path) }
-      Choice {
-        label: "take new"
-        // Highlighted only where it is actually the safe answer.
+      Chip { text: "keep mine"; onTriggered: UpdatesService.resolvePacnew("keep", root.file.path) }
+      Chip {
+        text: "take new"
+        // Highlighted only where it is actually the safe answer -- amber, the
+        // colour this whole row is keyed to, rather than the neutral default.
         highlight: !root.file.edited
+        highlightColor: Theme.warning
+        highlightBorder: Theme.alpha(Theme.warning, 0.4)
         onTriggered: UpdatesService.resolvePacnew("take", root.file.path)
       }
       // A three-pane merge is an editor, and an editor is a terminal's job.
-      Choice { label: "merge…"; onTriggered: UpdatesService.mergePacnew(root.file.path) }
+      Chip { text: "merge…"; onTriggered: UpdatesService.mergePacnew(root.file.path) }
     }
-  }
-
-  component Choice: Rectangle {
-    id: choice
-    property string label
-    property bool highlight: false
-    signal triggered()
-
-    implicitWidth: text.implicitWidth + 16
-    implicitHeight: 21
-    radius: Theme.radiusChip
-    color: choiceHover.hovered ? Theme.surface07 : Theme.surface04
-    border.width: 1
-    border.color: choice.highlight ? Theme.alpha(Theme.warning, 0.4) : Theme.hairline
-
-    Text {
-      id: text
-      anchors.centerIn: parent
-      text: choice.label
-      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-      color: choice.highlight ? Theme.warning : Theme.text2
-    }
-
-    HoverHandler { id: choiceHover; cursorShape: Qt.PointingHandCursor }
-    TapHandler { onTapped: choice.triggered() }
   }
 }

@@ -82,9 +82,10 @@ SettingsPage {
       anchors { left: nearbyLabel.right; leftMargin: 8; verticalCenter: parent.verticalCenter }
       visible: BluetoothService.discovering
     }
-    ActionChip {
+    Chip {
       anchors { right: parent.right; verticalCenter: parent.verticalCenter }
       text: BluetoothService.discovering ? "scanning…" : "⟳ scan"
+      accented: true
       onTriggered: BluetoothService.scan()
     }
   }
@@ -141,20 +142,20 @@ SettingsPage {
       font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
       color: Theme.alpha(Theme.text, 0.5)
     }
-    ActionChip {
+    Chip {
       anchors.verticalCenter: parent.verticalCenter
       visible: row.paired && row.hovered
-      accented: false
       text: "forget"
       onTriggered: BluetoothService.forget(row.device)
     }
-    ActionChip {
+    Chip {
       anchors.verticalCenter: parent.verticalCenter
       visible: !row.paired
       text: "pair"
+      accented: true
       onTriggered: BluetoothService.pairDevice(row.device)
     }
-    ActionChip {
+    Chip {
       anchors.verticalCenter: parent.verticalCenter
       visible: row.paired
       accented: row.device.connected
