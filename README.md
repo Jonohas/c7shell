@@ -401,6 +401,9 @@ eat local edits by accident.
 | `hypr/hyprlock.conf` | the lock screen; mandatory, hyprlock will not start without it |
 | `hypr/xdph.conf` | points xdph's screencopy picker at the shell's own picker |
 | `quickshell/c7shell/shell.qml` | shell entry point |
+| `quickshell/c7shell/preview.qml` | preview harness; must sit here to resolve `qs.*`, not shipped |
+| `tools/qml-imports` | builds the module tree editors resolve `qs.*` against |
+| `tools/qml-preview` | runs one component in a window of its own |
 | `quickshell/c7shell/Services/` | brightness, network, bluetooth, audio, notifications, capture |
 | `quickshell/c7shell/bin/screenshare-picker.sh` | xdph `custom_picker_binary` wrapper |
 | `quickshell/c7shell/scripts/c7shell-appmenud.py` | `com.canonical.AppMenu.Registrar` for the global menu |
@@ -549,6 +552,76 @@ service-restart step.
 
 `flatpak` stays genuinely optional: install it and its updates join the same
 flow, skip it and that source does not appear.
+
+## Working on the QML
+
+Two tools, neither of them shipped. Both exist because quickshell invents the
+`qs.` import prefix at runtime and nothing outside quickshell knows about it.
+
+`tools/qml-imports` builds a throwaway module tree in `~/.cache/c7shell/` that
+qmllint, qmlls and any editor driven by them can resolve `qs.*` against. Without
+it a single failed import turns every `Theme.text` in a file into "unqualified
+access" and every component into an unknown type. Re-run it after adding,
+renaming or deleting a `.qml` file, and point the editor's QML import path at
+what it prints.
+
+```bash
+tools/qml-imports
+```
+
+`tools/qml-preview` runs one component in a window of its own, without starting
+the shell. Use it for anything you would otherwise have to restart the whole bar
+to look at.
+
+```bash
+tools/qml-preview --list
+tools/qml-preview qs.Common/BatteryGlyph --zoom 8
+tools/qml-preview qs.Modules.Settings/SettingsWindow --show appearance
+```
+
+`--list` names every previewable component as `<module>/<Type>`. Bar glyphs are
+around 20px, so `--zoom` is usually the difference between seeing the change and
+not. `--show` is for a component that opens itself rather than being drawn into
+a frame: `SettingsWindow`, the popovers and the launcher build nothing until
+something calls `show()`, and its argument goes straight through — for the
+settings window that is a sidebar key (`wifi`, `bluetooth`, `audio`,
+`appearance`, `system`, `displays`, `power`, `notifications`, `topbar`,
+`keybinds`).
+
+You do not need to say which kind you are looking at. The harness builds the
+component and checks it for `anchors`: a visual `Item` is reparented into a
+`FloatingWindow` sized to it, and a `Scope` that owns its own window is left
+alone as the top level it already is.
+
+Editing a previewed file reloads it in place, the same as the running shell.
+
+### When the preview will not build
+
+`unknown target` after adding a component means nothing more than a typo — the
+registry is regenerated on every run, so a name that is spelled right is there.
+
+Singletons are absent by design. `Theme` and everything under `Services/` is
+reached as `Theme.accent`, never instantiated, and `Theme {}` is a hard error.
+
+`Created graphical object was not placed in the graphics scene` is expected on
+every visual component and is not a fault. The component exists for one tick
+under the root `Scope` before it is reparented, and there is no way to know
+which kind it is until it exists.
+
+`Could not register notification server` is also expected: your running shell
+already owns that D-Bus name, and `NotifServer` is pulled in transitively by the
+service graph.
+
+What will not work is reaching a component by path. A `Loader` pointed at
+`Common/BatteryGlyph.qml` loads the file but its sibling `Icon` stops resolving,
+and `Qt.createQmlObject("import qs.Common; ...")` fails outright with `module
+"qs.Common" is not installed`. Quickshell generates a directory's qmldir only
+for directories the entry file references *statically*, so anything named by a
+string at runtime reaches a module that was never built. That is the whole
+reason `PreviewRegistry.qml` is generated rather than resolved on the fly, and
+why `preview.qml` sits beside `shell.qml` instead of in a subdirectory of its
+own — `qs` is whatever directory quickshell registers under the file `-p` points
+at.
 
 ## Tests
 
