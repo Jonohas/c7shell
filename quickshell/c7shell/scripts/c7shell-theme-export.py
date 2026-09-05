@@ -56,27 +56,34 @@ SCHEME_FILE = f"{DATA}/color-schemes/C7Shell.colors"
 HYPRLOCK_PALETTE = f"{CONFIG}/hypr/hyprlock-palette.conf"
 SCHEME_NAME = "C7Shell"
 
-# Cursor defaults, and they must stay identical to the ones in
-# hypr/conf/appearance.lua and Services/AppearanceStore.qml -- appearance.json
-# owns the value, these are only what a missing or corrupt file falls back to.
-CURSOR_THEME = "Adwaita"
-CURSOR_SIZE = 24
+# The shell's palette and its appearance defaults, which used to be a hand-kept
+# copy of Theme.qml and of AppearanceStore.qml's JsonAdapter. Resolved off this
+# file so it works from the checkout and from /usr/share/c7shell alike, the same
+# way AppearanceStore resolves this script.
+PALETTE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "palette.json")
+with open(PALETTE_FILE, encoding="utf-8") as _f:
+    _p = json.load(_f)
+PALETTE, DEFAULTS = _p["palette"], _p["defaults"]
+
+# Cursor defaults: appearance.json owns the value, these are only what a missing
+# or corrupt file falls back to.
+CURSOR_THEME = DEFAULTS["cursorTheme"]
+CURSOR_SIZE = DEFAULTS["cursorSize"]
 
 # KGlobalSettings::ChangeType, the argument notifyChange takes.
 PALETTE_CHANGED = 0
 CURSOR_CHANGED = 4
 
 # Theme.qml surfaces, the same two variants it renders. `bg` is the deepest
-# layer (item views), `canvas` the window behind them, `glass` the popover base.
-VARIANTS = {
-    "dark": {"bg": "#0a0a0c", "canvas": "#0f0e10", "glass": "#0f0f13"},
-    "oled": {"bg": "#000000", "canvas": "#050506", "glass": "#000000"},
-}
-TEXT = "#f0eff1"          # Theme.text
-POSITIVE = "#4ade80"      # Theme.success
-NEGATIVE = "#ff7a6b"
-NEUTRAL = "#f0a44a"
-DEFAULT_ACCENT = "#e53a44"
+# layer (item views), `canvas` the window behind them, `glassBase` the popover
+# base.
+VARIANTS = PALETTE["variants"]
+TEXT = PALETTE["text"]            # Theme.text
+POSITIVE = PALETTE["success"]     # Theme.success
+NEGATIVE = PALETTE["negative"]
+NEUTRAL = PALETTE["neutral"]
+DEFAULT_ACCENT = DEFAULTS["accent"]
 
 # The preferred colour scheme, and what each consumer of it wants to be told.
 # "no-preference" is deliberately not offered: it is what this session already
@@ -86,7 +93,7 @@ SCHEMES = {
     "dark": ("prefer-dark", "1"),
     "light": ("prefer-light", "0"),
 }
-DEFAULT_SCHEME = "dark"
+DEFAULT_SCHEME = DEFAULTS["colorScheme"]
 
 # The groups a KDE app resolves a colour set from: (surface, surface the
 # alternate row shades off). Everything else in a group is shared, and derived
@@ -95,7 +102,7 @@ BACKGROUNDS = {
     "Colors:Window": ("canvas", "canvas"),
     "Colors:View": ("bg", "bg"),
     "Colors:Button": ("button", "canvas"),
-    "Colors:Tooltip": ("glass", "canvas"),
+    "Colors:Tooltip": ("glassBase", "canvas"),
     "Colors:Header": ("canvas", "canvas"),
     "Colors:Complementary": ("bg", "bg"),
 }
@@ -342,7 +349,7 @@ def hyprlock_palette(accent, variant):
     """
     sources = {
         "text": TEXT,
-        "glass": VARIANTS[variant]["glass"],
+        "glass": VARIANTS[variant]["glassBase"],
         "accent": accent,
         "accentSoft": lighten(accent),
         "success": POSITIVE,
@@ -449,7 +456,7 @@ def read_appearance():
 
 
 def selftest():
-    """Anchored on the hand-tuned scheme this replaces (accent #e53a44, dark)."""
+    """Anchored on the hand-tuned scheme this replaces (default accent, dark)."""
     g = palette(DEFAULT_ACCENT, "dark")
     exact = {
         ("Colors:Button", "BackgroundNormal"): "32,31,33",
@@ -482,8 +489,10 @@ def selftest():
 
     # oled bottoms out at black, and a light accent takes dark ink.
     assert palette(DEFAULT_ACCENT, "oled")["Colors:View"]["BackgroundNormal"] == "0,0,0"
-    assert palette("#f0e14a", "dark")["Colors:Selection"]["ForegroundNormal"] == "0,0,0"
-    assert palette("#00a149", "dark")["Colors:Selection"]["ForegroundNormal"] == "255,255,255"
+    # Accents the palette does not offer, on purpose: what decides the ink is
+    # the luminance of whatever accent arrives, not a lookup.
+    assert palette("#f0e14a", "dark")["Colors:Selection"]["ForegroundNormal"] == "0,0,0"  # palette-literal-ok
+    assert palette("#00a149", "dark")["Colors:Selection"]["ForegroundNormal"] == "255,255,255"  # palette-literal-ok
 
     # The lock screen's palette, anchored on the block it replaces in
     # hyprlock.conf: nine variables, byte for byte, at the default accent.
@@ -504,7 +513,7 @@ def selftest():
     # Another accent moves the three variables that are the accent, and only
     # those: this is the whole feature -- a green desktop with a crimson lock
     # screen is what the file it replaces did.
-    green = hyprlock_palette("#00a149", "dark")
+    green = hyprlock_palette("#00a149", "dark")  # palette-literal-ok: an arbitrary accent
     assert "$accent   = rgba(00a149ff)" in green, green
     assert "$focus    = rgba(00a1498c)" in green, green
     assert "$capslock = rgba(0bcd6399)" in green, green

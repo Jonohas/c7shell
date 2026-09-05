@@ -336,7 +336,7 @@ PanelWindow {
 
     Rectangle {   // the dim
       anchors.fill: parent
-      // Mockup 5a says rgba(4,4,6,.6); Theme.bg is #0a0a0c, indistinguishable at
+      // Mockup 5a says rgba(4,4,6,.6); Theme.bg is a shade off that, indistinguishable at
       // 60%, and reusing it keeps this out of the token list. The alpha matters
       // more than the hue: below the 0.7 blur threshold in conf/rules.lua, so
       // the compositor leaves the dimmed desktop sharp and only blurs the

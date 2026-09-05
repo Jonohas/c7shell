@@ -35,19 +35,11 @@ printf 'pragma Singleton\nimport QtQuick\nQtObject { function run(argv) {} }\n' 
 printf 'module qs.Services\nsingleton UpdatesService 1.0 UpdatesService.qml\nsingleton Terminal 1.0 Terminal.qml\n' \
   > "$tmp/qs/Services/qmldir"
 
-# Only the tokens VersionDelta reads. The real Theme pulls in AppearanceStore,
-# which pulls in FileView, which needs quickshell proper.
-cat > "$tmp/qs/Theme/Theme.qml" <<'EOF'
-pragma Singleton
-import QtQuick
-QtObject {
-  readonly property string fontMono: "monospace"
-  readonly property color text: "#f0eff1"
-  readonly property color accentSoft: "#e5717a"
-  function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
-}
-EOF
-printf 'module qs.Theme\nsingleton Theme 1.0 Theme.qml\n' > "$tmp/qs/Theme/qmldir"
+# The Theme stand-in, from tests/fixtures/theme-stub.sh -- one copy, with its
+# colours read from the same palette.json the real Theme reads.
+# shellcheck source=fixtures/theme-stub.sh
+. "$here/fixtures/theme-stub.sh"
+write_theme_stub "$tmp/qs" "$src"
 
 # The Quickshell types UpdatesService names. Process is the only one with any
 # surface: the service assigns `command`, flips `running` and calls exec() and

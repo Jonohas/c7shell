@@ -18,9 +18,29 @@ trap 'rm -rf -- "$tmp"' EXIT
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 # --- the theme is a theme -------------------------------------------------
-for f in metadata.desktop theme.conf Main.qml Greeter.qml qmldir Theme.qml; do
+for f in metadata.desktop theme.conf Main.qml Greeter.qml qmldir Theme.qml PaletteStore.qml; do
   [[ -f $theme/$f ]] || fail "sddm/themes/c7shell/$f is missing"
 done
+
+# --- the palette is compiled, so it can go stale ---------------------------
+# Theme.qml reads its colours from PaletteStore.qml, which is generated from
+# quickshell/c7shell/palette.json. It has to be generated rather than read: the
+# greeter is plain QtQuick with no FileView, and QML's XMLHttpRequest will not
+# open a local file without QML_XHR_ALLOW_FILE_READ in the environment, which
+# is not ours to set for a process sddm launches. The cost of compiling it in
+# is that it can fall behind the palette, and a greeter wearing last year's
+# crimson is exactly the drift this whole arrangement exists to prevent.
+if command -v python3 >/dev/null; then
+  "$here/../tools/gen-palette-qml.py" "$here/../quickshell/c7shell/palette.json" \
+    "$tmp/PaletteStore.qml" || fail 'tools/gen-palette-qml.py failed'
+  diff -u "$theme/PaletteStore.qml" "$tmp/PaletteStore.qml" > "$tmp/palette.diff" 2>&1 \
+    || fail "sddm/themes/c7shell/PaletteStore.qml is behind
+  quickshell/c7shell/palette.json. Regenerate it:
+
+    tools/gen-palette-qml.py quickshell/c7shell/palette.json sddm/themes/c7shell/PaletteStore.qml
+
+$(cat "$tmp/palette.diff")"
+fi
 grep -q '^MainScript=Main.qml' "$theme/metadata.desktop" \
   || fail 'metadata.desktop does not name Main.qml as MainScript'
 grep -q '^Theme-Id=c7shell' "$theme/metadata.desktop" \

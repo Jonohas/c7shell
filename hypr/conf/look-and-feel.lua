@@ -11,10 +11,15 @@
 local a = require("conf/appearance")
 local gpu = require("conf/gpu")
 
-local function border(hex, alpha, fallback)
+local function border(hex, alpha)
     -- appearance.json is hand-editable, so `hex` is untrusted: anything that is
     -- not a six-digit hex string falls back rather than wedging the config.
-    local rgb = type(hex) == "string" and hex:match("^#?(%x%x%x%x%x%x)$") or (fallback or "e53a44")
+    --
+    -- conf/appearance fills every key from palette.json, so `hex` is a good
+    -- string unless the palette itself could not be read. Black is what that
+    -- last case gets -- visibly wrong, which is the point, and never a nil
+    -- reaching string.format and failing the whole config load.
+    local rgb = type(hex) == "string" and hex:match("^#?(%x%x%x%x%x%x)$") or "000000"
     return string.format("rgba(%s%02x)", rgb, alpha)
 end
 
@@ -27,7 +32,7 @@ hl.config({
 
         col = {
             active_border   = border(a.accent, 0xee),
-            inactive_border = border(a.inactiveBorder, 0xaa, "595959"),
+            inactive_border = border(a.inactiveBorder, 0xaa),
         },
 
         -- Set to true to enable resizing windows by clicking and dragging on borders and gaps

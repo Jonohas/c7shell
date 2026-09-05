@@ -144,8 +144,8 @@ SettingsPage {
 
             required property string modelData
 
-            // Compared as colors, not strings: "#E53A44" from a hand-edit is
-            // the same accent as "#e53a44".
+            // Compared as colors, not strings: an upper-case spelling from a
+            // hand-edit is the same accent as the lower-case one.
             readonly property bool selected: Qt.colorEqual(AppearanceStore.accent, swatch.modelData)
 
             anchors.verticalCenter: parent.verticalCenter

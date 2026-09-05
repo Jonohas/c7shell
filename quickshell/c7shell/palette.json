@@ -1,0 +1,92 @@
+{
+  "_comment": [
+    "The one copy of the c7shell palette and of the appearance defaults (spec §4, §7).",
+    "",
+    "Six things used to hold their own literals and drift apart: Theme/Theme.qml,",
+    "Services/AppearanceStore.qml, scripts/c7shell-theme-export.py,",
+    "hypr/conf/appearance.lua, hypr/conf/look-and-feel.lua and the sddm greeter's",
+    "own Theme.qml. They had already drifted -- appearance.lua called itself the",
+    "mirror of the JsonAdapter and was missing inactiveBorder, which",
+    "look-and-feel.lua consumes -- so all six now read this file instead.",
+    "tests/test-qml-hygiene.sh fails the build on a colour literal outside it.",
+    "",
+    "`palette` is what the design is. `defaults` is what a missing or corrupt",
+    "~/.config/hypr/appearance.json falls back to -- they are NOT settings: the",
+    "settings app writes that file, and it wins over everything here."
+  ],
+
+  "palette": {
+    "_comment": [
+      "The two variants Theme can render. `bg` is the deepest layer (item views),",
+      "`canvas` the window behind them, `glassBase` the popover base -- used with",
+      "glassAlpha per surface. `light` is deliberately absent: it needs a whole",
+      "second palette, and until it has one the settings card is shown disabled."
+    ],
+    "variants": {
+      "dark": { "bg": "#0a0a0c", "canvas": "#0f0e10", "glassBase": "#0f0f13" },
+      "oled": { "bg": "#000000", "canvas": "#050506", "glassBase": "#000000" }
+    },
+
+    "text": "#f0eff1",
+    "_textOnAccent": "Ink ON an accent or otherwise selected surface. Pure white, not `text`: #f0eff1 on crimson reads grey, which is why five files had this literal.",
+    "textOnAccent": "#ffffff",
+    "success": "#4ade80",
+    "_warning": "The \"needs attention, but nothing is broken\" amber: a pacnew waiting to be reviewed, tuned not running, and the greeter's battery pill.",
+    "warning": "#e0b341",
+
+    "_negative": "The exporter's KDE colour groups only. The shell has no failure colour of its own yet -- it says wrong with the accent.",
+    "negative": "#ff7a6b",
+    "neutral": "#f0a44a",
+
+    "_greeterBg": "The sddm greeter's ground. Deeper than the shell's `dark` bg on purpose: there is no compositor behind the greeter to blur with, so the fill carries the whole glass effect.",
+    "greeterBg": "#08080a",
+
+    "_accentChoices": [
+      "The four alternates from the mock, oklch(0.62 0.19 h) for h in {25,300,230,150},",
+      "converted once here rather than at every repaint. 230 and 150 fall outside sRGB",
+      "at that chroma and are gamut-mapped the way CSS Color 4 does it, so the swatches",
+      "match the mockup rendered in a browser."
+    ],
+    "accentChoices": ["#e53a44", "#e24947", "#9964e5", "#1692c0", "#00a149"],
+    "_borderChoices": "Inactive borders are the quiet half of the pair: neutrals, plus the accent itself for anyone who wants both borders tinted.",
+    "borderChoices": ["#2a2a2e", "#595959", "#8b8b93", "#e53a44"],
+
+    "_previews": [
+      "The settings app's miniature variant swatches (2b). They describe what a",
+      "variant looks like rather than being it, so they are their own values and",
+      "not the `variants` grounds above -- `light` is here precisely because",
+      "nothing can render it yet."
+    ],
+    "previews": [
+      { "key": "dark", "label": "dark · default", "bg": "#0d0d10", "ink": "#ffffff", "bar": 0.12, "block": 0.07, "ready": true },
+      { "key": "oled", "label": "oled black", "bg": "#050506", "ink": "#ffffff", "bar": 0.09, "block": 0.05, "ready": true },
+      { "key": "light", "label": "light · later", "bg": "#e9e6e2", "ink": "#000000", "bar": 0.12, "block": 0.07, "ready": false }
+    ]
+  },
+
+  "defaults": {
+    "_comment": [
+      "The mirror that used to be maintained by hand in three languages. Every key",
+      "here is a property of Services/AppearanceStore.qml's JsonAdapter, and the",
+      "adapter's shape is the contract: add a key there and add it here."
+    ],
+    "theme": "dark",
+    "colorScheme": "dark",
+    "accent": "#e53a44",
+    "rounding": 19,
+    "gapsIn": 3,
+    "gapsOut": 12,
+    "blurSize": 8,
+    "blurPasses": 3,
+    "inactiveOpacity": 1.0,
+    "borderWidth": 2,
+    "inactiveBorder": "#595959",
+    "barMarginTop": 10,
+    "barMarginSide": 12,
+    "animationsEnabled": true,
+    "animationSpeed": 1.0,
+    "wallpaper": "",
+    "cursorTheme": "Adwaita",
+    "cursorSize": 24
+  }
+}
