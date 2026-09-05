@@ -14,11 +14,16 @@ Singleton {
   // -- color --
   // spec §7: the theme variant and the accent are owned by appearance.json,
   // not by this file. Writes from the settings app land here instantly.
-  readonly property bool oled: AppearanceStore.theme === "oled"
-  readonly property color bg: root.oled ? "#000000" : "#0a0a0c"
-  readonly property color canvas: root.oled ? "#050506" : "#0f0e10"
+  //
+  // What each variant IS lives in palette.json, which the exporter, the hypr
+  // configs and the greeter read too -- this file holds no colour literals, and
+  // tests/test-qml-hygiene.sh keeps it that way.
+  readonly property var variant: PaletteStore.palette.variants?.[AppearanceStore.theme]
+    ?? PaletteStore.palette.variants?.dark ?? ({})
+  readonly property color bg: root.variant.bg
+  readonly property color canvas: root.variant.canvas
   // glass base; use with glassAlpha per surface (.68–.82 range in spec)
-  readonly property color glassBase: root.oled ? "#000000" : "#0f0f13"
+  readonly property color glassBase: root.variant.glassBase
   readonly property real glassAlphaBar: 0.78
   readonly property real glassAlphaPanel: 0.80
 
@@ -28,10 +33,10 @@ Singleton {
   readonly property color hairline: Qt.rgba(1, 1, 1, 0.08)
   readonly property color hairlineStrong: Qt.rgba(1, 1, 1, 0.10)
 
-  // Default stays #e53a44; the store clamps anything the JSON offers back to it.
+  // The store clamps anything the JSON offers back to palette.json's default.
   readonly property color accent: AppearanceStore.accent
-  // Was the literal #e5717a: same hue, 0.9x saturation, +0.108 lightness.
-  // Reproduces #e57178 for the default crimson and lifts any other accent alike.
+  // Was a literal: same hue, 0.9x saturation, +0.108 lightness. Reproduces the
+  // hand-picked soft crimson for the default accent and lifts any other alike.
   readonly property color accentSoft: Qt.hsla(root.accent.hslHue,
                                               root.accent.hslSaturation * 0.90,
                                               Math.min(1, root.accent.hslLightness + 0.108), 1)
@@ -51,18 +56,24 @@ Singleton {
   readonly property color powerHover: root.alpha(root.accent, 0.28)       // power button hover
   readonly property int radiusSlot: 8                                     // 24x22 hit-target pill
 
-  readonly property color text: "#f0eff1"
-  readonly property color text2: Qt.rgba(240/255, 239/255, 241/255, 0.55)
-  readonly property color text3: Qt.rgba(240/255, 239/255, 241/255, 0.40)
-  readonly property color textDisabled: Qt.rgba(240/255, 239/255, 241/255, 0.28)
-  // Ink ON an accent or otherwise selected surface. Pure white, not `text`:
-  // #f0eff1 on crimson reads grey, which is why five files had this literal.
-  readonly property color textOnAccent: "#ffffff"
-  readonly property color success: "#4ade80"
+  readonly property color text: PaletteStore.palette.text
+  // The same ink at the four weights the spec gives it. Derived rather than
+  // listed, so a change to `text` carries to all of them.
+  readonly property color text2: root.alpha(root.text, 0.55)
+  readonly property color text3: root.alpha(root.text, 0.40)
+  readonly property color textDisabled: root.alpha(root.text, 0.28)
+  // Ink ON an accent or otherwise selected surface. Pure white, not `text`,
+  // which reads grey on crimson -- which is why five files had it as a literal.
+  readonly property color textOnAccent: PaletteStore.palette.textOnAccent
+  readonly property color success: PaletteStore.palette.success
   // The "needs attention, but nothing is broken" amber: a pacnew waiting to be
   // reviewed, and tuned not running. Four views had this literal before the
   // power page needed a fifth.
-  readonly property color warning: "#e0b341"
+  readonly property color warning: PaletteStore.palette.warning
+
+  // A well recessed INTO a panel rather than a surface raised onto it: the
+  // update run's log scroller is the only one so far.
+  readonly property color wellFill: Qt.rgba(0, 0, 0, 0.28)
 
   // spec §4 shadows: bar `0 12px 40px rgba(0,0,0,.5)`, panels `0 24px 80px rgba(0,0,0,.65)`
   readonly property color barShadowColor: Qt.rgba(0, 0, 0, 0.5)

@@ -1,10 +1,23 @@
 pragma Singleton
 import QtQuick
 
-// The greeter's copy of the shell's design tokens (quickshell/c7shell/Theme).
+// The greeter's half of the shell's design tokens (quickshell/c7shell/Theme).
+//
 // It cannot import that one: sddm runs this QML as the `sddm` user, before any
-// session exists, with no qs.Theme module on the import path -- so the values
-// are duplicated here on purpose. Keep the two in step when the palette moves.
+// session exists, with no qs.Theme module on the import path. The COLOURS are
+// no longer duplicated here either -- they come from PaletteStore.qml, which
+// tools/gen-palette-qml.py compiles from the same palette.json the shell reads,
+// which is how the greeter's crimson used to drift a shade from the shell's.
+// Compiled rather than read at startup because plain QtQuick has no FileView
+// and its XMLHttpRequest cannot open a local file without an environment
+// variable sddm does not set: a login screen is the last place for a file read
+// that can fail. tests/test-greeter.sh fails if the generated copy is stale.
+//
+// Only the defaults, never a user's accent: the greeter runs before any session
+// exists and cannot read anybody's ~/.config/hypr/appearance.json.
+//
+// The geometry below is the greeter's own -- the mockup is a whole screen, and
+// none of it means anything to the shell.
 QtObject {
   id: root
 
@@ -17,10 +30,15 @@ QtObject {
   function px(n) { return Math.round(n * root.s) }
 
   // -- color ---------------------------------------------------------------
-  readonly property color bg: "#08080a"
-  readonly property color accent: "#e53a44"
-  readonly property color accentSoft: "#e5717a"
-  readonly property color text: "#f0eff1"
+  readonly property color bg: PaletteStore.palette.greeterBg
+  readonly property color accent: PaletteStore.defaults.accent
+  // Derived exactly as Theme.qml derives it -- same hue, 0.9x saturation,
+  // +0.108 lightness -- rather than written out again. The two literals had
+  // already drifted a shade apart.
+  readonly property color accentSoft: Qt.hsla(root.accent.hslHue,
+                                              root.accent.hslSaturation * 0.90,
+                                              Math.min(1, root.accent.hslLightness + 0.108), 1)
+  readonly property color text: PaletteStore.palette.text
 
   function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
   function ink(a) { return root.alpha(root.text, a) }
@@ -45,7 +63,7 @@ QtObject {
   readonly property color focusRing: root.crimson(0.12)
   readonly property color errorFill: root.crimson(0.09)
   readonly property color errorBorder: root.crimson(0.65)
-  readonly property color battery: "#e0b341"
+  readonly property color battery: PaletteStore.palette.warning
 
   readonly property color shadow: Qt.rgba(0, 0, 0, 0.72)
   readonly property color shadowPill: Qt.rgba(0, 0, 0, 0.60)

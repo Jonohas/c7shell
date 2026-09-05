@@ -35,21 +35,11 @@ printf 'module qs.Services\nsingleton NetworkService 1.0 NetworkService.qml\n' \
 cp "$src/Common/PskField.qml" "$tmp/qs/Common/"
 printf 'module qs.Common\nPskField 1.0 PskField.qml\n' > "$tmp/qs/Common/qmldir"
 
-# Only the tokens PskField reads. The real Theme pulls in AppearanceStore,
-# which pulls in FileView, which needs quickshell proper.
-cat > "$tmp/qs/Theme/Theme.qml" <<'QML'
-pragma Singleton
-import QtQuick
-QtObject {
-  readonly property string fontMono: "monospace"
-  readonly property color text: "#f0eff1"
-  readonly property color accentSoft: "#e5717a"
-  readonly property color surface04: Qt.rgba(1, 1, 1, 0.04)
-  readonly property int radiusTile: 10
-  function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
-}
-QML
-printf 'module qs.Theme\nsingleton Theme 1.0 Theme.qml\n' > "$tmp/qs/Theme/qmldir"
+# The Theme stand-in, from tests/fixtures/theme-stub.sh -- one copy, with its
+# colours read from the same palette.json the real Theme reads.
+# shellcheck source=fixtures/theme-stub.sh
+. "$here/fixtures/theme-stub.sh"
+write_theme_stub "$tmp/qs" "$src"
 
 # -- the Quickshell types NetworkService names -------------------------------
 # A default property, because the service parents a Binding and two Timers to

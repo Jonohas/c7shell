@@ -3,3 +3,5 @@
 # needs declaring -- QML has no other way to find one.
 module c7shell
 singleton Theme 1.0 Theme.qml
+# Generated from quickshell/c7shell/palette.json -- see tools/gen-palette-qml.py.
+singleton PaletteStore 1.0 PaletteStore.qml
