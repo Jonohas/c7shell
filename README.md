@@ -566,6 +566,7 @@ tests/test-c7up.sh
 tests/test-updates.sh
 tests/test-authd.sh
 tests/test-auth.sh
+tests/test-wifi.sh
 ```
 
 The two lua suites run from `hypr/`, since the config resolves its own

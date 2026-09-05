@@ -41,9 +41,39 @@ Singleton {
   // signal order at all. SSIDs are copies, so they can be sorted and the row
   // looks its network back up. Deduplicated: one row per name is what byName()
   // can resolve.
-  readonly property var otherNames: root.others
-    .map(n => n.name)
-    .filter((name, i, all) => all.indexOf(name) === i)
+  //
+  // Published deliberately rather than bound, because a Repeater handed a JS
+  // array does not diff it -- it destroys and rebuilds every delegate, and the
+  // password field a row grows underneath itself is delegate-local state. A
+  // bound `otherNames` produced a fresh array on every signal-strength update
+  // NetworkManager pushes, which is continuous while scanning, so a password
+  // being typed was thrown away several times a second. Two guards, below.
+  property var otherNames: []
+
+  // First guard: republish only when the list content actually changed. Rows
+  // bind to their network object directly, so bars and dBm still update live.
+  // Second guard: while a row is asking for a key, do not republish at all --
+  // a genuine reorder must not destroy the field being typed into.
+  function refreshNames() {
+    if (root.pskTarget !== "") return
+    const next = root.others
+      .map(n => n.name)
+      .filter((name, i, all) => all.indexOf(name) === i)
+    if (next.length === root.otherNames.length
+      && next.every((name, i) => name === root.otherNames[i])) return
+    root.otherNames = next
+  }
+
+  onOthersChanged: root.refreshNames()
+  // The first evaluation of a binding does not necessarily emit its change
+  // signal, and an empty list is not something to wait for a rescan to fix.
+  Component.onCompleted: root.refreshNames()
+
+  // SSID of the network currently being asked for a key, "" when none is.
+  // PskField owns both ends of this; the list stays frozen until it clears.
+  property string pskTarget: ""
+
+  onPskTargetChanged: if (root.pskTarget === "") root.refreshNames()
 
   // Null once the network is gone, so the row unloads with it rather than
   // holding bindings onto a destroyed object.
@@ -86,7 +116,7 @@ Singleton {
   // the association you are on and leaves a saved autoconnect profile behind
   // when it fails, so callers must collect the key and use connectWithPsk().
   function needsKey(net) {
-    return !net.known && root.secured(net)
+    return net !== null && !net.known && root.secured(net)
   }
 
   // Refuses a network that needsKey() rather than trusting every caller to
@@ -110,13 +140,19 @@ Singleton {
 
   // Only a bare PSK can be collected from a row; enterprise and WEP need
   // certificates or per-user credentials this popover cannot ask for.
+  //
+  // Null-safe, like securityLabel() next to it: a row's `network` binding can
+  // go null a beat before the Loader holding it deactivates, and these are
+  // read from bindings, so the gap is a TypeError in the log rather than
+  // anything a caller can catch.
   function pskCapable(net) {
-    return net.security === WifiSecurityType.WpaPsk
-      || net.security === WifiSecurityType.Wpa2Psk
-      || net.security === WifiSecurityType.Sae
+    return net?.security === WifiSecurityType.WpaPsk
+      || net?.security === WifiSecurityType.Wpa2Psk
+      || net?.security === WifiSecurityType.Sae
   }
 
   function secured(net) {
+    if (!net) return false
     return net.security !== WifiSecurityType.Open && net.security !== WifiSecurityType.Unknown
   }
 
