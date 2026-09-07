@@ -123,6 +123,14 @@ the signal that repaints running apps — the settings app runs it whenever the
 accent or variant changes, and `c7shell-setup` seeds it once at install time so
 a fresh session is not a themed shell beside a stock-looking dolphin.
 
+The accent is either one of `palette.json`'s five `accentChoices` or any
+six-digit hex. The last swatch in the settings app's accent row is the way to
+the second: it opens a saturation/value square, a hue strip and a hex field
+(`Modules/Settings/AccentPicker.qml`), and writes the same
+`appearance.json` key the presets do. Everything downstream reads that value
+and not the shortlist — the exporter above, hyprland's active border, the lock
+screen palette and the greeter — so a custom colour reaches all of them.
+
 This only applies if you actually run a QWidget-based Qt/KDE app. The shell
 itself is QML — the bar, launcher and settings window take none of this — so
 the packages below are `optdepends`, the bootstrap installs them only together

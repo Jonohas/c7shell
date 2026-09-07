@@ -119,6 +119,13 @@ SettingsPage {
 
   // -- accent ----------------------------------------------------------------
   SettingsCard {
+    id: accentCard
+
+    // The five presets are a shortlist, not the range: anything the store's
+    // own /^#[0-9a-fA-F]{6}$/ accepts is a valid accent, and the last swatch in
+    // the row discloses AccentPicker to reach the rest of it.
+    property bool picking: false
+
     width: parent.width
 
     Item {
@@ -158,11 +165,57 @@ SettingsPage {
 
             MouseArea {
               anchors.fill: parent
-              onClicked: AppearanceStore.values.accent = swatch.modelData
+              onClicked: {
+                AppearanceStore.values.accent = swatch.modelData
+                // Picking a preset closes the picker: leaving it open on a
+                // colour it no longer describes invites the next drag to undo
+                // the click that just happened.
+                accentCard.picking = false
+              }
             }
           }
         }
+
+        // The way out of the shortlist. Selected when the accent in force is
+        // not one of the presets -- which is the only state in which the row
+        // would otherwise show nothing selected at all.
+        Rectangle {
+          id: custom
+
+          readonly property bool selected: !AppearanceStore.accentChoices
+            .some(c => Qt.colorEqual(AppearanceStore.accent, c))
+
+          anchors.verticalCenter: parent.verticalCenter
+          width: custom.selected || accentCard.picking ? 22 : 20
+          height: width
+          radius: width / 2
+          // Wearing the accent once it IS the accent; a miniature of the
+          // picker's own hue strip until then, which says "any colour" in the
+          // one place a single fill cannot.
+          color: custom.selected ? AppearanceStore.accent : "transparent"
+          border.width: custom.selected ? 2 : accentCard.picking ? 1 : 0
+          border.color: custom.selected ? Theme.textOnAccent : Theme.hairlineStrong
+
+          Rectangle {
+            anchors.fill: parent
+            anchors.margins: 3
+            radius: width / 2
+            visible: !custom.selected
+            // The same sweep AccentPicker's strip draws, wrapped round a dot.
+            gradient: HueGradient {}
+          }
+
+          MouseArea {
+            anchors.fill: parent
+            onClicked: accentCard.picking = !accentCard.picking
+          }
+        }
       }
+    }
+
+    AccentPicker {
+      width: parent.width
+      open: accentCard.picking
     }
   }
 
