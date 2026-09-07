@@ -68,13 +68,72 @@ Singleton {
   // the dbus name is unique per player and constant for its lifetime.
   readonly property string playerId: root.player?.dbusName ?? ""
 
-  readonly property string title: root.player?.trackTitle ?? ""
-  readonly property string artist: root.player?.trackArtist ?? ""
-  readonly property string album: root.player?.trackAlbum ?? ""
+  // -- metadata, and holding on to it -----------------------------------------
+  // What the player is publishing RIGHT NOW. Nothing outside this block reads
+  // these four, because a player can blank its metadata without stopping and
+  // passing that straight through is what put "nothing playing" on a panel
+  // over audible audio (#104).
+  //
+  // Chrome does exactly that the moment a video enters picture-in-picture: the
+  // metadata collapses to mpris:length alone -- no title, no artist, no art --
+  // while PlaybackStatus stays Playing, on the same dbus name and the same
+  // track. It republishes on the next video, which is why the symptom looked
+  // like it fixed itself. So the last metadata a player did publish is held
+  // until it publishes some again, it stops, or it quits.
+  readonly property string liveTitle: root.player?.trackTitle ?? ""
+  readonly property string liveArtist: root.player?.trackArtist ?? ""
+  readonly property string liveAlbum: root.player?.trackAlbum ?? ""
+  readonly property string liveArtUrl: root.player?.trackArtUrl ?? ""
+
+  // Plain state, not a binding: it is a record of what was last seen, and the
+  // live values re-evaluating must not undo it. `id` is what scopes it to one
+  // player -- without it the next player to register inherits this one's track.
+  property var lastMeta: ({ id: "", title: "", artist: "", album: "", artUrl: "" })
+
+  // One key over all four, so a track change that lands them in the same frame
+  // is recorded once rather than four times, three of them a partial record.
+  readonly property string liveMetaKey: `${root.playerId}␟${root.liveTitle}␟${
+    root.liveArtist}␟${root.liveAlbum}␟${root.liveArtUrl}`
+
+  // The key is a trigger and nothing more: every field below is read off the
+  // player OBJECT rather than off the live* bindings. On a handover those
+  // bindings disagree for one frame -- this handler runs on the key changing,
+  // which the new dbus name is enough to do, while the title binding still
+  // holds the old player's cached value -- and a record built from them pairs
+  // the player that just took over with the track the previous one was on.
+  onLiveMetaKeyChanged: {
+    const p = root.player
+    // The title is the test for "this player has published something": a
+    // player between tracks drops all four at once, and no surface draws an
+    // artist on its own.
+    if (!p || (p.trackTitle ?? "") === "") return
+    root.lastMeta = {
+      id: p.dbusName ?? "",
+      title: p.trackTitle ?? "",
+      artist: p.trackArtist ?? "",
+      album: p.trackAlbum ?? "",
+      artUrl: p.trackArtUrl ?? ""
+    }
+  }
+
+  // Stopped is a player that has genuinely finished rather than one that went
+  // quiet, and a finished player still showing its last track is a stale panel.
+  readonly property bool holdingMeta: root.lastMeta.id !== ""
+    && root.lastMeta.id === root.playerId
+    && root.player?.playbackState !== MprisPlaybackState.Stopped
+
+  // All four fall back together. Mixing a retained title with a live artist
+  // would caption one track with another's name.
+  readonly property bool blanked: root.liveTitle === "" && root.holdingMeta
+
+  readonly property string title: root.blanked ? root.lastMeta.title : root.liveTitle
+  readonly property string artist: root.blanked ? root.lastMeta.artist : root.liveArtist
+  readonly property string album: root.blanked ? root.lastMeta.album : root.liveAlbum
   // Passed to an Image as-is: players hand out http(s) and file: URLs and Qt
   // loads both. Empty is the placeholder case, which every surface handles --
-  // a broken image is never drawn.
-  readonly property string artUrl: root.player?.trackArtUrl ?? ""
+  // a broken image is never drawn, and a retained file: url whose temp file
+  // Chrome has since deleted lands in that same case.
+  readonly property string artUrl: root.blanked ? root.lastMeta.artUrl : root.liveArtUrl
 
   // Identity of the CURRENT TRACK, for the OSD to compare against. uniqueId
   // alone is not enough: it is only unique within one player, so two players
