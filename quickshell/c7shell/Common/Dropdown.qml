@@ -67,8 +67,9 @@ Item {
       color: root.current !== "" ? Theme.text : Theme.textDisabled
     }
 
-    // A glyph rather than an icon asset: Assets/icons has no chevron and one
-    // triangle does not justify adding one.
+    // A glyph rather than the chevron-down asset: this caret is 9px of solid
+    // triangle, and lucide's open 2px chevron reads as a different thing
+    // entirely at that size.
     Text {
       id: caret
       anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }

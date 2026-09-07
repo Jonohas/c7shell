@@ -1,7 +1,5 @@
 import QtQuick
 
-import "Icons.js" as Icons
-
 // The card's one input. Two states in one item, as the mockup has it: a focused
 // field with dot echo and a crimson caret, and the failed-auth state where the
 // field itself carries the message and the attempt counter.
@@ -67,9 +65,9 @@ FocusScope {
       anchors.rightMargin: Theme.px(14)
       spacing: Theme.px(10)
 
-      VectorIcon {
+      Icon {
         anchors.verticalCenter: parent.verticalCenter
-        icon: root.error !== "" ? Icons.warning : Icons.lock
+        name: root.error !== "" ? "alert-triangle" : "lock"
         size: Theme.px(13)
         color: root.error !== "" ? Theme.accentSoft : Theme.crimson(0.85)
       }

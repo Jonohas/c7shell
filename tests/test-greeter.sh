@@ -71,6 +71,37 @@ while read -r key; do
   grep -q "^$key=" "$theme/theme.conf" || fail "Main.qml reads config key '$key', theme.conf does not define it"
 done < <(grep -o 'stringValue("[a-zA-Z]*")' "$theme/Main.qml" | sed 's/.*("\(.*\)")/\1/' | sort -u)
 
+# --- the icons the greeter draws -------------------------------------------
+# The theme no longer carries its own copy of the paths: it reads the shell's
+# lucide SVGs from Theme.iconsDir. Its default is an absolute path into a tree
+# only the PACKAGE creates, and the render below cannot exercise it -- the
+# preview harness has to point the theme at this checkout instead. So the
+# default is checked against the PKGBUILD line that has to keep it true. Get it
+# wrong and the greeter still comes up, with a bar of blank gaps where the
+# icons were, on the one screen nobody can try before logging out.
+icons_dir=$(grep -o 'property url iconsDir: "file://[^"]*"' "$theme/Theme.qml" \
+  | sed 's|.*"file://\(.*\)"|\1|')
+[[ -n $icons_dir ]] || fail 'Theme.qml does not define iconsDir as a file:// url'
+# The path is /usr/share/<pkgname>/<what package() copies>/Assets/icons.
+grep -q "cp -a hypr quickshell xdg-desktop-portal" "$here/../PKGBUILD" \
+  || fail "PKGBUILD no longer copies quickshell/ to /usr/share/c7shell, so
+  Theme.qml's iconsDir ($icons_dir) points at nothing on an installed system"
+[[ $icons_dir == /usr/share/c7shell/quickshell/c7shell/Assets/icons ]] \
+  || fail "Theme.qml's iconsDir is $icons_dir, which is not where PKGBUILD's
+  package() puts the icons (/usr/share/c7shell/quickshell/c7shell/Assets/icons)"
+
+# Every name the theme asks for has to be an asset that exists. A typo here is
+# another blank gap rather than a diagnostic.
+assets=$here/../quickshell/c7shell/Assets/icons
+while read -r name; do
+  [[ -f $assets/$name.svg ]] \
+    || fail "the theme draws the icon '$name', quickshell/c7shell/Assets/icons/$name.svg does not exist"
+# An icon name is a bare lowercase literal right after `name:`/`icon:` or the
+# `?`/`:` of a ternary on such a line -- which is every way the theme names one,
+# and picks up neither `userField(..., "name")` nor a name bound from a model.
+done < <(grep -hE '^[[:space:]]*(name|icon):' "$theme"/*.qml \
+  | grep -oE '[:?] *"[a-z][a-z0-9-]*"' | tr -d '": ?' | sort -u)
+
 # --- the network dispatcher ------------------------------------------------
 # The greeter cannot ask NetworkManager anything (QML, no D-Bus, running as the
 # sddm user), so this script publishes the connection to a file it can read.
@@ -121,6 +152,22 @@ command -v qml6 >/dev/null || {
 }
 
 # --- render every state, offscreen, and fail on any diagnostic ------------
+# The icons are white SVGs tinted by a MultiEffect, which is a shader effect --
+# and the scenegraph's SOFTWARE backend, what offscreen falls back to when it
+# cannot make a GL context, draws nothing at all for one. Every icon would then
+# be missing from the shots below without a single diagnostic to say so, which
+# is the class of silence this file exists to break. So ask for the GPU backend
+# (mesa's llvmpipe counts), and if there is none, say what went unverified
+# rather than rendering a greeter with holes in it and calling it a pass.
+sg_backend=rhi
+if ! QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=rhi QML_XHR_ALLOW_FILE_READ=1 \
+     timeout 60 qml6 "$preview" -- --exit-after 200 >/dev/null 2>&1; then
+  sg_backend=software
+  echo 'NOTE: no GPU scenegraph backend here; rendering with the software one, which'
+  echo '      draws no MultiEffect -- the icons are in the shots below only as gaps.'
+fi
+
+
 # QT_FORCE_STDERR_LOGGING: without a tty Qt sends its messages to journald,
 # where this test cannot see them -- which is exactly how a broken binding goes
 # unnoticed in the first place.
@@ -130,6 +177,7 @@ render() {
   local name=$1; shift
   local log=$tmp/$name.log
   QT_QPA_PLATFORM=offscreen \
+  QT_QUICK_BACKEND=$sg_backend \
   QT_FORCE_STDERR_LOGGING=1 \
   QML_XHR_ALLOW_FILE_READ=1 \
   timeout 60 qml6 "$preview" -- --exit-after 900 --shot "$tmp/$name.png" "$@" >"$log" 2>&1 \
