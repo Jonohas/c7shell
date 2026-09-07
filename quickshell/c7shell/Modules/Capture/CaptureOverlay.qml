@@ -135,8 +135,7 @@ PanelWindow {
       const undo = redactions.rects.length > 0 ? "u undoes · " : ""
       return `pixelate · drag over anything private · ${undo}↵ captures · esc discards`
     }
-    const pick = win.target === "window" ? "hover a window" : "drag to select"
-    return `frozen frame · ${pick} · ↵ captures · esc discards`
+    return "frozen frame · drag to select · ↵ captures · esc discards"
   }
 
   onVisibleChanged: {
@@ -161,18 +160,24 @@ PanelWindow {
     // new frame. Carrying them over would pixelate somewhere nobody pointed.
     redactions.clear()
     win.tool = "crop"
-    // A frozen reopen is one capture continuing, so the target chosen before
-    // the countdown still stands. A fresh open starts at region.
-    if (!win.frozen) win.target = "region"
+    // A fresh open starts at region. A frozen reopen keeps only `screen`,
+    // which on a still means "the whole frame" and is the one target that
+    // still means anything: `window` would aim at the live desktop rather than
+    // at this picture, and `all` has no other output to include. Both are
+    // hidden on the still, so anything else that arrived here is pinned back
+    // to the drag rather than left lit with no chip to unset it.
+    win.target = win.frozen && win.target === "screen" ? "screen" : "region"
     // Whole-screen is the one target whose rectangle nothing on the still
     // redraws -- there is no drag and no hover to re-derive it from -- and the
     // reset above just threw it away. Without this, edit + screen reaches the
     // still and then says "drag a region first" about a target that is not a
     // region.
-    else if (win.target === "screen") win.selectWholeScreen()
+    if (win.frozen && win.target === "screen") win.selectWholeScreen()
     // hyprctl's client list is only refreshed on demand, and a stale one would
-    // snap the window target to geometry a window no longer has.
-    Hyprland.refreshToplevels()
+    // snap the window target to geometry a window no longer has. A still has
+    // no window target at all, and its frame is older than any list this would
+    // fetch.
+    if (!win.frozen) Hyprland.refreshToplevels()
     keys.forceActiveFocus()
   }
 

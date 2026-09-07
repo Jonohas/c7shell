@@ -286,6 +286,40 @@ sed -n '/function cut()/,/^  }/p' "$overlay" | grep -q 'redactBlock' \
 The cropper would fall back to its own default and grid the file differently
 from the preview that was agreed to."
 
+# --------------------------------------------------------------------------
+# The still is a picture, not a screen, and the capture-target chips aim at the
+# screen. `window` is the one that genuinely reaches past the frame: it snaps
+# to Hyprland's LIVE client list, so a window that moved or closed during the
+# three seconds puts the rectangle where this frame never had it -- and the
+# saved crop is wrong with nothing on screen to say so.
+# --------------------------------------------------------------------------
+toolbar=$src/Modules/Capture/CaptureToolbar.qml
+for chip in region window; do
+  sed -n "/label: \"$chip\"/,/^    }/p" "$toolbar" | grep -q 'visible: !bar.overlay.frozen' \
+    || fail "CaptureToolbar's \"$chip\" chip is offered on the frozen still.
+A still has one picture and one question -- which part of it to keep -- and
+\"window\" answers it out of the live desktop's geometry instead of the frame."
+done
+
+# The chips being hidden is not enough on its own: the target is a property,
+# and a capture armed with `window` before the countdown would otherwise arrive
+# on the still still set to it -- snapping on hover, with no chip left to
+# unset it.
+sed -n '/onVisibleChanged/,/^  }/p' "$overlay" \
+  | grep -q 'win.target = win.frozen && win.target === "screen" ? "screen" : "region"' \
+  || fail "CaptureOverlay's onVisibleChanged does not pin the target on a frozen reopen.
+A capture started with \"window\" reaches the still in window mode and hover-snaps
+to the live desktop, which is not the picture being cropped."
+
+# Refreshing the client list on a frozen reopen is the same mistake stated
+# earlier: it deliberately re-reads the desktop as CURRENT, for a frame that is
+# already three seconds old.
+sed -n '/onVisibleChanged/,/^  }/p' "$overlay" \
+  | grep -q 'if (!win.frozen) Hyprland.refreshToplevels()' \
+  || fail "CaptureOverlay refreshes Hyprland's toplevels when reopening onto a still.
+Nothing on a still needs live geometry, and fetching it is what makes the stale
+rectangle look current."
+
 # The preview and the burnt-in redaction have to snap to the same grid, and
 # they are two implementations of one rule in two languages.
 grep -q 'Math.floor(x / mosaic.block)' "$src/Modules/Capture/RedactionLayer.qml" \

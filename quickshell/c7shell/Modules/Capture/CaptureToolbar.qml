@@ -89,11 +89,21 @@ GlassPanel {
 
     Chip {
       icon: "scan"; label: "region"
+      // A still is not a thing to aim at: there is one picture, and the only
+      // question left is which part of it to keep. The drag does that, and it
+      // is the only target the frozen frame has.
+      visible: !bar.overlay.frozen
       active: bar.overlay.target === "region"
       onClicked: bar.setTarget("region")
     }
     Chip {
       icon: "app-window"; label: "window"
+      // Snapping reads Hyprland's client list, which is the LIVE desktop and
+      // not the frame on screen. On a still that is geometry from a different
+      // picture -- and the delay exists precisely because the two differ -- so
+      // the rectangle would land where this frame never had the window, with
+      // nothing to say so.
+      visible: !bar.overlay.frozen
       active: bar.overlay.target === "window"
       onClicked: bar.setTarget("window")
     }
