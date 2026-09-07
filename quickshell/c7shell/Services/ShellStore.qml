@@ -58,6 +58,14 @@ Singleton {
   // Whole percent. Below it the widget goes crimson and fires one toast.
   readonly property int batteryWarnBelow: root.values.batteryWarnBelow
 
+  // -- screenshots --
+  // "annotate" opens the capture in the editor, where ↵ is the same clipboard
+  // it would otherwise have gone to; "clipboard" is the shorter path, with
+  // nothing between the shutter and the paste. Default is the editor: a
+  // screenshot is usually taken to show somebody something, and the arrow or
+  // the mosaic that says what to look at is the reason it exists.
+  readonly property string screenshotAction: root.values.screenshotAction
+
   FileView {
     id: file
 
@@ -91,6 +99,8 @@ Singleton {
       property bool batteryWattageOnlyOnBattery: false
       property bool batteryTimeRemaining: true
       property int batteryWarnBelow: 15
+
+      property string screenshotAction: "annotate"
     }
   }
 }

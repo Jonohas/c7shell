@@ -31,13 +31,14 @@ depends=(
   # PAM conversation through libpolkit-agent rather than reimplementing the
   # setuid helper protocol by hand.
   'python-gobject'
+  # scripts/c7shell-render.py draws the annotate editor's export -- the
+  # annotations again, over the source at its own resolution, because what the
+  # editor showed was a layer surface at display scale. It replaces the
+  # gdk-pixbuf cropper that used to do the delayed capture's cut: gdk-pixbuf
+  # cannot stroke a line or lay out text, and the tools this is for are lines,
+  # arrows, shapes and numbers.
+  'python-cairo'
   'grim'
-  # The delayed screenshot captures the frame BEFORE the rectangle is drawn --
-  # a hover menu is gone by the time you move the pointer to draw around it --
-  # so scripts/c7shell-crop.py cuts the region out of that frame afterwards,
-  # through gdk-pixbuf. It arrives transitively via gtk3 on most machines;
-  # naming it here is what stops that being luck.
-  'gdk-pixbuf2'
   'wf-recorder'
   'wl-clipboard'
   'libnotify'
