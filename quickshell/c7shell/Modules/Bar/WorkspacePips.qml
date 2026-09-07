@@ -20,6 +20,31 @@ Row {
 
   readonly property int tile: 20
 
+  // The special (scratchpad) workspace this bar's monitor owns, or null. Shown
+  // as a trailing tile so it can be toggled and so you can see when you are on
+  // it -- the numeric pips deliberately skip it (id > 0 above).
+  readonly property var specialWs: Hyprland.workspaces.values
+    .find(w => w.name === "special:magic" && w.monitor?.name === root.monitor?.name) ?? null
+
+  // Whether special:magic is currently open on this monitor. Hyprland never
+  // marks the special workspace `active`/`focused` and never makes it the
+  // monitor's activeWorkspace (it is an overlay), so the only live signal is
+  // the activespecialv2 event: "<id>,<name>,<monitor>" on open, ",,<monitor>"
+  // on close. lastIpcObject seeds the initial value but never refreshes.
+  property bool specialActive: root.monitor?.lastIpcObject?.specialWorkspace?.name === "special:magic"
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      if (event.name !== "activespecialv2")
+        return
+      const parts = event.data.split(",")
+      if (parts[parts.length - 1] !== root.monitor?.name)
+        return
+      root.specialActive = parts[1] === "special:magic"
+    }
+  }
+
   // Ids that survive the ≤10 window. A rebuilt plain-int array is safe here —
   // the Repeater model stays the ObjectModel itself (Repeater rule); this
   // array is only consulted by delegates for `visible`. id > 0 skips
@@ -79,6 +104,34 @@ Row {
         // (conf/binds.lua binds workspace keys the same way).
         onClicked: Hyprland.dispatch(`hl.dsp.focus({ workspace = ${pip.wsId} })`)
       }
+    }
+  }
+
+  // Special (scratchpad) tile. Same look as a focused numeric tile when the
+  // scratchpad is open, dimmed when it is hidden. Click toggles it, matching
+  // Super+S (conf/binds.lua: hl.dsp.workspace.toggle_special("magic")).
+  DiceTile {
+    id: special
+    visible: root.specialWs !== null
+    glyph: "S"
+    value: 0
+    tile: root.tile
+    dotColor: root.specialActive ? Theme.text : Theme.alpha(Theme.text, 0.55)
+    color: root.specialActive ? Theme.accent : Theme.surface07
+
+    RectangularShadow {   // focus glow, spec `0 0 10px rgba(229,58,68,.5)`
+      visible: root.specialActive
+      anchors.fill: parent
+      radius: special.radius
+      color: Theme.accentGlow
+      offset: Qt.vector2d(0, 0)
+      blur: 10
+      z: -1
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      onClicked: Hyprland.dispatch(`hl.dsp.workspace.toggle_special("magic")`)
     }
   }
 }

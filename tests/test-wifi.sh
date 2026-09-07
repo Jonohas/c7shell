@@ -59,6 +59,7 @@ import QtQuick
 Item {
   property bool running: false
   property var stdout: null
+  property var stderr: null
   signal exited(int code, int status)
   function exec(argv) {}
 }

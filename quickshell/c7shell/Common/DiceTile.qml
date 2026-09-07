@@ -28,12 +28,17 @@ Rectangle {
   // an empty tile.
   property string label: ""
 
+  // A fixed glyph that stands in for the whole tile, ignoring `value` and
+  // `mode` -- for a workspace with no meaningful number, like the special
+  // (scratchpad) workspace. Empty string = normal number/pip rendering.
+  property string glyph: ""
+
   readonly property var face: Pips.layout(root.value)
   readonly property real dotSize: root.face.dotSize * (root.tile / 20)
 
-  readonly property bool pips: root.mode === "dice" && !root.face.numeral
-  readonly property string captionText: root.mode === "names" && root.label !== ""
-    ? root.label : `${root.value}`
+  readonly property bool pips: root.mode === "dice" && !root.face.numeral && root.glyph === ""
+  readonly property string captionText: root.glyph !== "" ? root.glyph
+    : root.mode === "names" && root.label !== "" ? root.label : `${root.value}`
 
   // A name needs room; a numeral does not. Padding is on the text, so the tile
   // stays exactly square whenever it holds one glyph or a pip face.
