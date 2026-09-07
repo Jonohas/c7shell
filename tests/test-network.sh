@@ -72,10 +72,15 @@ QML
 # Not singletons with int properties: a QML property name may not begin with an
 # upper case letter, so the values have to be a real enum on the type -- which
 # is how DeviceType.Wifi reads in the service either way.
+#
+# The numbers are Quickshell's own, from src/network/enums.hpp: None, Wifi,
+# Wired, in that order. The service only ever compares symbolically, so a stub
+# that renumbered them still passed -- and would have gone on passing while
+# telling a reader of this file that Wired is 1.
 cat > "$tmp/Quickshell/Networking/DeviceType.qml" <<'QML'
 import QtQuick
 QtObject {
-  enum Type { Unknown = 0, Wired = 1, Wifi = 2 }
+  enum Type { None = 0, Wifi = 1, Wired = 2 }
 }
 QML
 cat > "$tmp/Quickshell/Networking/WifiSecurityType.qml" <<'QML'
