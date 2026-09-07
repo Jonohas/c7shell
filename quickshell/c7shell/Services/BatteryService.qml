@@ -52,7 +52,13 @@ Singleton {
   // rather than as "0.0 W", which looks like a broken sensor.
   readonly property bool idleOnPower: root.full || (root.onAc && root.watts < 0.5)
 
+  // percent 0 is UPower's not-read-yet value, not an empty pack -- the composite
+  // displayDevice reports it during startup and resume before the real level
+  // lands, and without this guard that transient fires a "battery low 0%" toast
+  // on a full battery. A truly dying pack already warned on the way down and the
+  // machine suspends before 0.
   readonly property bool warn: root.discharging
+    && root.percent > 0
     && root.percent < ShellStore.batteryWarnBelow
 
   readonly property real energyWh: root.device?.energy ?? 0
