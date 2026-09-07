@@ -22,7 +22,26 @@ command -v qml6 >/dev/null || {
   exit 0
 }
 
-mkdir -p "$tmp/qs/Services" "$tmp/Quickshell/Io"
+mkdir -p "$tmp/qs/Services" "$tmp/qs/Theme" "$tmp/Quickshell/Io"
+
+# RedactionLayer is an Item, not a layer surface, so unlike the two windows it
+# can be instantiated here -- and its snapping rule is one half of a pair, the
+# other half being snap_rect() in the cropper. Copied next to the test so the
+# same-directory resolution the shell uses applies here too.
+cp "$src/Modules/Capture/RedactionLayer.qml" "$tmp/"
+cp "$here/capture-qml-test.qml" "$tmp/"
+
+# Only the two tokens the mosaic's outline is drawn with; nothing here looks at
+# a colour.
+cat > "$tmp/qs/Theme/Theme.qml" <<'THEME'
+pragma Singleton
+import QtQuick
+QtObject {
+  property color accent: "#ffffff"
+  function alpha(c, a) { return c }
+}
+THEME
+printf 'module qs.Theme\nsingleton Theme 1.0 Theme.qml\n' > "$tmp/qs/Theme/qmldir"
 
 cp "$src/Services/CaptureService.qml" "$tmp/qs/Services/"
 # NotifServer is only reached by fail(), which nothing here trips, but naming a
@@ -69,7 +88,7 @@ log=$tmp/capture.log
 # where this test cannot see them.
 QT_QPA_PLATFORM=offscreen \
 QT_FORCE_STDERR_LOGGING=1 \
-timeout 60 qml6 -I "$tmp" "$here/capture-qml-test.qml" >"$log" 2>&1 \
+timeout 60 qml6 -I "$tmp" "$tmp/capture-qml-test.qml" >"$log" 2>&1 \
   || fail "qml6 exited non-zero:\n$(cat "$log")"
 
 grep -q 'CAPTURE-TEST-PASS' "$log" || fail "the test never reached its end:\n$(cat "$log")"
@@ -151,6 +170,70 @@ READ
   python3 "$cropper" "$tmp/src.png" "$tmp/edge.png" 90 70 30 25 \
     || fail "a rectangle overhanging the frame was rejected instead of clamped"
 
+  # --- pixelate -----------------------------------------------------------
+  # A redaction that is only in the preview is worse than no redaction at all:
+  # you looked at the mosaic, agreed the private thing was covered, and saved a
+  # file with it still legible. So the flags have to actually burn into the PNG.
+  python3 "$cropper" "$tmp/src.png" "$tmp/redacted.png" 0 0 100 80 \
+    --block 10 --pixelate 20,20,40,40 \
+    || fail "the cropper exited non-zero on a valid --pixelate rectangle"
+
+  read -r flat inside outside < <(python3 - "$tmp/redacted.png" <<'READ'
+import sys
+import gi
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import GdkPixbuf
+p = GdkPixbuf.Pixbuf.new_from_file(sys.argv[1])
+px, rs, nc = p.get_pixels(), p.get_rowstride(), p.get_n_channels()
+def at(x, y):
+    o = y * rs + x * nc
+    return tuple(px[o:o + 3])
+# One block is flat, the source gradient it replaced was not, and a pixel
+# outside the rectangle still says which source pixel it came from.
+print(int(at(20, 20) == at(29, 29) == at(24, 26)),
+      int(at(20, 20) != at(30, 20)),
+      int(at(5, 5) == (10, 15, 0)))
+READ
+)
+  [[ $flat == 1 ]] || fail "--pixelate left the block it covered ungridded; the mosaic is not in the file"
+  [[ $inside == 1 ]] || fail "every block came out identical -- that is a fill, not a pixelation"
+  [[ $outside == 1 ]] || fail "--pixelate changed pixels outside the rectangle it was given"
+
+  # Rectangles are grown out to whole blocks, so half a glyph cannot survive
+  # along an edge -- and the overlay's preview snaps the same way, or the file
+  # would not be what was agreed to on screen.
+  read -r grown < <(python3 - "$tmp/tail.png" "$cropper" "$tmp/src.png" <<'READ'
+import subprocess
+import sys
+import gi
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import GdkPixbuf
+out, cropper, src = sys.argv[1], sys.argv[2], sys.argv[3]
+# 25,25 30x30 with a block of 10 covers 20,20 through 60,60 once grown.
+subprocess.run(["python3", cropper, src, out, "0", "0", "100", "80",
+                "--block", "10", "--pixelate", "25,25,30,30"], check=True)
+p = GdkPixbuf.Pixbuf.new_from_file(out)
+px, rs, nc = p.get_pixels(), p.get_rowstride(), p.get_n_channels()
+def at(x, y):
+    o = y * rs + x * nc
+    return tuple(px[o:o + 3])
+print(int(at(20, 20) == at(24, 24) and at(55, 55) == at(59, 59)))
+READ
+)
+  [[ $grown == 1 ]] || fail "a rectangle that starts mid-block was not grown out to the block grid.
+Half of what was being hidden stays legible along the edge."
+
+  # Nothing about the plain crop may change when no rectangle is drawn.
+  python3 "$cropper" "$tmp/src.png" "$tmp/plain.png" 10 20 30 25 --block 10 \
+    || fail "the cropper rejected --block with nothing to pixelate"
+
+  python3 "$cropper" "$tmp/src.png" "$tmp/x.png" 0 0 10 10 --pixelate 1,2,3 2>/dev/null \
+    && fail "the cropper accepted a --pixelate rectangle with three numbers in it"
+  python3 "$cropper" "$tmp/src.png" "$tmp/x.png" 0 0 10 10 --block 0 2>/dev/null \
+    && fail "the cropper accepted a zero block, which is a divide by zero in the downscale"
+  python3 "$cropper" "$tmp/src.png" "$tmp/off.png" 0 0 10 10 --pixelate 500,500,10,10 \
+    || fail "a redaction rectangle entirely off the frame lost the whole screenshot"
+
   # Real failures still have to be loud: the service reports the stderr.
   python3 "$cropper" "$tmp/nope.png" "$tmp/x.png" 0 0 10 10 2>/dev/null \
     && fail "the cropper exited zero on a source file that does not exist"
@@ -188,5 +271,28 @@ A countdown left running across a reopen fires into the new session."
 grep -q 'onCountdownElapsed' "$overlay" \
   || fail "CaptureOverlay does not handle CaptureService.countdownElapsed, so nothing
 takes the delayed screenshot when the count runs out."
+
+# --------------------------------------------------------------------------
+# The mosaic the overlay draws is a picture on a layer surface and reaches no
+# file at all. If cut() forgets to hand the rectangles to the cropper, the
+# capture still works, the toast still says so, and the private thing is still
+# in the PNG -- the one failure mode this tool cannot have.
+# --------------------------------------------------------------------------
+sed -n '/function cut()/,/^  }/p' "$overlay" | grep -q 'redactions.rects' \
+  || fail "CaptureOverlay's cut() does not pass the pixelate rectangles to cropFrozen().
+The overlay would draw the mosaic and save a file without it."
+sed -n '/function cut()/,/^  }/p' "$overlay" | grep -q 'redactBlock' \
+  || fail "CaptureOverlay's cut() does not pass the mosaic block to cropFrozen().
+The cropper would fall back to its own default and grid the file differently
+from the preview that was agreed to."
+
+# The preview and the burnt-in redaction have to snap to the same grid, and
+# they are two implementations of one rule in two languages.
+grep -q 'Math.floor(x / mosaic.block)' "$src/Modules/Capture/RedactionLayer.qml" \
+  || fail "RedactionLayer no longer snaps rectangles out to the block grid, so the
+preview and scripts/c7shell-crop.py disagree about where the mosaic falls."
+grep -q 'def snap_rect' "$cropper" \
+  || fail "the cropper no longer snaps rectangles out to the block grid, so the file
+is not gridded the way the overlay previewed it."
 
 echo 'test-capture.sh: all checks passed'

@@ -141,7 +141,13 @@ Singleton {
 
   // Claims the frame: the overlay closes immediately after calling this, and
   // closing on an unclaimed still throws it away.
-  function cropFrozen(x, y, w, h) {
+  //
+  // `redactions` are pixelate rectangles in the FRAME's device pixels, not the
+  // crop's -- they were drawn on the still, and the cut happens after them.
+  // `block` is the mosaic's device-pixel grid, which only the overlay can work
+  // out: it is the preview's logical block times the output's scale, and a
+  // redaction that does not match the preview is one nobody agreed to.
+  function cropFrozen(x, y, w, h, redactions, block) {
     const src = root.frozen
     if (src === "") return
     cropProc.source = src
@@ -150,7 +156,19 @@ Singleton {
     root.frozen = ""
     cropProc.exec(["python3", root.cropper, src, cropProc.pending,
                    String(Math.round(x)), String(Math.round(y)),
-                   String(Math.round(w)), String(Math.round(h))])
+                   String(Math.round(w)), String(Math.round(h))]
+                  .concat(root.redactionArgs(redactions, block)))
+  }
+
+  // Nothing drawn means no flags at all, so a plain delayed capture invokes
+  // the cropper exactly as it did before pixelate existed.
+  function redactionArgs(redactions, block) {
+    if (!redactions || redactions.length === 0) return []
+    const args = ["--block", String(Math.max(1, Math.round(block ?? 1)))]
+    for (const r of redactions)
+      args.push("--pixelate", [r.x, r.y, r.width, r.height]
+        .map(v => String(Math.round(v))).join(","))
+    return args
   }
 
   // A full screenshot of the desktop in the runtime dir is not something to

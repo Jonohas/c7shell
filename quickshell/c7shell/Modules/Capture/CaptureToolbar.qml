@@ -57,6 +57,34 @@ GlassPanel {
       }
     }
 
+    Rectangle {   // crop | pixelate, the still's two tools
+      // Only on the still: there is nothing to annotate on the live screen,
+      // because the live screen is not a picture yet.
+      visible: bar.overlay.frozen
+      anchors.verticalCenter: parent.verticalCenter
+      width: tools.implicitWidth + 6
+      height: tools.implicitHeight + 6
+      radius: Theme.radiusRow
+      color: Theme.surface07
+
+      Row {
+        id: tools
+        anchors.centerIn: parent
+        spacing: 2
+
+        Segment {
+          label: "crop"
+          active: bar.overlay.tool === "crop"
+          onClicked: bar.overlay.tool = "crop"
+        }
+        Segment {
+          label: "pixelate"
+          active: bar.overlay.tool === "pixelate"
+          onClicked: bar.overlay.tool = "pixelate"
+        }
+      }
+    }
+
     Item { width: 2; height: 1 }
 
     Chip {
@@ -94,6 +122,15 @@ GlassPanel {
       visible: bar.overlay.mode === "shot" && !bar.overlay.frozen
       active: bar.overlay.delayed
       onClicked: bar.overlay.delayed = !bar.overlay.delayed
+    }
+    Chip {   // freeze the output now and draw on the still, rather than in 3s
+      label: "edit"
+      // Already on a still, and there is no still to be on for every output at
+      // once: the freeze is one output's frame.
+      visible: bar.overlay.mode === "shot" && !bar.overlay.frozen
+        && bar.overlay.target !== "all"
+      active: bar.overlay.edit
+      onClicked: bar.overlay.edit = !bar.overlay.edit
     }
     Chip {
       label: "copy"
@@ -174,6 +211,10 @@ GlassPanel {
   // is going to be captured.
   function setTarget(name) {
     bar.overlay.target = name
+    // The still is one output's frame, so there is no editing every output at
+    // once. Leaving the chip lit while its route cannot run is the silent kind
+    // of wrong: ↵ would just take an ordinary screenshot.
+    if (name === "all") bar.overlay.edit = false
     if (name === "screen") bar.overlay.selectWholeScreen()
     else { bar.overlay.selW = 0; bar.overlay.selH = 0 }
   }

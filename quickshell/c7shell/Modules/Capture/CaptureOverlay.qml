@@ -63,6 +63,12 @@ PanelWindow {
   property string mode: "shot"          // shot | rec
   property string target: "region"      // region | window | screen | all
   property bool delayed: false          // the "3s" chip
+  // The "edit" chip. On, a screenshot goes the delayed capture's second half
+  // without its first: the output is frozen straight away and the rectangle --
+  // and the pixelate tool with it -- is drawn on that still. Nothing else in
+  // the shell can annotate a capture, and the still is the only surface that
+  // already holds one.
+  property bool edit: false
   property bool copyToClipboard: true
   property bool mic: false
   property bool sysAudio: false
@@ -74,6 +80,15 @@ PanelWindow {
   property real selW: 0
   property real selH: 0
   readonly property bool hasSelection: selW >= 2 && selH >= 2
+
+  // -- the still's tools --------------------------------------------------
+  // crop | pixelate. Only ever read while frozen: there is nothing to annotate
+  // on the live screen, because the live screen is not a picture yet.
+  property string tool: "crop"
+  // Logical pixels per mosaic block. Fixed: a block small enough to be worth
+  // choosing is a block small enough to read a rendered glyph through.
+  readonly property real redactBlock: 12
+  readonly property bool redacting: win.frozen && win.tool === "pixelate"
 
   // Compositor-global geometry is what grim and wf-recorder take, and both work
   // in the same logical coordinates Hyprland reports for monitors and clients.
@@ -107,10 +122,21 @@ PanelWindow {
   // capture is actually at is waiting for.
   readonly property string hint: {
     if (win.notice !== "") return win.notice
-    const pick = win.target === "window" ? "hover a window" : "drag to select"
-    if (win.frozen) return `frozen frame · ${pick} · ↵ captures · esc discards`
+    if (win.frozen) return win.frozenHint
     if (win.target === "window") return "hover a window · ↵ captures · esc cancels"
     return "drag to select · space moves selection · esc cancels"
+  }
+
+  // The still has two tools and they take different drags, so it cannot say
+  // one thing: in pixelate a drag hides something and does not move the
+  // rectangle the capture is cut to.
+  readonly property string frozenHint: {
+    if (win.redacting) {
+      const undo = redactions.rects.length > 0 ? "u undoes · " : ""
+      return `pixelate · drag over anything private · ${undo}↵ captures · esc discards`
+    }
+    const pick = win.target === "window" ? "hover a window" : "drag to select"
+    return `frozen frame · ${pick} · ↵ captures · esc discards`
   }
 
   onVisibleChanged: {
@@ -131,9 +157,19 @@ PanelWindow {
     win.notice = ""
     win.selW = 0
     win.selH = 0
+    // Rectangles belong to the frame they were drawn on, and every open is a
+    // new frame. Carrying them over would pixelate somewhere nobody pointed.
+    redactions.clear()
+    win.tool = "crop"
     // A frozen reopen is one capture continuing, so the target chosen before
     // the countdown still stands. A fresh open starts at region.
     if (!win.frozen) win.target = "region"
+    // Whole-screen is the one target whose rectangle nothing on the still
+    // redraws -- there is no drag and no hover to re-derive it from -- and the
+    // reset above just threw it away. Without this, edit + screen reaches the
+    // still and then says "drag a region first" about a target that is not a
+    // region.
+    else if (win.target === "screen") win.selectWholeScreen()
     // hyprctl's client list is only refreshed on demand, and a stale one would
     // snap the window target to geometry a window no longer has.
     Hyprland.refreshToplevels()
@@ -195,13 +231,20 @@ PanelWindow {
     // screens do, by definition.
     const needsRectangle = win.target === "region" || win.target === "window"
 
-    // First stage of a delayed one. Nothing is selected, on purpose: with the
-    // delay on, a rectangle drawn now cannot be around the hover menu the
-    // delay was turned on for. So the shutter takes the whole output and the
-    // rectangle is drawn on the frame it brings back.
-    if (win.delayed && win.mode === "shot") {
-      win.loadShutter(needsRectangle ? "freeze" : "shoot")
+    // Everything that has to happen on a still rather than on the screen.
+    //
+    // Delayed: nothing is selected, on purpose -- with the delay on, a
+    // rectangle drawn now cannot be around the hover menu the delay was turned
+    // on for. So the shutter takes the whole output and the rectangle is drawn
+    // on the frame it brings back.
+    //
+    // Edit: the same second half, reached without waiting three seconds for
+    // it. A tool that draws on the capture needs the capture to exist, and a
+    // whole-output freeze is the only thing that makes one before the file.
+    if (win.mode === "shot" && (win.delayed || win.edit)) {
+      win.loadShutter(needsRectangle || win.edit ? "freeze" : "shoot")
       CaptureService.close()
+      if (!win.delayed) { fire.restart(); return }
       // A visible countdown, not a longer sleep: the pill draws the seconds
       // while the overlay is down, so you can see when to be hovering.
       CaptureService.startCountdown(win.mon?.name ?? win.screen?.name ?? "")
@@ -252,7 +295,13 @@ PanelWindow {
     if (win.nothingSelected()) return
     win.clampSelection()
     const r = win.deviceRatio
-    CaptureService.cropFrozen(win.selX * r, win.selY * r, win.selW * r, win.selH * r)
+    // Both in the frame's device pixels, and both scaled by the one ratio:
+    // the rectangles were drawn on this surface, in the same logical pixels
+    // the selection is in.
+    CaptureService.cropFrozen(win.selX * r, win.selY * r, win.selW * r, win.selH * r,
+      redactions.rects.map(rect => Qt.rect(rect.x * r, rect.y * r,
+                                           rect.width * r, rect.height * r)),
+      win.redactBlock * r)
     // No recomposite grace on this one: cutting a file does not care what is
     // on the screen.
     CaptureService.close()
@@ -314,6 +363,13 @@ PanelWindow {
     Keys.onEnterPressed: win.arm()
     Keys.onPressed: event => {
       if (event.key === Qt.Key_Space) { keys.spaceHeld = true; event.accepted = true }
+      // A misplaced redaction is otherwise unfixable short of throwing the
+      // whole still away and taking the shot again.
+      if (win.redacting && (event.key === Qt.Key_U
+          || (event.key === Qt.Key_Z && (event.modifiers & Qt.ControlModifier)))) {
+        redactions.undo()
+        event.accepted = true
+      }
     }
     Keys.onReleased: event => {
       if (event.key === Qt.Key_Space) { keys.spaceHeld = false; event.accepted = true }
@@ -344,6 +400,17 @@ PanelWindow {
       color: Theme.alpha(Theme.bg, 0.6)
     }
 
+    RedactionLayer {
+      id: redactions
+      anchors.fill: parent
+      visible: win.frozen
+      // Over the dim, not under it: the point of the preview is to see whether
+      // the mosaic really covers the thing, and 60% black over it is exactly
+      // the amount of doubt that has no business being there.
+      source: CaptureService.frozenUrl
+      block: win.redactBlock
+    }
+
     MouseArea {
       id: drag
       anchors.fill: parent
@@ -354,9 +421,11 @@ PanelWindow {
       property real lastX: 0
       property real lastY: 0
 
-      cursorShape: win.target === "region" ? Qt.CrossCursor : Qt.ArrowCursor
+      cursorShape: win.redacting || win.target === "region"
+        ? Qt.CrossCursor : Qt.ArrowCursor
 
       onPressed: mouse => {
+        if (win.redacting) { redactions.begin(mouse.x, mouse.y); return }
         drag.anchorX = mouse.x
         drag.anchorY = mouse.y
         drag.lastX = mouse.x
@@ -368,6 +437,9 @@ PanelWindow {
       }
 
       onPositionChanged: mouse => {
+        // The pixelate tool owns the drag while it is selected: dragging out a
+        // mosaic must not also move the rectangle the shot is cut to.
+        if (win.redacting) { redactions.extend(mouse.x, mouse.y); return }
         if (win.target === "window") {
           if (!drag.pressed) win.snapToWindowAt(mouse.x, mouse.y)
           return
@@ -393,62 +465,18 @@ PanelWindow {
         drag.lastY = mouse.y
       }
 
+      onReleased: if (win.redacting) redactions.commit()
+
       // Every target except region already knows its rectangle before the click
       // -- the hovered window, this screen, all screens -- so the click that
       // picks it is also the click that takes it. Region is the one target where
       // a click is the start of a drag rather than a decision.
-      onClicked: if (win.target !== "region") win.arm()
+      // On the still in pixelate, a click is a drag that hid nothing -- not a
+      // decision to capture.
+      onClicked: if (!win.redacting && win.target !== "region") win.arm()
     }
 
-    Item {   // selection: rect, handles, size badge
-      id: selection
-      x: win.selX
-      y: win.selY
-      width: win.selW
-      height: win.selH
-      visible: win.hasSelection && win.target !== "all"
-
-      Rectangle {
-        anchors.fill: parent
-        radius: 4                       // drawn geometry, like the bar's glyphs
-        color: Theme.alpha(Theme.accent, 0.04)
-        border.width: 1.5
-        border.color: Theme.accent
-      }
-
-      Repeater {   // 7px corner handles
-        model: [[0, 0], [1, 0], [0, 1], [1, 1]]
-        Rectangle {
-          required property var modelData
-          x: modelData[0] * selection.width - 3.5
-          y: modelData[1] * selection.height - 3.5
-          width: 7; height: 7; radius: 2
-          color: Theme.text
-          border.width: 1.5
-          border.color: Theme.accent
-        }
-      }
-
-      Rectangle {   // "1680 × 920"
-        anchors { right: parent.right; bottom: parent.top; bottomMargin: 8 }
-        width: dims.implicitWidth + 16
-        height: dims.implicitHeight + 6
-        radius: Theme.radiusPip
-        color: Theme.alpha(Theme.glassBase, 0.85)
-        border.width: 1
-        border.color: Theme.hairlineStrong
-
-        Text {
-          id: dims
-          anchors.centerIn: parent
-          // Logical pixels, the unit grim -g takes. The written PNG is this
-          // multiplied by the monitor scale.
-          text: `${Math.round(win.selW)} × ${Math.round(win.selH)}`
-          font { family: Theme.fontMono; pixelSize: 10; weight: 600 }
-          color: Theme.text
-        }
-      }
-    }
+    SelectionRect { overlay: win }
 
     Text {   // hint, top left
       anchors { top: parent.top; left: parent.left; topMargin: 14; leftMargin: 20 }

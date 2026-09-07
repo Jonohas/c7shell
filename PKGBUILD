@@ -35,7 +35,8 @@ depends=(
   # The delayed screenshot captures the frame BEFORE the rectangle is drawn --
   # a hover menu is gone by the time you move the pointer to draw around it --
   # so scripts/c7shell-crop.py cuts the region out of that frame afterwards,
-  # through gdk-pixbuf. It arrives transitively via gtk3 on most machines;
+  # through gdk-pixbuf. The pixelate tool burns its mosaic into the same frame
+  # in the same pass. It arrives transitively via gtk3 on most machines;
   # naming it here is what stops that being luck.
   'gdk-pixbuf2'
   'wf-recorder'
