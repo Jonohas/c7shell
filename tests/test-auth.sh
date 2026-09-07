@@ -41,36 +41,11 @@ cp "$src/Modules/Auth/AuthPrompt.qml" "$src/Modules/Auth/PromptButton.qml" "$tmp
 printf 'module qs.Modules.Auth\nAuthPrompt 1.0 AuthPrompt.qml\nPromptButton 1.0 PromptButton.qml\n' \
   > "$tmp/qs/Modules/Auth/qmldir"
 
-# Only the tokens these files read. The real Theme pulls in AppearanceStore,
-# which pulls in FileView, which needs quickshell proper. iconsDir points at
-# the real icons, so an icon this design names but nobody drew is a visible
-# warning here rather than a blank tile on someone's screen.
-cat > "$tmp/qs/Theme/Theme.qml" <<THEME
-pragma Singleton
-import QtQuick
-QtObject {
-  readonly property string fontMono: "monospace"
-  readonly property color text: "#f0eff1"
-  readonly property color text2: Qt.rgba(1, 1, 1, 0.55)
-  readonly property color text3: Qt.rgba(1, 1, 1, 0.40)
-  readonly property color textOnAccent: "#ffffff"
-  readonly property color accent: "#e53a44"
-  readonly property color accentSoft: "#e5717a"
-  readonly property color accentFill: Qt.rgba(0.9, 0.23, 0.27, 0.14)
-  readonly property color surface04: Qt.rgba(1, 1, 1, 0.04)
-  readonly property color surface05: Qt.rgba(1, 1, 1, 0.05)
-  readonly property color surface07: Qt.rgba(1, 1, 1, 0.07)
-  readonly property color hairline: Qt.rgba(1, 1, 1, 0.08)
-  readonly property color hairlineStrong: Qt.rgba(1, 1, 1, 0.10)
-  readonly property color hoverPill: Qt.rgba(1, 1, 1, 0.09)
-  readonly property color glassBase: "#0f0f13"
-  readonly property real glassAlphaPanel: 0.80
-  readonly property int radiusPanel: 18
-  readonly property url iconsDir: "file://$src/Assets/icons"
-  function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
-}
-THEME
-printf 'module qs.Theme\nsingleton Theme 1.0 Theme.qml\n' > "$tmp/qs/Theme/qmldir"
+# The Theme stand-in, from tests/fixtures/theme-stub.sh -- one copy, with its
+# colours read from the same palette.json the real Theme reads.
+# shellcheck source=fixtures/theme-stub.sh
+. "$here/fixtures/theme-stub.sh"
+write_theme_stub "$tmp/qs" "$src"
 
 # The Quickshell types AuthService names. Process is the one with any surface:
 # the service flips `running` and calls write(), and the test reads back what

@@ -251,4 +251,92 @@ while read -r f; do
   before renaming anything:\n$(sed 's/^/  id: /' <<<"$dupes")"
 done < <(find "$src" -name '*.qml')
 
+# --------------------------------------------------------------------------
+# The palette lives in ONE file. The default accent was a literal in seven
+# independent places across five languages, and the copies had already
+# drifted: the
+# defaults table in hypr/conf/appearance.lua called itself identical to
+# AppearanceStore's JsonAdapter while missing the inactiveBorder that
+# conf/look-and-feel.lua consumes, and the greeter's accentSoft was a shade off
+# the shell's. Nothing catches that -- every copy is individually valid, and the
+# symptom is one surface wearing last year's crimson.
+#
+# So: no colour literal anywhere outside quickshell/c7shell/palette.json.
+# git ls-files, because a file this cannot see is a file nobody reviews either.
+#
+# Exempt, and why:
+#   palette.json                    the source
+#   sddm/.../PaletteStore.qml       generated from it (tools/gen-palette-qml.py)
+#   *.svg, *.md                     artwork and prose, not tokens
+#   #000000 / #ffffff               not palette entries: the ends of a mixing
+#                                   range and the plain black/white overlays
+#   Modules/SharePicker/            bypasses Theme entirely -- that is #95, and
+#                                   its entry point has to move first
+#   a `palette-literal-ok` marker   a colour that is deliberately NOT the
+#                                   palette's, e.g. a test probing what ink a
+#                                   yellow accent gets. One per line, with the
+#                                   reason next to it.
+# --------------------------------------------------------------------------
+hits=$(
+  git -C "$here/.." ls-files -z \
+    | { grep -zv -e '\.svg$' -e '\.md$' \
+          -e '^quickshell/c7shell/palette\.json$' \
+          -e '^sddm/themes/c7shell/PaletteStore\.qml$' \
+          -e '^quickshell/c7shell/Modules/SharePicker/' || true; } \
+    | xargs -0 grep -nIE '#[0-9a-fA-F]{6}\b' 2>/dev/null \
+    | grep -viE '#(000000|ffffff)\b' \
+    | grep -v 'palette-literal-ok' || true
+)
+if [[ -n $hits ]]; then
+  fail "colour literal outside quickshell/c7shell/palette.json. Every consumer
+  reads that file -- the shell through Services/PaletteStore.qml, the greeter
+  through the generated sddm/themes/c7shell/PaletteStore.qml, the exporter with
+  json.load, and hypr/conf/appearance.lua with conf/json. A literal here is a
+  copy, and the copies drift:\n$hits"
+fi
+
+# --------------------------------------------------------------------------
+# The one palette that cannot read palette.json at all: hyprlang has no
+# expansion and cannot parse JSON, so hyprlock.conf carries a block of
+# defaults for a machine that has never run the exporter (see #92). It is
+# sourced-over in every other case, which is exactly why a drift in it is
+# invisible until somebody locks a fresh install and gets last year's crimson.
+#
+# Compared against what the exporter would write for the default accent and
+# variant, which is what that machine would have had.
+# --------------------------------------------------------------------------
+if command -v python3 >/dev/null; then
+  drift=$(python3 - "$here/.." <<'PYEOF' || true
+import importlib.util, re, sys
+
+root = sys.argv[1]
+spec = importlib.util.spec_from_file_location(
+    "export", f"{root}/quickshell/c7shell/scripts/c7shell-theme-export.py")
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+
+def variables(text):
+    """$name = rgba(...) -> {name: value}, ignoring trailing comments."""
+    return dict(re.findall(r"^\$(\w+)\s*=\s*(rgba\([0-9a-fA-F]+\))", text, re.M))
+
+
+want = variables(mod.hyprlock_palette(mod.DEFAULT_ACCENT, mod.DEFAULTS["theme"]))
+with open(f"{root}/hypr/hyprlock.conf", encoding="utf-8") as f:
+    have = variables(f.read())
+
+for name, value in sorted(want.items()):
+    if name not in have:
+        print(f"  ${name}: the exporter writes it, hyprlock.conf has no default")
+    elif have[name] != value:
+        print(f"  ${name}: hyprlock.conf says {have[name]}, the palette says {value}")
+PYEOF
+)
+  if [[ -n $drift ]]; then
+    fail "hypr/hyprlock.conf's fallback palette has drifted from the palette the
+  exporter writes. It is only read on a machine that has never exported, so
+  nothing else would ever notice:\n$drift"
+  fi
+fi
+
 echo 'test-qml-hygiene.sh: all checks passed'

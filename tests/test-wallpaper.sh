@@ -13,7 +13,7 @@
 # into it, so qml6 cannot even load the module), and a layer surface cannot be
 # rendered offscreen. What can be checked without a compositor is checked here;
 # the rest was verified against a live session -- with the layer up the desktop
-# reads the wallpaper's own black, with it down Hyprland's #111111.
+# reads the wallpaper's own black, with it down Hyprland's #111111.  # palette-literal-ok: hyprland's built-in background, not ours
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)

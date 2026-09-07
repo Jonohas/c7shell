@@ -31,25 +31,11 @@ done
   done
 } > "$tmp/qs/Common/qmldir"
 
-# Only the tokens the four files above read. The real Theme pulls in
-# AppearanceStore, which pulls in FileView, which needs quickshell proper.
-cat > "$tmp/qs/Theme/Theme.qml" <<'QML'
-pragma Singleton
-import QtQuick
-QtObject {
-  readonly property string fontMono: "monospace"
-  readonly property color text3: Qt.rgba(240/255, 239/255, 241/255, 0.40)
-  readonly property color accentSoft: "#e5717a"
-  readonly property color glassBase: "#0f0f13"
-  readonly property color hairline: Qt.rgba(1, 1, 1, 0.08)
-  readonly property color panelShadowColor: Qt.rgba(0, 0, 0, 0.65)
-  readonly property real glassAlphaPanel: 0.80
-  readonly property int radiusPanel: 18
-  readonly property int radiusCard: 14
-  function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
-}
-QML
-printf 'module qs.Theme\nsingleton Theme 1.0 Theme.qml\n' > "$tmp/qs/Theme/qmldir"
+# The Theme stand-in, from tests/fixtures/theme-stub.sh -- one copy, with its
+# colours read from the same palette.json the real Theme reads.
+# shellcheck source=fixtures/theme-stub.sh
+. "$here/fixtures/theme-stub.sh"
+write_theme_stub "$tmp/qs" "$src"
 
 log=$tmp/toasts.log
 # QT_FORCE_STDERR_LOGGING: without a tty Qt sends its messages to journald,

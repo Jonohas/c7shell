@@ -23,13 +23,16 @@ Singleton {
   // "light" is deliberately absent: Theme has no light palette yet, so
   // accepting it would persist a variant nothing can render. The card is
   // shown disabled rather than silently doing nothing when picked.
-  readonly property string theme: ["dark", "oled"].includes(root.values.theme) ? root.values.theme : "dark"
+  readonly property string theme: ["dark", "oled"].includes(root.values.theme)
+    ? root.values.theme : PaletteStore.defaults.theme
   // What the rest of the desktop is told we prefer -- the portal's
   // org.freedesktop.appearance color-scheme, not a shell palette. The shell
   // renders `theme` either way; this only decides which face a GTK, Electron
   // or browser window comes up wearing.
-  readonly property string colorScheme: ["dark", "light"].includes(root.values.colorScheme) ? root.values.colorScheme : "dark"
-  readonly property color accent: /^#[0-9a-fA-F]{6}$/.test(root.values.accent) ? root.values.accent : "#e53a44"
+  readonly property string colorScheme: ["dark", "light"].includes(root.values.colorScheme)
+    ? root.values.colorScheme : PaletteStore.defaults.colorScheme
+  readonly property color accent: /^#[0-9a-fA-F]{6}$/.test(root.values.accent)
+    ? root.values.accent : PaletteStore.defaults.accent
 
   readonly property int rounding: root.clamp(root.values.rounding, 0, 40)
   readonly property int gapsIn: root.clamp(root.values.gapsIn, 0, 40)
@@ -40,7 +43,7 @@ Singleton {
   readonly property int borderWidth: root.clamp(root.values.borderWidth, 0, 10)
   // Active border is the accent (spec §7); only the inactive one is a choice.
   readonly property color inactiveBorder: /^#[0-9a-fA-F]{6}$/.test(root.values.inactiveBorder)
-    ? root.values.inactiveBorder : "#595959"
+    ? root.values.inactiveBorder : PaletteStore.defaults.inactiveBorder
   // Bar geometry is shell-side only -- no hyprctl, no lua. Top is capped below
   // the bar's own 36px shadow gutter so the island never outruns the window it
   // is drawn in; sides are capped at a quarter of a narrow 1366px screen.
@@ -52,7 +55,7 @@ Singleton {
   // The cursor name reaches a directory lookup, two config files and an argv
   // element in the exporter, so it is held to a plain theme name here too.
   readonly property string cursorTheme: /^[A-Za-z0-9._-]+$/.test(root.values.cursorTheme)
-    ? root.values.cursorTheme : "Adwaita"
+    ? root.values.cursorTheme : PaletteStore.defaults.cursorTheme
   readonly property int cursorSize: root.clamp(root.values.cursorSize, 8, 128)
 
   function clamp(v, lo, hi) {
@@ -60,14 +63,9 @@ Singleton {
     return isNaN(n) ? lo : Math.max(lo, Math.min(hi, n))
   }
 
-  // The four alternates from the mock, oklch(0.62 0.19 h) for h ∈
-  // {25,300,230,150}, converted once here rather than at every repaint. 230 and
-  // 150 fall outside sRGB at that chroma and are gamut-mapped the way CSS
-  // Color 4 does it, so the swatches match the mockup rendered in a browser.
-  readonly property var accentChoices: ["#e53a44", "#e24947", "#9964e5", "#1692c0", "#00a149"]
-  // Inactive borders are the quiet half of the pair: neutrals, plus the accent
-  // itself for anyone who wants both borders tinted.
-  readonly property var borderChoices: ["#2a2a2e", "#595959", "#8b8b93", "#e53a44"]
+  // Both swatch rows, and what each one is, are palette.json's business.
+  readonly property var accentChoices: PaletteStore.palette.accentChoices ?? []
+  readonly property var borderChoices: PaletteStore.palette.borderChoices ?? []
 
   // -- persistence ----------------------------------------------------------
   FileView {
@@ -88,26 +86,31 @@ Singleton {
     JsonAdapter {
       id: adapter
 
-      property string theme: "dark"
-      property string colorScheme: "dark"
-      property string accent: "#e53a44"
-      property int rounding: 19
-      property int gapsIn: 3
-      property int gapsOut: 12
-      property int blurSize: 8
-      property int blurPasses: 3
-      property real inactiveOpacity: 1.0
-      property int borderWidth: 2
-      property int barMarginTop: 10
-      property int barMarginSide: 12
-      property string inactiveBorder: "#595959"
-      property bool animationsEnabled: true
-      property real animationSpeed: 1.0
-      property string wallpaper: ""
+      // Every default comes from palette.json, which hypr/conf/appearance.lua
+      // and the exporter read as well -- this adapter's shape used to be
+      // mirrored by hand in three languages, and the lua copy had already
+      // drifted by an inactiveBorder. The bindings break on load, which is
+      // correct: the file's own value wins from then on.
+      property string theme: PaletteStore.defaults.theme
+      property string colorScheme: PaletteStore.defaults.colorScheme
+      property string accent: PaletteStore.defaults.accent
+      property int rounding: PaletteStore.defaults.rounding
+      property int gapsIn: PaletteStore.defaults.gapsIn
+      property int gapsOut: PaletteStore.defaults.gapsOut
+      property int blurSize: PaletteStore.defaults.blurSize
+      property int blurPasses: PaletteStore.defaults.blurPasses
+      property real inactiveOpacity: PaletteStore.defaults.inactiveOpacity
+      property int borderWidth: PaletteStore.defaults.borderWidth
+      property int barMarginTop: PaletteStore.defaults.barMarginTop
+      property int barMarginSide: PaletteStore.defaults.barMarginSide
+      property string inactiveBorder: PaletteStore.defaults.inactiveBorder
+      property bool animationsEnabled: PaletteStore.defaults.animationsEnabled
+      property real animationSpeed: PaletteStore.defaults.animationSpeed
+      property string wallpaper: PaletteStore.defaults.wallpaper
       // Not exposed in the settings app yet; they live here so a hand-edit
       // survives the next write instead of being dropped from the JSON.
-      property string cursorTheme: "Adwaita"
-      property int cursorSize: 24
+      property string cursorTheme: PaletteStore.defaults.cursorTheme
+      property int cursorSize: PaletteStore.defaults.cursorSize
     }
   }
 

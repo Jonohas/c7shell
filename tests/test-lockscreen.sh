@@ -281,7 +281,7 @@ export_to() { # <dir> <appearance.json contents>
 # A non-default accent has to reach the file, and the default crimson must not
 # survive anywhere in it -- that is the whole bug.
 green=$tmp/green
-export_to "$green" '{"accent": "#00a149", "theme": "oled"}'
+export_to "$green" '{"accent": "#00a149", "theme": "oled"}'  # palette-literal-ok: a picked accent
 palette=$green/.config/hypr/hyprlock-palette.conf
 grep -q '00a149ff' "$palette" \
   || fail "the picked accent did not reach the lock screen palette:\n$(cat "$palette")"
@@ -379,7 +379,8 @@ PYCHK
 # place the colour is picked, and a green desktop with a crimson glow under its
 # lock screen is the same bug in a different file. The accent is in the cache
 # file's name because otherwise the first PNG written would be reused forever.
-printf '{"accent": "#00a149"}\n' > "$lockdir/conf/hypr/appearance.json"
+# palette-literal-ok: a hand-edited accent, not a default
+printf '{"accent": "#00a149"}\n' > "$lockdir/conf/hypr/appearance.json"  # palette-literal-ok
 runlock >/dev/null || fail "an accent in appearance.json broke c7shell-lock:\n$(cat "$lockdir/err")"
 png=$(grep -oE '/[^ ]*\.png' "$gen" | head -1)
 [[ $png == *-00a149.png ]] \

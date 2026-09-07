@@ -182,7 +182,7 @@ GlassPopover {
       }
 
       // The primary action, and the only filled control on the panel: a 30px
-      // #f0eff1 disc with a dark glyph, per the design.
+      // A Theme.text disc with a dark glyph, per the design.
       Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         width: 30; height: 30

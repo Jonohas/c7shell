@@ -10,18 +10,16 @@ Row {
 
   spacing: 10
 
-  // Miniature swatches describing what a variant looks like; they belong to
-  // the variant, not to the running theme, so they live here.
+  // Miniature swatches describing what a variant looks like. They belong to the
+  // variant rather than to the running theme, so they are palette.json's
+  // `previews` and not its `variants` — a preview describes a ground, it is not
+  // that ground.
   //
   // `ready` is whether Theme can actually render the variant. Light needs a
-  // whole second palette — text, surfaces and hairlines are all light-on-dark
-  // literals — so its card is shown and disabled rather than offered and inert:
-  // a control that changes nothing is worse than one that says it cannot yet.
-  readonly property var variants: [
-    { key: "dark", label: "dark · default", bg: "#0d0d10", ink: "#ffffff", bar: 0.12, block: 0.07, ready: true },
-    { key: "oled", label: "oled black", bg: "#050506", ink: "#ffffff", bar: 0.09, block: 0.05, ready: true },
-    { key: "light", label: "light · later", bg: "#e9e6e2", ink: "#000000", bar: 0.12, block: 0.07, ready: false }
-  ]
+  // whole second palette — text, surfaces and hairlines are all light-on-dark —
+  // so its card is shown and disabled rather than offered and inert: a control
+  // that changes nothing is worse than one that says it cannot yet.
+  readonly property var variants: PaletteStore.palette.previews ?? []
 
   Repeater {
     model: root.variants
@@ -45,7 +43,8 @@ Row {
 
       // The preview carries the variant's own background; the label sits below
       // it on the page. Painting the variant across the whole card instead puts
-      // the label's ink on the wrong ground — light's read #f0eff1 on #e9e6e2.
+      // the label's ink on the wrong ground — light would read Theme.text on its
+      // own near-white preview.
       Rectangle {
         id: preview
         anchors { left: parent.left; right: parent.right; top: parent.top }

@@ -97,7 +97,7 @@ Column {
     width: parent.width
     implicitHeight: log.implicitHeight + 14
     radius: Theme.radiusPip
-    color: Theme.alpha("#000000", 0.28)
+    color: Theme.wellFill
     border.width: 1
     border.color: Theme.hairline
 

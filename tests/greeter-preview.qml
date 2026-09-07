@@ -24,7 +24,9 @@ Window {
   height: window.argSize(1, 630)
   visible: true
   title: "c7shell greeter preview"
-  color: "#08080a"
+  // The greeter's own ground, from the same palette.json the theme reads --
+  // a preview painted on a different black is a preview of nothing.
+  color: C7.Theme.bg
 
   readonly property var flags: Qt.application.arguments
   readonly property bool oneUser: window.flags.indexOf("--one-user") >= 0
