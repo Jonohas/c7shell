@@ -181,7 +181,11 @@ Singleton {
 
   Process {
     id: ddcDetect
-    command: ["ddcutil", "detect", "--brief"]
+    // Through sh so a missing ddcutil is an empty result, not a wedged probe:
+    // Quickshell's Process never fires onExited when the binary cannot launch,
+    // and without that compose() never runs, probed stays false, and every
+    // brightness key -- the internal panel included -- silently no-ops.
+    command: ["sh", "-c", "command -v ddcutil >/dev/null 2>&1 && ddcutil detect --brief || true"]
     stdout: StdioCollector { onStreamFinished: root.foundPanels = root.parseDetect(text) }
     // ddcutil exits non-zero merely for having found an invalid display, and
     // finding nothing at all is the normal state on the road. Either way the
