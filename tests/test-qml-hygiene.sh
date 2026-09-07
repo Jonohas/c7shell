@@ -272,6 +272,18 @@ done < <(find "$src" -name '*.qml')
 #                                   range and the plain black/white overlays
 #   Modules/SharePicker/            bypasses Theme entirely -- that is #95, and
 #                                   its entry point has to move first
+#   Common/Hex.js                   colour FORMAT, not colour choice: it parses
+#   Modules/Settings/selfcheck.mjs  and formats the accent picker's `#rrggbb`,
+#                                   and its self-check asserts that arithmetic
+#                                   -- which hue a sextant boundary comes out
+#                                   as, what a three-digit shorthand doubles
+#                                   to, that a channel clamps before it rounds.
+#                                   Every literal in the pair is an input or an
+#                                   expected result of that; none is a token,
+#                                   and three of the ones in Hex.js are prose
+#                                   in a comment. A per-line marker on two
+#                                   dozen assertions would bury the file it is
+#                                   meant to be read in.
 #   a `palette-literal-ok` marker   a colour that is deliberately NOT the
 #                                   palette's, e.g. a test probing what ink a
 #                                   yellow accent gets. One per line, with the
@@ -282,7 +294,9 @@ hits=$(
     | { grep -zv -e '\.svg$' -e '\.md$' \
           -e '^quickshell/c7shell/palette\.json$' \
           -e '^sddm/themes/c7shell/PaletteStore\.qml$' \
-          -e '^quickshell/c7shell/Modules/SharePicker/' || true; } \
+          -e '^quickshell/c7shell/Modules/SharePicker/' \
+          -e '^quickshell/c7shell/Common/Hex\.js$' \
+          -e '^quickshell/c7shell/Modules/Settings/selfcheck\.mjs$' || true; } \
     | xargs -0 grep -nIE '#[0-9a-fA-F]{6}\b' 2>/dev/null \
     | grep -viE '#(000000|ffffff)\b' \
     | grep -v 'palette-literal-ok' || true
