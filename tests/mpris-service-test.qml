@@ -115,6 +115,57 @@ Window {
       solo.trackTitle = "second"
       check(MprisService.trackId !== first, "two different tracks share a track id")
 
+      // -- metadata blanked mid-playback (#104) ------------------------------
+      // Chrome collapses its metadata to mpris:length alone when a video goes
+      // into picture-in-picture: same dbus name, same track, still Playing,
+      // but no title, artist or art until the next video. Passed through, that
+      // is a panel saying "nothing playing" over audible audio.
+      solo.playbackState = MprisPlaybackState.Playing
+      solo.trackArtist = "an artist"
+      solo.trackAlbum = "an album"
+      solo.trackArtUrl = "file:///tmp/art"
+      const held = MprisService.trackId
+
+      solo.trackTitle = ""
+      solo.trackArtist = ""
+      solo.trackAlbum = ""
+      solo.trackArtUrl = ""
+      check(MprisService.title === "second",
+        "a playing player blanked its metadata and the title went with it")
+      check(MprisService.artist === "an artist", "the artist was not held")
+      check(MprisService.album === "an album", "the album was not held")
+      check(MprisService.artUrl === "file:///tmp/art", "the art url was not held")
+      // The OSD's key. Blanking is not a track change, and a spurious track
+      // pill on every picture-in-picture toggle is the visible cost of it.
+      check(MprisService.trackId === held,
+        "blanked metadata read as a track change")
+
+      // Republished: the live values win again, and nothing is left held.
+      solo.trackTitle = "third"
+      check(MprisService.title === "third",
+        "the player republished its metadata and the held title stuck")
+      check(MprisService.artist === "", "a stale artist outlived the track it belonged to")
+
+      // Stopped is finished, not quiet: there is nothing to hold on to.
+      solo.trackTitle = ""
+      check(MprisService.title === "third", "a blanked player lost its republished title")
+      solo.playbackState = MprisPlaybackState.Stopped
+      check(MprisService.title === "",
+        "a stopped player still shows the track it finished")
+
+      // And the record is scoped to its player: the next one to register must
+      // not inherit a track it never played.
+      solo.playbackState = MprisPlaybackState.Playing
+      solo.trackTitle = "fourth"
+      const other = root.player("mpv-two", "")
+      Mpris.players.values = [solo, other]
+      other.playbackState = MprisPlaybackState.Playing
+      check(MprisService.player === other, "the newly playing player did not win")
+      check(MprisService.title === "",
+        "a new player inherited the previous player's held title")
+
+      Mpris.players.values = [solo]
+
       // -- capabilities gate the controls -----------------------------------
       // A refused call is a Quickshell warning and a button that lied; every
       // control re-checks rather than trusting the caller.

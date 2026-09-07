@@ -85,7 +85,12 @@ GlassPopover {
         elide: Text.ElideRight
         // Space Grotesk: the design's rule is that only titles get the display
         // face, and this is the one title on the panel.
-        text: MprisService.title || "nothing playing"
+        // Falls back the way MediaPill does, to the player's own name: a
+        // player that has registered but published no metadata yet is still
+        // something, and "nothing playing" over audible audio is a lie. The
+        // literal is the last resort, for a panel caught with no player at all
+        // in the frame before it closes itself.
+        text: MprisService.title || MprisService.identity || "nothing playing"
         font { family: Theme.fontDisplay; pixelSize: 12; weight: 600 }
         color: Theme.text
       }
@@ -100,6 +105,10 @@ GlassPopover {
       Text {
         width: parent.width
         elide: Text.ElideRight
+        // Dropped when the title above has already fallen back to the player's
+        // name and there is no album to add: two stacked lines both reading
+        // "chrome" say less than one does.
+        visible: MprisService.title !== "" || MprisService.album !== ""
         // The source line: the album if the player gives one, and always which
         // player it is -- the panel is not Spotify's, and it should say so.
         text: MprisService.album
