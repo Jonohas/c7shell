@@ -90,6 +90,7 @@ Singleton {
   readonly property int radiusKbd: 6       // 1c "esc" / "↵" kbd chips
   readonly property int radiusCard: 14     // month card (1d), toast card
   readonly property int radiusMenu: 13     // global menu dropdown panel
+  readonly property int radiusToolBar: 17  // 9a annotate tool bar; its option strip uses radiusMenu
   readonly property int radiusMenuRow: 8   // its rows, and the bar label hover pill
   readonly property int radiusPreview: 13  // 2b theme preview cards
   readonly property int radiusThumb: 8     // 2b wallpaper thumbnail
@@ -107,6 +108,19 @@ Singleton {
   readonly property string fontMono: "JetBrains Mono"
   // spec §4: page titles only. Installed user-level and resolving via fontconfig.
   readonly property string fontDisplay: "Space Grotesk"
+
+  // The annotation editor's four swatches, in the order the option strips
+  // show them. Annotations store the TOKEN, not the colour: a scene is drawn
+  // on screen and then again by the renderer, and a colour written into the
+  // object would be a copy of the palette that stops following it.
+  readonly property var swatches: ({
+    accent: root.accent,
+    text: root.text,
+    bg: root.bg,
+    warning: root.warning
+  })
+  readonly property var swatchTokens: ["accent", "text", "bg", "warning"]
+  function swatch(token) { return root.swatches[token] ?? root.text }
 
   // -- helpers --
   function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }

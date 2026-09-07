@@ -38,40 +38,26 @@ Window {
     function onCountdownChanged() { root.ticks = root.ticks.concat([CaptureService.countdown]) }
   }
 
-  // The second half of a delayed capture: the shutter has already fired and
-  // the overlay is selecting on the still it produced. Only the bookkeeping is
-  // reachable here -- grim and the crop are processes -- but the bookkeeping is
-  // what decides whether a full screenshot of the desktop is left in the
-  // runtime dir, and whether the frame is still there to cut when it is.
-  function frozenFrame() {
-    root.check(CaptureService.frozen === "", "a frozen frame was set before anything froze one")
-    root.check(String(CaptureService.frozenUrl) === "",
-      `an empty frame still produced a url: "${CaptureService.frozenUrl}"`)
+  // Where a finished capture goes. The route is a preference, and the failure
+  // it guards is not a crash: a capture routed into the editor while the
+  // preference says clipboard is a screenshot that never reaches the
+  // clipboard, with a toast saying it was taken.
+  //
+  // Only the bookkeeping is reachable here -- grim, wl-copy and the renderer
+  // are all processes -- but the bookkeeping is what picks the destination.
+  function routing() {
+    root.check(CaptureService.frozen === undefined,
+      "CaptureService still has a frozen frame; annotation moved off the capture overlay")
 
-    CaptureService.frozen = "/run/user/1000/c7shell-freeze-1.png"
-    // The overlay draws this with an Image, which needs a url and not a path.
-    root.check(String(CaptureService.frozenUrl) === "file:///run/user/1000/c7shell-freeze-1.png",
-      `the overlay would be handed "${CaptureService.frozenUrl}" to draw`)
+    root.check(!AnnotateService.editing, "the editor was open before anything opened it")
+    root.check(String(AnnotateService.sourceUrl) === "",
+      `an editor with no source still produced a url: "${AnnotateService.sourceUrl}"`)
 
-    // cropFrozen claims the frame. The overlay closes immediately after
-    // calling it, and closing discards whatever is still frozen -- so if the
-    // claim does not happen, the capture deletes its own source.
-    CaptureService.cropFrozen(0, 0, 10, 10)
-    root.check(CaptureService.frozen === "",
-      "cropping did not claim the frame, so the overlay's own close would delete it mid-crop")
-    CaptureService.discardFrozen()
-    root.check(CaptureService.frozen === "", "discarding a claimed frame put one back")
-
-    // esc on the still: nothing is cut and the frame does not survive as a
-    // full screenshot of the desktop sitting in the runtime dir.
-    CaptureService.frozen = "/run/user/1000/c7shell-freeze-2.png"
-    CaptureService.discardFrozen()
-    root.check(CaptureService.frozen === "",
-      "discarding left the frame in place; the next capture would draw this one")
-
-    // Nothing frozen and something asks for a crop anyway.
-    CaptureService.cropFrozen(0, 0, 10, 10)
-    root.check(CaptureService.frozen === "", "cropping nothing invented a frame")
+    // deliver() is the tail both routes share. finish() picks between them, so
+    // an editor export that called finish() would be routed straight back into
+    // the editor -- forever.
+    root.check(typeof CaptureService.deliver === "function",
+      "CaptureService has no deliver(), so the editor's export has no way out that is not finish()")
   }
 
   Component.onCompleted: root.step(() => {
@@ -133,7 +119,7 @@ Window {
         "a cancelled countdown still reached the shutter -- that capture would be taken with the next session's geometry")
       root.check(CaptureService.countdown === 0,
         `the countdown restarted itself after being cancelled: ${CaptureService.countdown}`)
-      root.frozenFrame()
+      root.routing()
       console.log("CAPTURE-TEST-PASS")
       Qt.exit(0)
     })

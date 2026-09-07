@@ -29,7 +29,28 @@ cp "$src/Services/CaptureService.qml" "$tmp/qs/Services/"
 # singleton that does not exist is a load error for the whole file.
 printf 'pragma Singleton\nimport QtQuick\nQtObject { function send(a, b) {} }\n' \
   > "$tmp/qs/Services/NotifServer.qml"
-printf 'module qs.Services\nsingleton CaptureService 1.0 CaptureService.qml\nsingleton NotifServer 1.0 NotifServer.qml\n' \
+# CaptureService.finish() now picks a destination, so both sides of that
+# decision have to exist for the file to load: the preference it reads, and the
+# editor it can route into. Stubs rather than the real files -- ShellStore is a
+# FileView over the user's own shell.json, and AnnotateService is checked by
+# tests/test-annotate.sh with its own harness.
+cat > "$tmp/qs/Services/ShellStore.qml" <<'STORE'
+pragma Singleton
+import QtQuick
+QtObject { property string screenshotAction: "clipboard" }
+STORE
+cat > "$tmp/qs/Services/AnnotateService.qml" <<'ANNOTATE'
+pragma Singleton
+import QtQuick
+QtObject {
+  id: root
+  property string source: ""
+  readonly property url sourceUrl: root.source === "" ? "" : `file://${root.source}`
+  readonly property bool editing: root.source !== ""
+  function begin(path, copy) { root.source = path }
+}
+ANNOTATE
+printf 'module qs.Services\nsingleton CaptureService 1.0 CaptureService.qml\nsingleton NotifServer 1.0 NotifServer.qml\nsingleton ShellStore 1.0 ShellStore.qml\nsingleton AnnotateService 1.0 AnnotateService.qml\n' \
   > "$tmp/qs/Services/qmldir"
 
 # env() for the screenshots directory, execDetached() for the mkdir -p the
@@ -101,74 +122,31 @@ that piece of the delay silently goes missing."
   fi
 done
 
-# --- the crop, which is a program and can just be run ---------------------
-# The delayed shutter fires before the rectangle exists, so the region is cut
-# out of the captured frame afterwards. A crop that is off by a scale factor is
-# not an error -- it is a screenshot of the wrong part of the screen.
-cropper=$src/scripts/c7shell-crop.py
-[[ -x $cropper ]] || fail "scripts/c7shell-crop.py is missing or not executable.
-CaptureService resolves it relative to itself and shells out to it; a missing
-file there is a delayed capture that gets as far as the still and then loses it."
-
-if python3 -c 'import gi; gi.require_version("GdkPixbuf", "2.0"); from gi.repository import GdkPixbuf' 2>/dev/null; then
-  python3 - "$tmp" <<'MAKE'
-import sys
-import gi
-gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import GdkPixbuf, GLib
-# 100x80, and every pixel encodes its own coordinates so a crop taken from the
-# wrong offset cannot come out looking plausible.
-w, h = 100, 80
-data = bytearray()
-for y in range(h):
-    for x in range(w):
-        data += bytes((x * 2, y * 3, 0))
-GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(bytes(data)),
-                                GdkPixbuf.Colorspace.RGB, False, 8, w, h, w * 3) \
-    .savev(f"{sys.argv[1]}/src.png", "png", [], [])
-MAKE
-
-  python3 "$cropper" "$tmp/src.png" "$tmp/out.png" 10 20 30 25 \
-    || fail "the cropper exited non-zero on a valid rectangle"
-
-  read -r gw gh gx gy < <(python3 - "$tmp/out.png" <<'READ'
-import sys
-import gi
-gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import GdkPixbuf
-p = GdkPixbuf.Pixbuf.new_from_file(sys.argv[1])
-px = p.get_pixels()
-# The top-left pixel says which source pixel it came from.
-print(p.get_width(), p.get_height(), px[0] // 2, px[1] // 3)
-READ
-)
-  [[ $gw == 30 && $gh == 25 ]] || fail "cropping 30x25 produced ${gw}x${gh}"
-  [[ $gx == 10 && $gy == 20 ]] || fail "the crop starts at ${gx},${gy}, not the 10,20 it was asked for"
-
-  # A selection flush against the edge of a fractionally scaled output rounds a
-  # pixel past the frame. That is a rounding question, not a reason to lose the
-  # screenshot -- so it clamps rather than failing.
-  python3 "$cropper" "$tmp/src.png" "$tmp/edge.png" 90 70 30 25 \
-    || fail "a rectangle overhanging the frame was rejected instead of clamped"
-
-  # Real failures still have to be loud: the service reports the stderr.
-  python3 "$cropper" "$tmp/nope.png" "$tmp/x.png" 0 0 10 10 2>/dev/null \
-    && fail "the cropper exited zero on a source file that does not exist"
-  python3 "$cropper" "$tmp/src.png" "$tmp/x.png" 0 0 10 2>/dev/null \
-    && fail "the cropper exited zero on the wrong number of arguments"
-else
-  echo 'SKIP: the crop checks (no GdkPixbuf typelib -- package: gdk-pixbuf2)'
-fi
-
 # --------------------------------------------------------------------------
-# Closing the overlay on a still nobody cut has to throw the frame away. It is
-# a full screenshot of the desktop in the runtime dir, and the next delayed
-# capture would draw a stale one under the new selection.
+# Where a finished capture goes. There are two destinations and one preference
+# choosing between them, and the failure that matters is not a crash: route a
+# capture into the editor when the preference says clipboard and the shot never
+# reaches the clipboard, with a toast saying it was taken.
 # --------------------------------------------------------------------------
-sed -n '/onVisibleChanged/,/^  }/p' "$src/Modules/Capture/CaptureOverlay.qml" \
-  | grep -q 'CaptureService.discardFrozen()' \
-  || fail "CaptureOverlay's onVisibleChanged does not call CaptureService.discardFrozen().
-esc on a frozen frame then leaves a screenshot of the whole desktop behind."
+svcfile=$src/Services/CaptureService.qml
+sed -n '/function finish(/,/^  }/p' "$svcfile" | grep -q 'ShellStore.screenshotAction' \
+  || fail "CaptureService.finish() does not consult ShellStore.screenshotAction, so
+the preference on the screenshots settings page decides nothing."
+sed -n '/function finish(/,/^  }/p' "$svcfile" | grep -q 'AnnotateService.begin' \
+  || fail "CaptureService.finish() never hands the capture to AnnotateService, so
+the annotate editor is unreachable however the preference is set."
+grep -q 'function deliver(' "$svcfile" \
+  || fail "CaptureService has no deliver(): finish() decides the route and deliver()
+is the tail both routes share. Without the split the editor's own export would
+re-enter finish() and be routed back into the editor."
+
+# The still is gone: annotation happens in the editor, on a file, not on a
+# frozen frame the capture overlay is holding. Anything left reaching for it
+# here is a leftover of the surface #142 was reported against.
+grep -q 'frozen\|cropFrozen\|discardFrozen' "$svcfile" \
+  && fail "CaptureService still carries the frozen-frame machinery. The editing
+surface moved to Modules/Annotate; a capture overlay that also holds a picture
+is what made \"window\" snap to the live desktop while editing a still."
 
 # --------------------------------------------------------------------------
 # The overlay must cancel a running countdown when it reopens. Stopping only
