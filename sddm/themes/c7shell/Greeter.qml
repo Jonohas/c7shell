@@ -1,8 +1,6 @@
 import QtQuick
 import QtQml
 
-import "Icons.js" as Icons
-
 // The whole greeter, driven by explicit properties rather than by sddm's
 // context objects: Main.qml wires those in, and tests/greeter-preview.qml wires
 // mock ones in, so the layout can be run and looked at without a display
@@ -443,9 +441,9 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.px(6)
 
-            VectorIcon {
+            Icon {
               anchors.verticalCenter: parent.verticalCenter
-              icon: Icons.capsLock
+              name: "arrow-big-up"
               size: Theme.px(11)
               color: root.capsLock ? Theme.accentSoft : Theme.ink(0.3)
             }

@@ -87,6 +87,18 @@ QtObject {
   readonly property int screenMargin: root.px(26)
   readonly property int screenMarginSide: root.px(32)
 
+  // -- icons ---------------------------------------------------------------
+  // The shell's own lucide SVGs, read rather than re-drawn. Not the copy in
+  // ~/.config/quickshell -- home directories are 700 and the greeter runs as
+  // the sddm user -- but the second copy the package installs read-only for
+  // everyone (PKGBUILD's package(): cp -a quickshell, then chmod go=rX). The
+  // theme itself is installed to /usr/share/sddm/themes/c7shell, a different
+  // tree entirely, so this cannot be a relative path.
+  //
+  // Not readonly: tests/greeter-preview.qml points it at the source tree, so
+  // tests/test-greeter.sh does not need c7shell installed to render the theme.
+  property url iconsDir: "file:///usr/share/c7shell/quickshell/c7shell/Assets/icons"
+
   // -- type ----------------------------------------------------------------
   readonly property string fontMono: "JetBrains Mono"
   // Avatar initials only, exactly as in the shell. Absent (it is an AUR font),

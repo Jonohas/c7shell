@@ -66,40 +66,61 @@ Window {
     property string longName: "Belgian"
   }
 
-  C7.Greeter {
-    id: greeter
+  // The theme reads its icons from the copy the package installs under
+  // /usr/share/c7shell, which a source checkout does not have -- point it at
+  // the tree this file lives in, so the render exercises the real assets
+  // without c7shell being installed.
+  //
+  // Before the greeter exists, not in Component.onCompleted: an Image whose
+  // source resolves to a missing file warns the moment it is created, and this
+  // harness is run by a test that fails on any warning at all.
+  Loader {
+    id: loader
     anchors.fill: parent
     focus: true
-
-    hostName: "c7-fw16"
-    users: window.oneUser ? oneUserRow : userRows
-    sessions: sessionRows
-    layouts: [usLayout, beLayout]
-    currentLayout: 0
-    capsLock: window.caps
-    allowManualLogin: window.manual
-    // --network-file <path> stands in for the dispatcher script's output.
-    networkFile: window.argString("--network-file")
-
-    onLoginRequested: function (user, password, sessionIndex) {
-      console.log("login:", user, "session", sessionIndex, "password length", password.length)
-      // Everything but "hunter2" fails, so the failure states can be walked
-      // through by hand.
-      if (password === "hunter2") greeter.loginSucceeded()
-      else greeter.loginFailed("")
+    sourceComponent: {
+      C7.Theme.iconsDir = Qt.resolvedUrl("../quickshell/c7shell/Assets/icons")
+      return greeterComponent
     }
-    onLayoutRequested: function (index) { greeter.currentLayout = index }
-    onSuspendRequested: console.log("suspend")
-    onRebootRequested: console.log("reboot")
-    onPowerOffRequested: console.log("power off")
+  }
 
-    Component.onCompleted: {
-      if (window.manual) greeter.userIndex = greeter.userCount
-      if (window.sessionsOpen) greeter.sessionsOpen = true
-      if (window.typed > 0) greeter.password = "x".repeat(window.typed)
-      if (window.failed) {
-        greeter.loginFailed("")
-        greeter.loginFailed("")
+  Component {
+    id: greeterComponent
+
+    C7.Greeter {
+      id: greeter
+      focus: true
+
+      hostName: "c7-fw16"
+      users: window.oneUser ? oneUserRow : userRows
+      sessions: sessionRows
+      layouts: [usLayout, beLayout]
+      currentLayout: 0
+      capsLock: window.caps
+      allowManualLogin: window.manual
+      // --network-file <path> stands in for the dispatcher script's output.
+      networkFile: window.argString("--network-file")
+
+      onLoginRequested: function (user, password, sessionIndex) {
+        console.log("login:", user, "session", sessionIndex, "password length", password.length)
+        // Everything but "hunter2" fails, so the failure states can be walked
+        // through by hand.
+        if (password === "hunter2") greeter.loginSucceeded()
+        else greeter.loginFailed("")
+      }
+      onLayoutRequested: function (index) { greeter.currentLayout = index }
+      onSuspendRequested: console.log("suspend")
+      onRebootRequested: console.log("reboot")
+      onPowerOffRequested: console.log("power off")
+
+      Component.onCompleted: {
+        if (window.manual) greeter.userIndex = greeter.userCount
+        if (window.sessionsOpen) greeter.sessionsOpen = true
+        if (window.typed > 0) greeter.password = "x".repeat(window.typed)
+        if (window.failed) {
+          greeter.loginFailed("")
+          greeter.loginFailed("")
+        }
       }
     }
   }
@@ -113,7 +134,7 @@ Window {
     onTriggered: {
       const path = window.argString("--shot")
       if (path !== "") {
-        greeter.grabToImage(function (result) {
+        loader.item.grabToImage(function (result) {
           if (!result.saveToFile(path)) console.warn("could not write", path)
           Qt.exit(0)
         })

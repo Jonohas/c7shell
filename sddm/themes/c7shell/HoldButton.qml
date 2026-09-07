@@ -8,7 +8,7 @@ Rectangle {
   id: root
 
   property int holdMs: 600
-  property var icon: ({})
+  property string icon
   property color iconColor: Theme.ink(0.6)
   readonly property bool holding: press.pressed
 
@@ -33,9 +33,9 @@ Rectangle {
     color: Theme.crimson(0.45)
   }
 
-  VectorIcon {
+  Icon {
     anchors.centerIn: parent
-    icon: root.icon
+    name: root.icon
     size: Theme.px(14)
     color: root.holding ? Theme.text : root.iconColor
   }

@@ -1,7 +1,5 @@
 import QtQuick
 
-import "Icons.js" as Icons
-
 // The pill bar along the bottom: session, keyboard layout, battery, then sleep,
 // reboot and shutdown. Same vocabulary as the shell's bar -- 30px items in a
 // 6px-padded glass pill -- so the greeter's bar and the session's bar read as
@@ -67,9 +65,9 @@ Item {
           font.pixelSize: Theme.fs(10)
           font.weight: 500
         }
-        VectorIcon {
+        Icon {
           anchors.verticalCenter: parent.verticalCenter
-          icon: root.sessionPanelOpen ? Icons.chevronUp : Icons.chevronDown
+          name: root.sessionPanelOpen ? "chevron-up" : "chevron-down"
           size: Theme.px(9)
           color: Theme.ink(root.sessionPanelOpen ? 0.5 : 0.4)
         }
@@ -98,9 +96,9 @@ Item {
           font.pixelSize: Theme.fs(10)
           font.weight: 500
         }
-        VectorIcon {
+        Icon {
           anchors.verticalCenter: parent.verticalCenter
-          icon: Icons.chevronDown
+          name: "chevron-down"
           size: Theme.px(9)
           color: Theme.ink(0.4)
           visible: root.layoutCount > 1
@@ -116,9 +114,9 @@ Item {
         visible: root.capsLock
         padding: Theme.px(11)
 
-        VectorIcon {
+        Icon {
           anchors.verticalCenter: parent.verticalCenter
-          icon: Icons.capsLock
+          name: "arrow-big-up"
           size: Theme.px(11)
           color: Theme.accentSoft
         }
@@ -142,9 +140,9 @@ Item {
         visible: root.networkName !== ""
         padding: Theme.px(11)
 
-        VectorIcon {
+        Icon {
           anchors.verticalCenter: parent.verticalCenter
-          icon: root.networkWireless ? Icons.wifi : Icons.ethernet
+          name: root.networkWireless ? "wifi" : "ethernet"
           size: Theme.px(12)
           color: Theme.ink(0.55)
         }
@@ -169,24 +167,10 @@ Item {
         visible: root.batteryLevel >= 0
         padding: Theme.px(11)
 
-        VectorIcon {
-          id: batteryIcon
+        BatteryGlyph {
           anchors.verticalCenter: parent.verticalCenter
-          icon: Icons.batteryShell
-          size: Theme.px(14)
-          color: Theme.ink(0.5)
-
-          // The charge bar inside the shell, drawn to the real level.
-          Rectangle {
-            x: batteryIcon.size * (3 / 16)
-            y: batteryIcon.size * (6.5 / 16)
-            height: batteryIcon.size * (3.5 / 16)
-            width: Math.max(1, batteryIcon.size * (6 / 16) * Math.max(0, Math.min(100, root.batteryLevel)) / 100)
-            radius: Math.max(1, batteryIcon.size * (0.6 / 16))
-            color: root.batteryCharging ? Theme.accentSoft
-                 : root.batteryLevel <= 15 ? Theme.accent
-                 : Theme.battery
-          }
+          level: root.batteryLevel
+          charging: root.batteryCharging
         }
         Text {
           anchors.verticalCenter: parent.verticalCenter
@@ -213,9 +197,9 @@ Item {
         padding: Theme.px(9)
         onClicked: root.suspendRequested()
 
-        VectorIcon {
+        Icon {
           anchors.verticalCenter: parent.verticalCenter
-          icon: Icons.sleep
+          name: "moon"
           size: Theme.px(14)
           color: Theme.ink(0.6)
         }
@@ -223,13 +207,13 @@ Item {
       HoldButton {
         anchors.verticalCenter: parent.verticalCenter
         visible: root.canReboot
-        icon: Icons.reboot
+        icon: "rotate-ccw"
         onConfirmed: root.rebootRequested()
       }
       HoldButton {
         anchors.verticalCenter: parent.verticalCenter
         visible: root.canPowerOff
-        icon: Icons.shutdown
+        icon: "power"
         iconColor: Theme.ink(0.5)
         onConfirmed: root.powerOffRequested()
       }
