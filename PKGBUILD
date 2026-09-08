@@ -40,6 +40,13 @@ depends=(
   'gdk-pixbuf2'
   'wf-recorder'
   'wl-clipboard'
+  # The capture toast's "open" button launches an image viewer on the shot it
+  # just took. With none installed the handler falls back to xdg-open, whose
+  # image/png default on a bare Wayland session is as often the browser as a
+  # viewer (issue #56) -- so name one. imv is Wayland-native and themeable
+  # (~/.config/imv/config); a different viewer set in shell.json's imageViewer
+  # wins over it. CaptureService auto-detects imv when imageViewer is empty.
+  'imv'
   'libnotify'
   'xdg-desktop-portal-hyprland'
   # xdph implements screencast, not Settings -- and Settings is the interface an
@@ -66,7 +73,7 @@ optdepends=(
   # The theme under /usr/share/sddm/themes is inert without it.
   'sddm: the greeter the c7shell theme styles'
   'kitty: terminal bound to SUPER+Q'
-  'dolphin: file manager bound to SUPER+E'
+  'dolphin: file manager bound to SUPER+E, and the capture toast'"'"'s "folder" button (auto-detected; override with shell.json fileManager)'
   # QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua) only means something
   # with plasma-integration's platform theme plugin, and it only matters if a
   # QWidget-based Qt/KDE app is installed to be themed. The shell itself is
