@@ -20,6 +20,8 @@ import QtQuick
 Singleton {
   id: root
 
+  Component.onCompleted: root.probeAll()
+
   // Last spec applied per output, so a slider drag coalesces into one hyprctl
   // instead of one per frame.
   property var queued: ({})
@@ -81,6 +83,104 @@ Singleton {
     reload.restart()
   }
 
+  // -- profiles -------------------------------------------------------------
+  // conf/monitors.lua writes this after every apply. Read-only on this side, and
+  // the only way this app can see a profile that lives in lua: it does not parse
+  // conf/monitors.lua, and it never will -- that file is hand-written.
+  readonly property var profiles: stateAdapter.profiles ?? []
+  readonly property string activeProfile: stateAdapter.active ?? ""
+  readonly property bool activeForced: stateAdapter.forced ?? false
+
+  // True for a profile the settings app owns. A lua profile can be selected and
+  // shadowed, never renamed or deleted from here.
+  function isSaved(name) {
+    return (adapter.profiles ?? []).some(p => p.name === name)
+  }
+
+  FileView {
+    id: stateFile
+
+    path: `${Quickshell.env("HOME")}/.config/hypr/displays-state.json`
+    watchChanges: true
+    // Absent until hyprland's first apply with a version of conf/monitors.lua
+    // that writes it. An empty picker is the honest answer, not a warning.
+    printErrors: false
+
+    onFileChanged: stateFile.reload()
+    // Deliberately no onAdapterUpdated: writing this file back would fight the
+    // compositor for ownership of it.
+
+    JsonAdapter {
+      id: stateAdapter
+
+      property var profiles: []
+      property string active: ""
+      property bool forced: false
+    }
+  }
+
+  // -- profile mutators -----------------------------------------------------
+  // All four write displays.json and then reload: conf/monitors.lua is what
+  // turns a profile into a layout, so the compositor has to re-read it. The
+  // same reload timer `forget()` uses, for the same reason.
+
+  //! Pin a profile, or pass "" to go back to auto-match.
+  function selectProfile(name) {
+    if (!root.ready) return
+    adapter.active = name
+    reload.restart()
+  }
+
+  //! Capture the live layout under `name`, replacing a saved profile of that
+  //! name. Hyprland.monitors lists only the monitors that are ON, so membership
+  //! records which displays this profile enables -- which is what a profile
+  //! means on the lua side too.
+  function saveProfile(name) {
+    if (!root.ready || name === "") return
+    const displays = {}
+    for (const m of Hyprland.monitors.values) {
+      displays[m.description] = root.persistable({
+        position: `${m.x}x${m.y}`,
+        mode: `${m.width}x${m.height}@${(m.lastIpcObject?.refreshRate ?? 0).toFixed(2)}`,
+        scale: m.scale,
+      })
+    }
+    // conf/displays.lua rejects a profile WHOLE if any one display lacks a
+    // valid position, so a profile that is missing one anywhere would land in
+    // the file and silently do nothing. Refuse to write it instead.
+    if (Object.keys(displays).length === 0
+        || Object.values(displays).some(d => !d.position)) return
+    adapter.profiles = (adapter.profiles ?? [])
+      .filter(p => p.name !== name)
+      .concat([{ name: name, displays: displays }])
+    adapter.active = name
+    reload.restart()
+  }
+
+  //! Rename a saved profile. One write rather than a save plus a delete, so a
+  //! reload cannot land between the two and find the profile under neither name.
+  function renameProfile(from, to) {
+    if (!root.ready || to === "" || from === to) return
+    const list = adapter.profiles ?? []
+    const src = list.find(p => p.name === from)
+    if (!src) return
+    adapter.profiles = list
+      .filter(p => p.name !== from && p.name !== to)
+      .concat([{ name: to, displays: src.displays }])
+    if (adapter.active === from) adapter.active = to
+    reload.restart()
+  }
+
+  //! Forget a saved profile. When it shadowed a hand-written one of the same
+  //! name, this is the revert: conf/monitors.lua stops finding the JSON copy and
+  //! the lua profile is a candidate again.
+  function deleteProfile(name) {
+    if (!root.ready) return
+    adapter.profiles = (adapter.profiles ?? []).filter(p => p.name !== name)
+    if (adapter.active === name) adapter.active = ""
+    reload.restart()
+  }
+
   Timer {
     id: reload
     // Long enough for FileView to have written the file the reload will read.
@@ -115,6 +215,11 @@ Singleton {
 
       // { "<desc>|<desc>": { "<desc>": { position, mode, scale } } }
       property var layouts: ({})
+      // [ { name, displays: { "<desc>": { position, mode, scale } } } ]
+      // Written here, read by conf/displays.lua. Order is match precedence.
+      property var profiles: []
+      // The profile the user pinned, "" for auto-match.
+      property string active: ""
     }
   }
 
@@ -156,7 +261,82 @@ Singleton {
   Timer {
     id: refresh
     interval: 400
-    onTriggered: Hyprland.refreshMonitors()
+    onTriggered: { Hyprland.refreshMonitors(); root.probeAll() }
+  }
+
+  // -- enable / disable -----------------------------------------------------
+  // A disabled monitor drops out of Hyprland.monitors entirely, so the settings
+  // list -- which is built from that -- can no longer show it to re-enable. The
+  // full output list, disabled ones included, only exists in `hyprctl monitors
+  // all -j`; this reads it so the page can offer them back.
+  //
+  // Disabling is LIVE only: persistable() drops `disabled`, and PROFILES in
+  // conf/monitors.lua keeps deciding which monitors are on across a reload. So
+  // an accidental blackout survives no longer than the next reload, and there
+  // is nothing here to un-say.
+  property var allOutputs: []
+
+  function probeAll() {
+    if (!probe.running) probe.exec(["hyprctl", "monitors", "all", "-j"])
+  }
+
+  // on=false turns a screen off; on=true brings it back on its preferred mode.
+  // Refuses to disable the last screen that would be left on -- counting the
+  // ones already staged off -- so a commit can never black the desk out.
+  function setEnabled(output, on) {
+    if (!/^[A-Za-z0-9-]+$/.test(output)) return
+    if (!on) {
+      const offStaged = Hyprland.monitors.values
+        .filter(m => root.stagedFor(m.name).disabled === true).length
+      if (Hyprland.monitors.values.length - offStaged <= 1) return
+    }
+    root.stage(output, { disabled: !on })
+  }
+
+  // -- staged edits ---------------------------------------------------------
+  // Every change on the displays page is held here, per output, until the user
+  // presses apply -- so scale, mode, position and on/off all land in one go and
+  // can be abandoned wholesale. The page reads stagedFor() to show the pending
+  // value; commit() replays each through apply(), which is where the real
+  // hyprctl and the persistence live.
+  //   { "<output>": { scale?, mode?, position?, disabled? } }
+  property var staged: ({})
+  readonly property bool hasStaged: Object.keys(root.staged).length > 0
+
+  function stagedFor(output) { return root.staged[output] ?? ({}) }
+
+  // Rebuild rather than mutate: a var property only notifies on assignment.
+  function stage(output, fields) {
+    if (!/^[A-Za-z0-9-]+$/.test(output)) return
+    const next = Object.assign({}, root.staged)
+    next[output] = Object.assign({}, next[output], fields)
+    root.staged = next
+  }
+
+  function commit() {
+    for (const o of Object.keys(root.staged)) root.apply(o, root.staged[o])
+    // Hold the staged values over the ~550ms it takes apply() to eval and
+    // re-read, so the tiles and sliders do not rubber-band to the old live
+    // value and back. Same 700ms the drag settle used to use.
+    clearStaged.restart()
+  }
+
+  function revertStaged() { clearStaged.stop(); root.staged = ({}) }
+
+  Timer { id: clearStaged; interval: 700; onTriggered: root.staged = ({}) }
+
+  Process {
+    id: probe
+    stdout: StdioCollector {
+      onStreamFinished: {
+        let list
+        try { list = JSON.parse(text) } catch (e) { return }
+        if (!Array.isArray(list)) return
+        root.allOutputs = list.map(m => ({
+          name: m.name, description: m.description, disabled: m.disabled === true
+        }))
+      }
+    }
   }
 
   Process {

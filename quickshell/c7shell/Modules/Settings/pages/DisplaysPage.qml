@@ -24,6 +24,65 @@ SettingsPage {
   title: "Displays"
   subtitle: "arrangement · scale · brightness"
 
+  // While rearranging, the tiles drag and the page must not flick under them.
+  property bool rearranging: false
+  interactive: !root.rearranging
+
+  // Nothing on this page touches the compositor until "apply". Both chips hide
+  // when there is nothing staged, so the header is clean the rest of the time.
+  headerTrailing: [
+    Chip {
+      visible: DisplayService.hasStaged
+      text: "cancel"
+      onTriggered: DisplayService.revertStaged()
+    },
+    Chip {
+      visible: DisplayService.hasStaged
+      text: "apply"
+      accented: true
+      onTriggered: DisplayService.commit()
+    }
+  ]
+
+  // -- profile ------------------------------------------------------------
+  // Pick which arrangement wins. "auto" lets monitors.lua choose by what is
+  // plugged in; picking one pins it. Profiles whose monitors are not all
+  // connected are shown greyed rather than hidden, so the list is a map of
+  // what this machine knows. Empty until displays-state.json exists.
+  SettingsCard {
+    width: parent.width
+    visible: DisplayService.profiles.length > 0
+    spacing: 9
+
+    SectionLabel { text: "profile" }
+
+    ProfileRow {
+      profName: "auto"
+      sub: DisplayService.activeForced || DisplayService.activeProfile === ""
+        ? "match by what's connected"
+        : `match by what's connected · ${DisplayService.activeProfile} now`
+      available: true
+      current: !DisplayService.activeForced
+      onUse: DisplayService.selectProfile("")
+    }
+
+    Repeater {
+      model: DisplayService.profiles
+
+      ProfileRow {
+        required property var modelData
+        profName: modelData.name
+        sub: (modelData.source === "json" ? "saved" : "built-in")
+          + (modelData.shadows ? " · overrides built-in" : "")
+          + (!modelData.available ? " · not all screens connected" : "")
+        available: modelData.available === true
+        current: DisplayService.activeForced
+          && modelData.name === DisplayService.activeProfile
+        onUse: DisplayService.selectProfile(modelData.name)
+      }
+    }
+  }
+
   SettingsCard {
     width: parent.width
 
@@ -41,13 +100,21 @@ SettingsPage {
         spacing: 6
 
         Chip {
+          text: root.rearranging ? "done" : "rearrange"
+          accented: root.rearranging
+          // Arms the drag on the plan below and freezes the page scroll so a
+          // drag does not turn into a flick.
+          onTriggered: root.rearranging = !root.rearranging
+        }
+
+        Chip {
           text: "auto"
-          // Hyprland re-places every output left to right in its own order.
-          // Not saved: "auto" is a request to let hyprland decide, which is
-          // what having no saved entry already means.
+          // Stages "auto" for every output; Hyprland re-places them left to
+          // right on apply. Not saved: "auto" is a request to let hyprland
+          // decide, which is what having no saved entry already means.
           onTriggered: {
             for (const m of Hyprland.monitors.values)
-              DisplayService.apply(m.name, { position: "auto" })
+              DisplayService.stage(m.name, { position: "auto" })
           }
         }
 
@@ -61,13 +128,17 @@ SettingsPage {
       }
     }
 
-    ArrangeCanvas { width: parent.width }
+    ArrangeCanvas { width: parent.width; dragEnabled: root.rearranging }
 
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
-      text: "drag a screen to move it. edges snap to the neighbouring screen so "
-        + "they butt up; the position is applied when you let go."
+      text: root.rearranging
+        ? "drag a screen to move it. edges snap to the neighbouring screen so "
+          + "they butt up; the move is staged when you let go — nothing changes "
+          + "on screen until you press apply. \"done\" locks the plan."
+        : "press \"rearrange\" to drag the screens around. the page scroll pauses "
+          + "while you do, so a drag does not turn into a scroll."
       font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.alpha(Theme.text, 0.4)
     }
@@ -80,6 +151,58 @@ SettingsPage {
       required property var modelData
       width: parent.width
       monitor: modelData
+    }
+  }
+
+  // Screens turned off. A disabled monitor is gone from Hyprland.monitors and so
+  // from every card above; DisplayService reads the full output list from
+  // `hyprctl monitors all` so they can be switched back on here.
+  readonly property var disabledOutputs:
+    DisplayService.allOutputs.filter(o => o.disabled)
+
+  SettingsCard {
+    width: parent.width
+    visible: root.disabledOutputs.length > 0
+    spacing: 9
+
+    SectionLabel { text: "disabled" }
+
+    Repeater {
+      model: root.disabledOutputs
+
+      Item {
+        id: offRow
+        required property var modelData
+        width: parent.width
+        implicitHeight: 26
+
+        // Staged to come back on at the next apply.
+        readonly property bool willEnable:
+          DisplayService.stagedFor(offRow.modelData.name).disabled === false
+
+        Column {
+          anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+          spacing: 1
+
+          Text {
+            text: offRow.modelData.name
+            font { family: Theme.fontMono; pixelSize: 12; weight: 600 }
+            color: Theme.text
+          }
+          Text {
+            text: offRow.modelData.description
+            font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+            color: Theme.alpha(Theme.text, 0.45)
+          }
+        }
+
+        Chip {
+          anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+          text: offRow.willEnable ? "keep off" : "enable"
+          accented: !offRow.willEnable
+          onTriggered: DisplayService.setEnabled(offRow.modelData.name, !offRow.willEnable)
+        }
+      }
     }
   }
 
@@ -104,6 +227,48 @@ SettingsPage {
   }
 
   // -- delegates ---------------------------------------------------------------
+
+  // One selectable profile line: name + a note, and a chip that reads "active"
+  // for the current pick or "use" to switch to it. Greyed and unclickable when
+  // its screens are not all connected.
+  component ProfileRow: Item {
+    id: prow
+
+    property string profName
+    property string sub: ""
+    property bool available: true
+    property bool current: false
+    signal use()
+
+    width: parent.width
+    implicitHeight: 30
+    opacity: prow.available || prow.current ? 1 : 0.45
+
+    Column {
+      anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+      spacing: 1
+
+      Text {
+        text: prow.profName
+        font { family: Theme.fontMono; pixelSize: 12; weight: 600 }
+        color: Theme.text
+      }
+      Text {
+        visible: prow.sub !== ""
+        text: prow.sub
+        font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+        color: Theme.alpha(Theme.text, 0.45)
+      }
+    }
+
+    Chip {
+      anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+      text: prow.current ? "active" : "use"
+      accented: prow.current
+      enabled: prow.available && !prow.current
+      onTriggered: prow.use()
+    }
+  }
 
   component MonitorCard: SettingsCard {
     id: card
@@ -134,24 +299,30 @@ SettingsPage {
     readonly property var rates:
       [...new Set(card.parsed.filter(m => m.res === card.selRes).map(m => m.rate))]
 
-    // Seeded from the monitor and re-seeded whenever it changes, so a mode
-    // Hyprland refuses springs the dropdowns back rather than leaving them
-    // claiming something that never took.
-    property string selRes: card.curRes
-    property string selRate: card.curRate
-    onModeChanged: { card.selRes = card.curRes; card.selRate = card.curRate }
+    // The selected mode is the staged one while a pick is pending, else the
+    // live mode. Both dropdowns and the rate list read it through selRes/selRate,
+    // so a cancel that clears the staging drops the pickers back to the live
+    // mode, and a mode Hyprland refuses springs them back once the re-read lands.
+    readonly property string selMode:
+      DisplayService.stagedFor(card.monitor.name).mode || card.mode
+    readonly property string selRes: card.selMode.split("@")[0]
+    readonly property string selRate: card.selMode.split("@")[1]
 
-    // Only ever applies a resolution+rate pair that came out of availableModes.
+    // Only ever stages a resolution+rate pair that came out of availableModes.
     function applyMode(res, rate) {
       if (!card.parsed.some(m => m.res === res && m.rate === rate)) return
-      card.selRes = res
-      card.selRate = rate
-      DisplayService.apply(card.monitor.name, { mode: `${res}@${rate}` })
+      DisplayService.stage(card.monitor.name, { mode: `${res}@${rate}` })
     }
 
     readonly property int brightnessRow: BrightnessService.rowFor(card.monitor.name)
     readonly property var backend: card.brightnessRow >= 0
       ? BrightnessService.screens[card.brightnessRow] : null
+
+    // Staged to turn off on the next apply -- dimmed so it reads as on its way
+    // out while its controls stay reachable in case that was a misclick.
+    readonly property bool willDisable:
+      DisplayService.stagedFor(card.monitor.name).disabled === true
+    opacity: card.willDisable ? 0.55 : 1
 
     spacing: 11
 
@@ -188,6 +359,14 @@ SettingsPage {
               font { family: Theme.fontMono; pixelSize: 9; weight: 500 }
               color: Theme.accentSoft
             }
+          }
+
+          Chip {
+            anchors.verticalCenter: parent.verticalCenter
+            text: card.willDisable ? "keep on" : "disable"
+            accented: card.willDisable
+            // setEnabled itself refuses to stage off the last screen left on.
+            onTriggered: DisplayService.setEnabled(card.monitor.name, card.willDisable)
           }
         }
         Text {
@@ -243,15 +422,16 @@ SettingsPage {
     SliderRow {
       width: parent.width
       label: "scale"
-      value: card.monitor.scale
+      // The staged value while one is pending, else the live one.
+      value: DisplayService.stagedFor(card.monitor.name).scale ?? card.monitor.scale
       from: 0.5
       to: 3
       step: 0.25
       decimals: 2
-      // Hyprland refuses a scale that lands the logical size on a fraction of a
-      // pixel and keeps the old one; the readout follows the monitor, so a
-      // refused value visibly springs back rather than lying.
-      onMoved: v => DisplayService.apply(card.monitor.name, { scale: v })
+      // Staged, not applied: Hyprland only sees it on commit, and refuses a
+      // scale that lands the logical size on a fraction of a pixel then -- the
+      // slider springs back when the re-read lands.
+      onMoved: v => DisplayService.stage(card.monitor.name, { scale: v })
     }
 
     // -- mode
