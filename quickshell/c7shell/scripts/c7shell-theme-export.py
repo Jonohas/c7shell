@@ -54,6 +54,7 @@ KCMINPUTRC = f"{CONFIG}/kcminputrc"
 GTK_SETTINGS = (f"{CONFIG}/gtk-3.0/settings.ini", f"{CONFIG}/gtk-4.0/settings.ini")
 SCHEME_FILE = f"{DATA}/color-schemes/C7Shell.colors"
 HYPRLOCK_PALETTE = f"{CONFIG}/hypr/hyprlock-palette.conf"
+IMV_CONFIG = f"{CONFIG}/imv/config"
 SCHEME_NAME = "C7Shell"
 
 # The shell's palette and its appearance defaults, which used to be a hand-kept
@@ -121,6 +122,12 @@ def parse(c):
 
 def fmt(rgb):
     return ",".join(str(max(0, min(255, round(v)))) for v in rgb)
+
+
+def hex6(c):
+    """"#rrggbb" or an rgb tuple -> "rrggbb", the form imv's config takes."""
+    rgb = parse(c) if isinstance(c, str) else c
+    return "".join(f"{max(0, min(255, round(v))):02x}" for v in rgb)
 
 
 def mix(a, b, t):
@@ -380,6 +387,33 @@ def write_hyprlock_palette(accent, variant):
     os.replace(tmp, HYPRLOCK_PALETTE)
 
 
+# The capture toast's "open" button launches imv (PKGBUILD depends). imv draws
+# the shot on a flat ground and, when the overlay is toggled, filename and
+# dimensions over it -- both are colours, so both follow the palette instead of
+# imv's black default. imv takes 6-hex colours without a leading # and 2-hex
+# alphas; the alphas are the shell's own (ink 0.90, glass 0.70).
+
+def imv_options(variant):
+    """imv's [options] colour keys for one variant. Pure, for the selftest."""
+    v = VARIANTS[variant]
+    return {
+        "background": hex6(v["canvas"]),
+        "overlay_text_color": hex6(TEXT),
+        "overlay_text_alpha": "e6",
+        "overlay_background_color": hex6(v["glassBase"]),
+        "overlay_background_alpha": "b3",
+    }
+
+
+def write_imv(variant):
+    """imv's config. Only the [options] colours -- imv's [binds] and any other
+    option the user set are left alone, the same contract as kdeglobals. imv
+    reads its config at launch, so writing the file is the whole of it.
+    """
+    os.makedirs(os.path.dirname(IMV_CONFIG), exist_ok=True)
+    merge_ini(IMV_CONFIG, {"options": imv_options(variant)})
+
+
 def write_cursor(theme, size):
     """One cursor theme, every consumer that has its own opinion of it.
 
@@ -524,6 +558,15 @@ def selftest():
         if line.startswith("$"):
             assert re.fullmatch(r"\$[a-z0-9]+ +=+ rgba\([0-9a-f]{8}\)", line), line
 
+    # imv's ground is the variant's canvas and its overlay the shell's ink over
+    # the popover glass -- oled bottoms both out at black, like the lock screen.
+    assert imv_options("dark") == {
+        "background": "0f0e10", "overlay_text_color": "f0eff1",
+        "overlay_text_alpha": "e6", "overlay_background_color": "0f0f13",
+        "overlay_background_alpha": "b3"}, imv_options("dark")
+    assert imv_options("oled")["background"] == "050506"
+    assert imv_options("oled")["overlay_background_color"] == "000000"
+
     # Junk in appearance.json must not reach a colour, or a gsettings argv.
     accent, variant, scheme = read_appearance()
     assert re.fullmatch(r"#[0-9a-f]{6}", accent)
@@ -591,6 +634,7 @@ def main():
     write_gtk_settings(scheme)
     write_gsettings(scheme)
     write_hyprlock_palette(accent, variant)
+    write_imv(variant)
     write_cursor(*cursor_from(load_appearance()))
     notify()
     notify(CURSOR_CHANGED)
