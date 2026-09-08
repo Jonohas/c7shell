@@ -226,4 +226,23 @@ checkState("state is written even when no profile matches", function(s)
   assert(s.forced == false)
 end, { { name = "HDMI-A-1", description = "Acme Projector 42" } }, false)
 
+-- displays.transform is the whitelist the saved-layout rotation passes through.
+-- A stray value reaching hl.monitor() can rotate a screen to something the user
+-- cannot read, so this refuses everything outside Hyprland's 0..3.
+local displays = require("conf/displays")
+local function checkT(label, v, want)
+  local got = displays.transform(v)
+  local ok = got == want
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  if not ok then print("          got: " .. tostring(got) .. "  want: " .. tostring(want)) end
+end
+
+checkT("transform 0 is kept",        0,       0)
+checkT("transform 3 is kept",        3,       3)
+checkT("transform 4 (flipped) refused", 4,    nil)
+checkT("transform -1 refused",      -1,       nil)
+checkT("fractional transform refused", 1.5,   nil)
+checkT("string transform refused",  "1",      nil)
+
 os.exit(fails == 0 and 0 or 1)

@@ -149,6 +149,12 @@ SettingsPage {
       DisplayService.apply(card.monitor.name, { mode: `${res}@${rate}` })
     }
 
+    // Rotation, as Hyprland's transform 0..3. The flipped variants (4..7) are
+    // not offered here; a monitor already sitting on one still reads correctly
+    // because the label list is indexed by value.
+    readonly property var rotations: ["normal", "90°", "180°", "270°"]
+    readonly property int curTransform: card.monitor.lastIpcObject?.transform ?? 0
+
     readonly property int brightnessRow: BrightnessService.rowFor(card.monitor.name)
     readonly property var backend: card.brightnessRow >= 0
       ? BrightnessService.screens[card.brightnessRow] : null
@@ -307,6 +313,33 @@ SettingsPage {
           font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
           color: Theme.alpha(Theme.text, 0.35)
         }
+      }
+    }
+
+    // -- rotation
+    Item {
+      width: parent.width
+      implicitHeight: 22
+
+      Text {
+        id: rotLabel
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        width: 108
+        text: "rotation"
+        font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
+        color: Theme.alpha(Theme.text, 0.7)
+      }
+
+      Dropdown {
+        anchors { left: rotLabel.right; leftMargin: 12; verticalCenter: parent.verticalCenter }
+        width: 118
+        options: card.rotations
+        // The monitor is the source of truth: a transform Hyprland refuses
+        // springs the label back rather than leaving it claiming a rotation
+        // that never took.
+        current: card.rotations[card.curTransform] ?? card.rotations[0]
+        onPicked: label => DisplayService.apply(card.monitor.name,
+          { transform: card.rotations.indexOf(label) })
       }
     }
   }
