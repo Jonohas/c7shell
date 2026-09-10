@@ -8,27 +8,44 @@ import qs.Services
 // out in Hyprland's own coordinate space and applied on drop.
 //
 // Hyprland positions monitors in LOGICAL pixels — a 2880x1920 panel at scale 2
-// occupies 1440x960 of the coordinate space, and a rotated one occupies its own
-// mode with the axes swapped — so every rectangle here is lw() by lh() rather
-// than the reported width/height, and the plan re-fits itself when a scale
-// slider moves. Reading m.x/m.y/m.width/m.height/m.scale inside plan() is what
-// makes the whole layout a live binding: QML captures those property reads even
+// occupies 1440x960 of the coordinate space — so every rectangle here is
+// width/scale by height/scale, and the plan re-fits itself when a scale slider
+// moves. Reading m.x/m.y/m.width/m.height/m.scale inside plan() is what makes
+// the whole layout a live binding: QML captures those property reads even
 // through the loop.
 Item {
   id: root
 
   readonly property var mons: Hyprland.monitors.values
 
-  // A monitor's logical SIZE. Hyprland reports width/height as the panel's own
-  // mode, untransformed: a 2560x1440 screen rotated 90 degrees still reads
-  // 2560x1440 while occupying 1440x2560 of the coordinate space. The odd
-  // transforms (1/3, and the flipped 5/7) swap the axes; the even ones do not.
-  function lw(m) {
-    return ((m.lastIpcObject?.transform ?? 0) % 2 === 1 ? m.height : m.width) / m.scale
+  // Off by default: the tiles read as a plan, not a fiddle-able thing, until the
+  // "rearrange" button on DisplaysPage arms them.
+  property bool dragEnabled: false
+
+  // A monitor's effective logical top-left: the staged position if one is
+  // pending, else the live one. plan(), snap() and the tiles all read through
+  // this, so a staged move shows across the whole plan before it is applied.
+  function ex(m) {
+    const r = /^(-?\d+)x(-?\d+)$/.exec(DisplayService.stagedFor(m.name).position ?? "")
+    return r ? parseInt(r[1]) : m.x
   }
-  function lh(m) {
-    return ((m.lastIpcObject?.transform ?? 0) % 2 === 1 ? m.width : m.height) / m.scale
+  function ey(m) {
+    const r = /^(-?\d+)x(-?\d+)$/.exec(DisplayService.stagedFor(m.name).position ?? "")
+    return r ? parseInt(r[2]) : m.y
   }
+
+  // A monitor's effective logical SIZE. Hyprland reports width/height as the
+  // panel's own mode, untransformed: a 2560x1440 screen rotated 90 degrees
+  // still reads 2560x1440 while occupying 1440x2560 of the coordinate space.
+  // The odd transforms (1/3, and the flipped 5/7) swap the axes; the even ones
+  // do not. Staged rotation counts, so the plan reorients before apply, same as
+  // a staged move.
+  function et(m) {
+    return DisplayService.stagedFor(m.name).transform
+      ?? (m.lastIpcObject?.transform ?? 0)
+  }
+  function lw(m) { return (root.et(m) % 2 === 1 ? m.height : m.width) / m.scale }
+  function lh(m) { return (root.et(m) % 2 === 1 ? m.width : m.height) / m.scale }
 
   // Fit the bounding box of every monitor into the canvas with a margin, and
   // centre it. `k` is canvas px per logical px; everything else converts
@@ -37,9 +54,9 @@ Item {
     const pad = 14
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
     for (const m of root.mons) {
-      x0 = Math.min(x0, m.x); y0 = Math.min(y0, m.y)
-      x1 = Math.max(x1, m.x + root.lw(m))
-      y1 = Math.max(y1, m.y + root.lh(m))
+      x0 = Math.min(x0, root.ex(m)); y0 = Math.min(y0, root.ey(m))
+      x1 = Math.max(x1, root.ex(m) + root.lw(m))
+      y1 = Math.max(y1, root.ey(m) + root.lh(m))
     }
     if (!isFinite(x0)) return { k: 1, x0: 0, y0: 0, ox: 0, oy: 0 }
     const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0)
@@ -66,11 +83,12 @@ Item {
     for (const o of root.mons) {
       if (o === me) continue
       const ow = root.lw(o), oh = root.lh(o)
-      for (const c of [o.x + ow, o.x - lw, o.x, o.x + ow - lw]) {
+      const ox = root.ex(o), oy = root.ey(o)
+      for (const c of [ox + ow, ox - lw, ox, ox + ow - lw]) {
         const d = Math.abs(c - lx)
         if (d < dx) { dx = d; bx = c }
       }
-      for (const c of [o.y + oh, o.y - lh, o.y, o.y + oh - lh]) {
+      for (const c of [oy + oh, oy - lh, oy, oy + oh - lh]) {
         const d = Math.abs(c - ly)
         if (d < dy) { dy = d; by = c }
       }
@@ -98,16 +116,14 @@ Item {
       readonly property real lw: root.lw(tile.modelData)
       readonly property real lh: root.lh(tile.modelData)
 
-      // While a drag is in flight these hold the proposed logical position;
-      // NaN means "follow the monitor". After a drop they keep the applied
-      // value until `settle` fires, so the tile does not rubber-band back to
-      // the old spot during the ~400ms before Hyprland is re-read — and if
-      // Hyprland refuses the move it visibly springs back, same as the scale
-      // slider does.
+      // While a drag is in flight these hold the proposed logical position; NaN
+      // means "follow the effective position" -- which is the staged spot once
+      // dropped, so the tile stays where it was let go without applying anything
+      // until the user presses apply.
       property real dragX: NaN
       property real dragY: NaN
-      readonly property real lx: isNaN(tile.dragX) ? tile.modelData.x : tile.dragX
-      readonly property real ly: isNaN(tile.dragY) ? tile.modelData.y : tile.dragY
+      readonly property real lx: isNaN(tile.dragX) ? root.ex(tile.modelData) : tile.dragX
+      readonly property real ly: isNaN(tile.dragY) ? root.ey(tile.modelData) : tile.dragY
 
       x: root.px(tile.lx)
       y: root.py(tile.ly)
@@ -119,12 +135,6 @@ Item {
       border.width: 1
       border.color: drag.pressed || tile.modelData.focused
         ? Theme.accentBorder : Theme.hairlineStrong
-
-      Timer {
-        id: settle
-        interval: 700
-        onTriggered: { tile.dragX = NaN; tile.dragY = NaN }
-      }
 
       Column {
         anchors.centerIn: parent
@@ -159,6 +169,7 @@ Item {
         id: drag
 
         anchors.fill: parent
+        enabled: root.dragEnabled
         cursorShape: Qt.OpenHandCursor
 
         // Grab offset in LOGICAL px. Tracking the cursor in canvas coordinates
@@ -176,7 +187,6 @@ Item {
         }
 
         onPressed: e => {
-          settle.stop()
           const l = drag.logical(e.x, e.y)
           drag.grabX = l.x - tile.lx
           drag.grabY = l.y - tile.ly
@@ -193,10 +203,11 @@ Item {
 
         onReleased: {
           const s = root.snap(tile.modelData, tile.dragX, tile.dragY)
-          tile.dragX = s.x
-          tile.dragY = s.y
-          DisplayService.apply(tile.modelData.name, { position: `${s.x}x${s.y}` })
-          settle.restart()
+          // Stage, do not apply. dragX/Y back to NaN so the tile follows the
+          // staged position, which is exactly where it was just dropped.
+          DisplayService.stage(tile.modelData.name, { position: `${s.x}x${s.y}` })
+          tile.dragX = NaN
+          tile.dragY = NaN
         }
       }
     }
