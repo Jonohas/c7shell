@@ -194,14 +194,14 @@ Singleton {
   // Queued, because both actions share one Process: exec() on a live one is
   // refused, so a quick "open" then "folder" used to discard whichever lost --
   // silently, since the discarded one never runs and never fails either.
-  function openFile(path) { root.queueOpen(path) }
+  function openFile(path) { root.queueOpen(path, "file") }
 
   function openFolder(path) {
-    root.queueOpen(path.substring(0, path.lastIndexOf("/")))
+    root.queueOpen(path.substring(0, path.lastIndexOf("/")), "folder")
   }
 
-  function queueOpen(target) {
-    openProc.queue = openProc.queue.concat([target])
+  function queueOpen(target, kind) {
+    openProc.queue = openProc.queue.concat([{ target, kind }])
     root.pumpOpen()
   }
 
@@ -209,7 +209,31 @@ Singleton {
     if (openProc.running || openProc.queue.length === 0) return
     const next = openProc.queue[0]
     openProc.queue = openProc.queue.slice(1)
-    openProc.exec(["xdg-open", next])
+    openProc.exec(root.openArgv(next.target, next.kind))
+  }
+
+  // xdg-open follows the system default, and on a bare Wayland session that is
+  // as likely to be the browser as an image viewer (issue #56). So: a handler
+  // configured in shell.json wins; else the first of a few common ones that is
+  // actually installed; else xdg-open. The resolution is a shell snippet rather
+  // than a probe cached here so a handler installed after startup is picked up
+  // without a reload -- target and configured value arrive as argv, never
+  // interpolated into the script, so nothing here is shell-injectable.
+  readonly property var folderApps: ["dolphin", "nautilus", "thunar", "nemo",
+                                     "pcmanfm-qt", "pcmanfm", "caja"]
+  readonly property var imageApps: ["loupe", "imv", "qview", "gwenview", "eog",
+                                    "gpicview", "nomacs"]
+  readonly property string openScript:
+    'target=$1; cmd=$2; shift 2; ' +
+    'if [ -z "$cmd" ]; then for c in "$@"; do ' +
+    'command -v "$c" >/dev/null 2>&1 && { cmd=$c; break; }; done; fi; ' +
+    '[ -n "$cmd" ] || cmd=xdg-open; exec "$cmd" "$target"'
+
+  function openArgv(target, kind) {
+    const folder = kind === "folder"
+    const configured = folder ? ShellStore.fileManager : ShellStore.imageViewer
+    const cands = folder ? root.folderApps : root.imageApps
+    return ["sh", "-c", root.openScript, "sh", target, configured].concat(cands)
   }
 
   // gio trash rather than rm: a mis-click on the toast of a capture you just
@@ -260,7 +284,7 @@ Singleton {
     stderr: StdioCollector { id: openErr }
     onExited: (code, status) => {
       if (code !== 0 || status !== 0)
-        root.fail("could not open", openErr.text.trim() || `xdg-open exited ${code}`)
+        root.fail("could not open", openErr.text.trim() || `open handler exited ${code}`)
       root.pumpOpen()
     }
   }
