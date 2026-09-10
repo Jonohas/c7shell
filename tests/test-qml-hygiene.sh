@@ -272,6 +272,11 @@ done < <(find "$src" -name '*.qml')
 #                                   range and the plain black/white overlays
 #   Modules/SharePicker/            bypasses Theme entirely -- that is #95, and
 #                                   its entry point has to move first
+#   Common/Hex.js, and the
+#   Settings selfcheck that loads it  the colour maths itself: the literals are
+#                                   worked examples and test vectors for
+#                                   normalise/fromHsv/toHsv, not tokens anything
+#                                   paints with
 #   a `palette-literal-ok` marker   a colour that is deliberately NOT the
 #                                   palette's, e.g. a test probing what ink a
 #                                   yellow accent gets. One per line, with the
@@ -282,6 +287,8 @@ hits=$(
     | { grep -zv -e '\.svg$' -e '\.md$' \
           -e '^quickshell/c7shell/palette\.json$' \
           -e '^sddm/themes/c7shell/PaletteStore\.qml$' \
+          -e '^quickshell/c7shell/Common/Hex\.js$' \
+          -e '^quickshell/c7shell/Modules/Settings/selfcheck\.mjs$' \
           -e '^quickshell/c7shell/Modules/SharePicker/' || true; } \
     | xargs -0 grep -nIE '#[0-9a-fA-F]{6}\b' 2>/dev/null \
     | grep -viE '#(000000|ffffff)\b' \
