@@ -12,12 +12,28 @@ local EDP    = { name = "eDP-1", description = "BOE NE135A1M-NY1" }
 
 local function run(monitors, lidClosed, displaysJson)
   local calls, state = {}, nil
+  local handlers, timer = {}, { fired = 0, enabled = false }
+  -- The hotplug timer, close enough to hl's: monitors.lua only ever restarts it
+  -- (disable, set_timeout, enable) and never cancels one that has fired.
+  function timer:set_enabled(on) self.enabled = on end
+  function timer:set_timeout(ms) self.timeout = ms end
   _G.hl = {
     get_monitors = function() return monitors end,
     monitor = function(t) calls[#calls + 1] = t end,
-    on = function() end,
+    on = function(event, fn) handlers[event] = fn end,
     bind = function() end,
+    timer = function(fn, opts)
+      timer.fn, timer.timeout = fn, opts and opts.timeout
+      return timer
+    end,
   }
+  -- Run whatever the timer is holding, as hl would once the timeout elapses.
+  function timer:elapse()
+    if not self.enabled then return end
+    self.enabled = false
+    self.fired = self.fired + 1
+    self.fn()
+  end
   local realopen = io.open
   io.open = function(p, mode, ...)
     if p:match("lid") then
@@ -64,7 +80,8 @@ local function run(monitors, lidClosed, displaysJson)
     end
   end
   table.sort(enabled); table.sort(disabled)
-  return enabled, disabled, state, specs
+  return enabled, disabled, state, specs, { handlers = handlers, timer = timer,
+                                            calls = calls }
 end
 
 local fails = 0
@@ -204,6 +221,39 @@ check("active naming an unavailable profile falls back to auto-match", { LG, EDP
 local PROJECTOR = { name = "HDMI-A-1", description = "Acme Projector 42" }
 check("an unknown monitor is left alone, not disabled", { EDP, PROJECTOR }, false,
   { "eDP-1 @ 0x0" }, {})
+
+-- -- hotplug ----------------------------------------------------------------
+-- A dock's connectors do not come back together. Applying straight off
+-- monitor.added saw a partial set and locked in the wrong profile, and nothing
+-- re-triggered once the rest arrived, so the events are debounced instead.
+local function checkHotplug(label, fn)
+  local ok, err = pcall(fn)
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  if not ok then print("          " .. tostring(err)) end
+end
+
+checkHotplug("a burst of hotplug events applies once, after it goes quiet", function()
+  local _, _, _, _, hp = run({ LG, EDP }, false)
+  local before = #hp.calls
+  assert(hp.handlers["monitor.added"], "monitor.added is not handled")
+  hp.handlers["monitor.added"]()
+  hp.handlers["monitor.added"]()
+  hp.handlers["monitor.removed"]()
+  assert(#hp.calls == before, "the burst applied " .. (#hp.calls - before) .. " times before settling")
+  hp.timer:elapse()
+  assert(#hp.calls > before, "nothing applied once the burst went quiet")
+  assert(hp.timer.fired == 1, "applied " .. hp.timer.fired .. " times for one burst")
+end)
+
+checkHotplug("the hotplug listeners are registered before the first apply", function()
+  -- A monitor.added that fires while Hyprland is still enumerating outputs is
+  -- for a display that will not hotplug again; with the listener registered
+  -- after apply(), that event was lost and the layout stayed stuck.
+  local _, _, _, _, hp = run({ EDP }, false)
+  assert(hp.handlers["monitor.added"], "no monitor.added handler after load")
+  assert(hp.handlers["monitor.removed"], "no monitor.removed handler after load")
+end)
 
 -- -- the state file ---------------------------------------------------------
 -- The settings app never reads conf/monitors.lua, so this document is the only

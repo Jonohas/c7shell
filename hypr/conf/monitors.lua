@@ -371,13 +371,34 @@ local function apply()
     return res
 end
 
-apply()
+-- A dock's ports don't come back atomically: one connector's monitor.added
+-- can fire while its siblings are still down, so apply() run straight off
+-- that event sees a partial set, locks in the wrong profile (usually
+-- mobile), and nothing re-triggers it once the rest of the dock catches up --
+-- a connector that stayed "connected" throughout never fires its own event
+-- to prompt another look. Debounce: restart a short timer on every event,
+-- run apply() only once the burst goes quiet.
+local HOTPLUG_DEBOUNCE_MS = 750
+local hotplug_timer = hl.timer(apply, { timeout = HOTPLUG_DEBOUNCE_MS, type = "oneshot" })
+hotplug_timer:set_enabled(false)
 
--- Re-run on hotplug. Both events fire after Hyprland has already updated its
--- monitor list, so detect() sees the new state. Deliberately not hooked to
--- monitor.layout_changed: hl.monitor() below would retrigger it and loop.
-hl.on("monitor.added", apply)
-hl.on("monitor.removed", apply)
+local function schedule_apply()
+    hotplug_timer:set_enabled(false)
+    hotplug_timer:set_timeout(HOTPLUG_DEBOUNCE_MS)
+    hotplug_timer:set_enabled(true)
+end
+
+-- Registered before the first apply() so a monitor.added that fires while
+-- Hyprland is still enumerating outputs at startup is never missed: with the
+-- listener registered after, that event -- for a monitor already plugged in,
+-- so nothing will hotplug again to retrigger it -- left the layout stuck on
+-- whatever the first apply() saw until the next manual reload.
+-- Deliberately not hooked to monitor.layout_changed: hl.monitor() below would
+-- retrigger it and loop.
+hl.on("monitor.added", schedule_apply)
+hl.on("monitor.removed", schedule_apply)
+
+apply()
 
 -- The lid fires no monitor event -- Hyprland keeps eDP-1 enabled either way --
 -- so drive apply() from the switch itself. `locked` so it still works over the
