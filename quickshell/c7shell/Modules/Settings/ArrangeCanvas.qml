@@ -8,15 +8,27 @@ import qs.Services
 // out in Hyprland's own coordinate space and applied on drop.
 //
 // Hyprland positions monitors in LOGICAL pixels — a 2880x1920 panel at scale 2
-// occupies 1440x960 of the coordinate space — so every rectangle here is
-// width/scale by height/scale, and the plan re-fits itself when a scale slider
-// moves. Reading m.x/m.y/m.width/m.height/m.scale inside plan() is what makes
-// the whole layout a live binding: QML captures those property reads even
+// occupies 1440x960 of the coordinate space, and a rotated one occupies its own
+// mode with the axes swapped — so every rectangle here is lw() by lh() rather
+// than the reported width/height, and the plan re-fits itself when a scale
+// slider moves. Reading m.x/m.y/m.width/m.height/m.scale inside plan() is what
+// makes the whole layout a live binding: QML captures those property reads even
 // through the loop.
 Item {
   id: root
 
   readonly property var mons: Hyprland.monitors.values
+
+  // A monitor's logical SIZE. Hyprland reports width/height as the panel's own
+  // mode, untransformed: a 2560x1440 screen rotated 90 degrees still reads
+  // 2560x1440 while occupying 1440x2560 of the coordinate space. The odd
+  // transforms (1/3, and the flipped 5/7) swap the axes; the even ones do not.
+  function lw(m) {
+    return ((m.lastIpcObject?.transform ?? 0) % 2 === 1 ? m.height : m.width) / m.scale
+  }
+  function lh(m) {
+    return ((m.lastIpcObject?.transform ?? 0) % 2 === 1 ? m.width : m.height) / m.scale
+  }
 
   // Fit the bounding box of every monitor into the canvas with a margin, and
   // centre it. `k` is canvas px per logical px; everything else converts
@@ -26,8 +38,8 @@ Item {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
     for (const m of root.mons) {
       x0 = Math.min(x0, m.x); y0 = Math.min(y0, m.y)
-      x1 = Math.max(x1, m.x + m.width / m.scale)
-      y1 = Math.max(y1, m.y + m.height / m.scale)
+      x1 = Math.max(x1, m.x + root.lw(m))
+      y1 = Math.max(y1, m.y + root.lh(m))
     }
     if (!isFinite(x0)) return { k: 1, x0: 0, y0: 0, ox: 0, oy: 0 }
     const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0)
@@ -48,12 +60,12 @@ Item {
   // CANVAS px and divided by k, so it stays the same distance under the cursor
   // whatever the desk is scaled to.
   function snap(me, lx, ly) {
-    const lw = me.width / me.scale, lh = me.height / me.scale
+    const lw = root.lw(me), lh = root.lh(me)
     const t = 12 / root.plan.k
     let bx = lx, by = ly, dx = t, dy = t
     for (const o of root.mons) {
       if (o === me) continue
-      const ow = o.width / o.scale, oh = o.height / o.scale
+      const ow = root.lw(o), oh = root.lh(o)
       for (const c of [o.x + ow, o.x - lw, o.x, o.x + ow - lw]) {
         const d = Math.abs(c - lx)
         if (d < dx) { dx = d; bx = c }
@@ -83,8 +95,8 @@ Item {
 
       required property var modelData
 
-      readonly property real lw: tile.modelData.width / tile.modelData.scale
-      readonly property real lh: tile.modelData.height / tile.modelData.scale
+      readonly property real lw: root.lw(tile.modelData)
+      readonly property real lh: root.lh(tile.modelData)
 
       // While a drag is in flight these hold the proposed logical position;
       // NaN means "follow the monitor". After a drop they keep the applied

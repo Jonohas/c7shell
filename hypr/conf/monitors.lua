@@ -180,7 +180,8 @@ local function json_candidates()
         for desc, f in pairs(p.displays) do
             need[#need + 1] = desc
             at[desc] = { output = "desc:" .. desc, position = f.position,
-                         mode = f.mode, scale = f.scale, checked = true }
+                         mode = f.mode, scale = f.scale, transform = f.transform,
+                         checked = true }
         end
         -- Deterministic, so the state file does not reshuffle between applies.
         table.sort(need)
