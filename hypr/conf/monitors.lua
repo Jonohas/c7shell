@@ -338,7 +338,7 @@ local function apply_inner()
             mode          = displays.mode(s.mode, modes) or want or "preferred",
             position      = displays.position(s.position) or f.position,
             scale         = displays.scale(s.scale) or f.scale,
-            transform     = f.transform,
+            transform     = displays.transform(s.transform) or f.transform,
             bitdepth      = f.bitdepth,
             cm            = f.cm,
             sdrbrightness = f.sdrbrightness,

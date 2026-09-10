@@ -59,6 +59,15 @@ function M.scale(v)
     return v
 end
 
+--- A rotation the settings app writes: 0/90/180/270 as Hyprland's 0..3. The
+--- flipped variants (4..7) are never offered there, so anything outside 0..3 is
+--- refused and monitors.lua keeps the CATALOG/PROFILES transform.
+function M.transform(v)
+    if type(v) ~= "number" or v % 1 ~= 0 then return nil end
+    if v < 0 or v > 3 then return nil end
+    return v
+end
+
 --- "<w>x<h>@<rate>", and only if the monitor actually lists that mode.
 --- `modes` is HL.Monitor.available_modes: { {width=,height=,refresh_rate=} }.
 --- With no mode list to check against (an unknown monitor, or a Hyprland that

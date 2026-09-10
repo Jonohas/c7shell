@@ -49,6 +49,8 @@ Singleton {
       out.mode = fields.mode
     if (typeof fields.scale === "number" && fields.scale >= 0.5 && fields.scale <= 3)
       out.scale = fields.scale
+    if (Number.isInteger(fields.transform) && fields.transform >= 0 && fields.transform <= 3)
+      out.transform = fields.transform
     return out
   }
 
