@@ -222,6 +222,13 @@ local PROJECTOR = { name = "HDMI-A-1", description = "Acme Projector 42" }
 check("an unknown monitor is left alone, not disabled", { EDP, PROJECTOR }, false,
   { "eDP-1 @ 0x0" }, {})
 
+-- ...but a layout the user dragged it into IS applied: displays.json is the
+-- source of truth for every monitor staying on, not just the ones a profile
+-- happens to name. Without this the panel snapped back to "auto" every reload.
+check("a saved layout for an unknown monitor is applied", { EDP, PROJECTOR }, false,
+  { "desc:Acme Projector 42 @ 2000x0", "eDP-1 @ 0x0" }, {},
+  '{"layouts":{"Acme Projector 42|BOE NE135A1M-NY1":{"Acme Projector 42":{"position":"2000x0"}}}}')
+
 -- -- hotplug ----------------------------------------------------------------
 -- A dock's connectors do not come back together. Applying straight off
 -- monitor.added saw a partial set and locked in the wrong profile, and nothing
