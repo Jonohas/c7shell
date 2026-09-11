@@ -201,6 +201,7 @@ function M.profile(p)
             position = position,
             mode     = type(fields.mode) == "string" and fields.mode or nil,
             scale    = M.scale(fields.scale),
+            transform = M.transform(fields.transform),
         }
         n = n + 1
     end
