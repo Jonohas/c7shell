@@ -347,6 +347,24 @@ local function apply_inner()
         })
     end
 
+    -- A monitor no profile mentions keeps the catch-all rule, but a layout the
+    -- user dragged it into is still saved against this desk -- and applying
+    -- only profile.at dropped it, so that panel snapped back to auto on every
+    -- reload. displays.json is the source of truth for everything staying on.
+    for desc, s in pairs(saved) do
+        local mon = by_desc[desc]
+        if mon and not known[desc] then
+            hl.monitor({
+                output    = "desc:" .. desc,
+                mode      = displays.mode(s.mode, mon.available_modes) or "preferred",
+                position  = displays.position(s.position) or "auto",
+                scale     = displays.scale(s.scale) or "auto",
+                transform = displays.transform(s.transform),
+                disabled  = false,
+            })
+        end
+    end
+
     -- Connected, known, and left out of the winning profile: drop it from the
     -- layout so its workspaces move to a monitor that is actually visible.
     for desc, m in pairs(by_desc) do
