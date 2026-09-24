@@ -10,35 +10,65 @@ local LG     = { name = "DP-3",  description = "LG Electronics LG ULTRAWIDE 0x00
 local IIYAMA = { name = "DP-3",  description = "Iiyama North America PL3466WQ 1174003000146" }
 local EDP    = { name = "eDP-1", description = "BOE NE135A1M-NY1" }
 
-local function run(monitors, lidClosed, displaysJson)
-  local calls, state = {}, nil
-  local handlers, timer = {}, { fired = 0, enabled = false }
-  -- The hotplug timer, close enough to hl's: monitors.lua only ever restarts it
-  -- (disable, set_timeout, enable) and never cancels one that has fired.
-  function timer:set_enabled(on) self.enabled = on end
-  function timer:set_timeout(ms) self.timeout = ms end
+-- The stub models the one thing that bit: Hyprland drops a DISABLED monitor
+-- from its monitor list entirely, so conf/monitors.lua cannot see a panel it
+-- switched off -- and that is why reopening the lid never brought the built-in
+-- one back. `off` is that hidden set; hl.monitor() moves panels in and out of it
+-- exactly as the compositor does.
+local function run(monitors, lidClosed, displaysJson, after, offDesc)
+  local calls, state, off, binds, handlers, timers = {}, nil, {}, {}, {}, {}
+  -- The lid moves: ACPI is what conf/monitors.lua trusts, so a case that opens
+  -- the lid has to move this, not just fire the bind.
+  local lid = lidClosed
+  -- A panel a previous run disabled: hidden from get_monitors() exactly as
+  -- Hyprland hides it, until something enables it again.
+  if offDesc then off[offDesc] = true end
+  local function resolve(output)
+    local desc = output:match("^desc:(.+)$")
+    for _, m in ipairs(monitors) do
+      if desc then
+        if m.description:sub(1, #desc) == desc then return m end
+      elseif m.name == output then return m end
+    end
+  end
   _G.hl = {
-    get_monitors = function() return monitors end,
-    monitor = function(t) calls[#calls + 1] = t end,
+    get_monitors = function()
+      local live = {}
+      for _, m in ipairs(monitors) do
+        if not off[m.description] then live[#live + 1] = m end
+      end
+      return live
+    end,
+    monitor = function(t)
+      calls[#calls + 1] = t
+      local m = t.output ~= "" and resolve(t.output)
+      if m and t.disabled ~= nil then off[m.description] = t.disabled or nil end
+    end,
     on = function(event, fn) handlers[event] = fn end,
-    bind = function() end,
+    bind = function(key, fn) binds[key] = fn end,
+    -- Close enough to hl's timers: monitors.lua only ever restarts one
+    -- (disable, set_timeout, enable) and never cancels one that has fired.
+    -- Nothing fires on its own; a case calls elapse() to run what the timer
+    -- holds. Two are registered: the hotplug debounce first, the lid poll last.
     timer = function(fn, opts)
-      timer.fn, timer.timeout = fn, opts and opts.timeout
-      return timer
+      local t = { fn = fn, timeout = opts and opts.timeout, fired = 0, enabled = false }
+      function t:set_enabled(on) self.enabled = on end
+      function t:set_timeout(ms) self.timeout = ms end
+      function t:elapse()
+        if not self.enabled then return end
+        self.enabled = false
+        self.fired = self.fired + 1
+        self.fn()
+      end
+      timers[#timers + 1] = t
+      return t
     end,
   }
-  -- Run whatever the timer is holding, as hl would once the timeout elapses.
-  function timer:elapse()
-    if not self.enabled then return end
-    self.enabled = false
-    self.fired = self.fired + 1
-    self.fn()
-  end
   local realopen = io.open
   io.open = function(p, mode, ...)
     if p:match("lid") then
-      if lidClosed == nil then return nil end
-      return { read = function() return lidClosed and "state: closed" or "state: open" end,
+      if lid == nil then return nil end
+      return { read = function() return lid and "state: closed" or "state: open" end,
                close = function() end }
     end
     -- displays.json is the user's saved layout AND, since profiles landed, the
@@ -66,12 +96,21 @@ local function run(monitors, lidClosed, displaysJson)
 
   local chunk = assert(loadfile(PATH))
   chunk()
+  -- Anything that pokes the binds runs HERE, with the stubbed io still in
+  -- place: a lid bind re-reads displays.json and rewrites the state file, and
+  -- letting that reach the real ~/.config would both skew the test and scribble
+  -- on the developer's desk.
+  if after then after(binds, function(closed) lid = closed end, timers) end
   io.open = realopen
   io.popen = realpopen
 
   local enabled, disabled, specs = {}, {}, {}
   for _, c in ipairs(calls) do
-    if c.output ~= "" then
+    -- A bare enable -- no position, no mode -- is wake_all() clearing an
+    -- earlier disable, not a layout decision. Cases assert the layout, so
+    -- those calls are noise here; the wake case reads the layout that follows.
+    local wake = c.disabled == false and c.position == nil and c.mode == nil
+    if c.output ~= "" and not wake then
       -- Keyed by output so a case can also inspect a field check() does not
       -- compare, e.g. the resolved mode.
       specs[c.output] = c
@@ -80,7 +119,7 @@ local function run(monitors, lidClosed, displaysJson)
     end
   end
   table.sort(enabled); table.sort(disabled)
-  return enabled, disabled, state, specs, { handlers = handlers, timer = timer,
+  return enabled, disabled, state, specs, { handlers = handlers, timer = timers[1],
                                             calls = calls }
 end
 
@@ -118,6 +157,14 @@ check("home: Iiyama + laptop, lid shut", { IIYAMA, EDP }, true,
 check("office: LG + laptop, lid open", { LG, EDP }, false,
   { "desc:LG Electronics LG ULTRAWIDE @ 0x0", "eDP-1 @ 1000x1440" }, {})
 check("road: laptop only", { EDP }, false, { "eDP-1 @ 0x0" }, {})
+
+-- The office desk keeps its second screen when the lid shuts. Without a profile
+-- naming both, ultrawide-lid-closed matched on the ultrawide alone and the Dell
+-- went dark, because a known display outside the winning profile is disabled.
+local DELL = { name = "DP-4", description = "Dell Inc. DELL P2417H CW6Y778H51UB" }
+check("office: LG + Dell + laptop, lid shut", { LG, DELL, EDP }, true,
+  { "desc:Dell Inc. DELL P2417H @ 3440x180",
+    "desc:LG Electronics LG ULTRAWIDE @ 0x0" }, { "eDP-1" })
 
 -- -- JSON profiles ----------------------------------------------------------
 local function json_profiles(body) return '{"profiles":[' .. body .. ']}' end
@@ -221,6 +268,141 @@ check("active naming an unavailable profile falls back to auto-match", { LG, EDP
 local PROJECTOR = { name = "HDMI-A-1", description = "Acme Projector 42" }
 check("an unknown monitor is left alone, not disabled", { EDP, PROJECTOR }, false,
   { "eDP-1 @ 0x0" }, {})
+
+-- -- a screen an earlier run disabled ---------------------------------------
+-- The same blindness as the lid, one step further out: a disabled monitor is
+-- gone from hl.get_monitors(), so a profile that switched an external screen
+-- off left nothing able to switch it back on. Load re-enables every CATALOG
+-- panel first, so the choice is made against the real desk.
+local function checkWake(label, monitors, offDesc, wantEnabled, wantDisabled)
+  local en, di = run(monitors, false, nil, nil, offDesc)
+  local got = table.concat(en, " | ") .. "   disabled: [" .. table.concat(di, ", ") .. "]"
+  local want = table.concat(wantEnabled, " | ") .. "   disabled: [" .. table.concat(wantDisabled, ", ") .. "]"
+  local ok = got == want
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  print("          got:  " .. got)
+  if not ok then print("          want: " .. want) end
+end
+
+-- Without the wake the LG is invisible, only the laptop is left, and the desk
+-- comes up on `mobile` -- which is exactly what a reload did here.
+checkWake("a screen left disabled is enabled again at load", { LG, EDP }, LG.description,
+  { "desc:LG Electronics LG ULTRAWIDE @ 0x0", "eDP-1 @ 1000x1440" }, {})
+
+-- -- the lid, closed and open again -----------------------------------------
+-- The regression this stub exists for: apply() disables eDP-1 on lid close,
+-- Hyprland then hides that panel from the monitor list, and the switch bind on
+-- reopen found nothing to turn back on. The laptop stayed dark until a reload.
+local function checkLid(label, monitors, displaysJson, wantEnabled, wantDisabled)
+  local calls = {}
+  run(monitors, true, displaysJson, function(binds, setLid)
+    local open = binds["switch:off:Lid Switch"]
+    if not open then error("no lid-open bind") end
+    setLid(false)
+    -- Only the calls the REOPEN makes; the load with the lid shut is setup.
+    local realmonitor = _G.hl.monitor
+    _G.hl.monitor = function(t) calls[#calls + 1] = t; realmonitor(t) end
+    open()
+    _G.hl.monitor = realmonitor
+  end)
+
+  local enabled, disabled = {}, {}
+  for _, c in ipairs(calls) do
+    if c.output ~= "" then
+      if c.disabled == true then disabled[#disabled + 1] = c.output
+      else enabled[#enabled + 1] = c.output .. " @ " .. tostring(c.position) end
+    end
+  end
+  table.sort(enabled); table.sort(disabled)
+  local got = table.concat(enabled, " | ") .. "   disabled: [" .. table.concat(disabled, ", ") .. "]"
+  local want = table.concat(wantEnabled, " | ") .. "   disabled: [" .. table.concat(wantDisabled, ", ") .. "]"
+  local ok = got == want
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  print("          got:  " .. got)
+  if not ok then print("          want: " .. want) end
+end
+
+-- eDP-1 comes back on (once blind, once in the profile) and the layout returns
+-- to the lid-open profile.
+checkLid("reopening the lid brings the built-in panel back", { LG, EDP }, nil,
+  { "desc:LG Electronics LG ULTRAWIDE @ 0x0", "eDP-1 @ 1000x1440", "eDP-1 @ auto" }, {})
+
+-- Same for a JSON profile: the panel it names is only matchable once it is
+-- visible again.
+checkLid("reopening the lid re-matches a json profile", { LG, EDP },
+  json_profiles('{"name":"json-desk","displays":{'
+    .. LG_AT .. ':{"position":"0x0"},' .. EDP_AT .. ':{"position":"0x1440"}}}'),
+  { "desc:BOE NE135A1M-NY1 @ 0x1440", "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD @ 0x0",
+    "eDP-1 @ auto" }, {})
+
+-- Same recovery with no switch event at all: the poll is what makes the lid
+-- reliable, because a missing "switch:off" is exactly what stranded the desk
+-- in the lid-closed profile with the lid open.
+local function checkLidPoll(label, monitors, wantEnabled, wantDisabled)
+  local calls = {}
+  run(monitors, true, nil, function(_, setLid, timers)
+    local poll = timers[#timers] -- the lid poll is the last timer registered
+    if not poll then error("no lid poll timer") end
+    setLid(false)
+    local realmonitor = _G.hl.monitor
+    _G.hl.monitor = function(t) calls[#calls + 1] = t; realmonitor(t) end
+    poll.fn()
+    _G.hl.monitor = realmonitor
+  end)
+
+  local enabled, disabled = {}, {}
+  for _, c in ipairs(calls) do
+    local wake = c.disabled == false and c.position == nil and c.mode == nil
+    if c.output ~= "" and not wake then
+      if c.disabled == true then disabled[#disabled + 1] = c.output
+      else enabled[#enabled + 1] = c.output .. " @ " .. tostring(c.position) end
+    end
+  end
+  table.sort(enabled); table.sort(disabled)
+  local got = table.concat(enabled, " | ") .. "   disabled: [" .. table.concat(disabled, ", ") .. "]"
+  local want = table.concat(wantEnabled, " | ") .. "   disabled: [" .. table.concat(wantDisabled, ", ") .. "]"
+  local ok = got == want
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  print("          got:  " .. got)
+  if not ok then print("          want: " .. want) end
+end
+
+checkLidPoll("the poll recovers a lid-open that fired no switch event", { LG, EDP },
+  { "desc:LG Electronics LG ULTRAWIDE @ 0x0", "eDP-1 @ 1000x1440", "eDP-1 @ auto" }, {})
+
+-- -- no profile fits --------------------------------------------------------
+-- Everything connected goes back to preferred/auto. Leaving it alone was the
+-- bug: a screen an earlier profile disabled had nothing left to re-enable it.
+-- lidClosed = nil is a machine with no lid at all, i.e. a desktop whose only
+-- screen is one nothing in CATALOG or PROFILES knows.
+local PROJ = { name = "HDMI-A-1", description = "Acme Projector 42" }
+check("no matching profile falls back to auto", { PROJ }, nil,
+  { "HDMI-A-1 @ auto" }, {})
+
+-- -- rotation ---------------------------------------------------------------
+-- A profile saved from a rotated screen keeps the rotation; it used to be
+-- dropped on the way through displays.json and the screen came back landscape.
+local function checkTransform(label, monitors, displaysJson, wantOutput, wantTransform)
+  local _, _, _, specs = run(monitors, false, displaysJson)
+  local got = specs[wantOutput] and specs[wantOutput].transform
+  local ok = got == wantTransform
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  if not ok then print("          got: " .. tostring(got) .. "  want: " .. tostring(wantTransform)) end
+end
+
+checkTransform("a json profile applies its rotation", { LG, EDP },
+  json_profiles('{"name":"portrait","displays":{'
+    .. LG_AT .. ':{"position":"0x0","transform":1}}}'),
+  "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", 1)
+
+checkTransform("a flipped transform in a profile is refused", { LG, EDP },
+  json_profiles('{"name":"portrait","displays":{'
+    .. LG_AT .. ':{"position":"0x0","transform":6}}}'),
+  "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", nil)
 
 -- ...but a layout the user dragged it into IS applied: displays.json is the
 -- source of truth for every monitor staying on, not just the ones a profile

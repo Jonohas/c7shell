@@ -42,6 +42,31 @@ local CATALOG = {
         scale = 1,
         size  = { 3440, 1440 },      -- logical, for the layout comments below
     },
+    ultragearLeft = {
+        desc  = "LG Electronics LG ULTRAGEAR 311NTTQ9M049",  -- DP-4
+        mode  = "2560x1440@143.93",
+        scale = 1,
+        size  = { 2560, 1440 },
+    },
+    ultragearCenter = {
+        desc  = "LG Electronics LG ULTRAGEAR 311NTRL9L950",  -- DP-10
+        mode  = "2560x1440@143.93",
+        scale = 1,
+        size  = { 2560, 1440 },
+    },
+    ultragearRight = {
+        desc  = "LG Electronics LG ULTRAGEAR 311NTCZ9M979",  -- DP-9
+        mode  = "2560x1440@143.93",
+        scale = 1,
+        size  = { 2560, 1440 },
+    },
+    -- The second screen at the office desk, right of the ultrawide.
+    dell = {
+        desc  = "Dell Inc. DELL P2417H",
+        mode  = "1920x1080@60",
+        scale = 1,
+        size  = { 1920, 1080 },
+    },
     laptop = {
         name  = "eDP-1",
         -- Belt and braces: eDP-1 is stable for a built-in panel, but detect()
@@ -59,9 +84,11 @@ local CATALOG = {
 -- the bottom keep it current afterwards.
 local LID_STATE = "/proc/acpi/button/lid/LID0/state"
 
+--- true, false, or nil on a machine with no lid file at all (a desktop, or a
+--- kernel that exposes no lid).
 local function lid_is_closed()
     local f = io.open(LID_STATE)
-    if not f then return false end -- desktop, or a kernel that exposes no lid
+    if not f then return nil end
     local state = f:read("*a")
     f:close()
     return state:match("closed") ~= nil
@@ -76,14 +103,42 @@ end
 local lid_override = nil
 
 local function lid_closed()
-    if lid_override ~= nil then return lid_override end
-    return lid_is_closed()
+    -- ACPI is authoritative wherever it exists. The override used to outrank
+    -- it, and a switch event that never arrived then stranded the desk: the lid
+    -- was open, `lid_override` still said shut, and the layout stayed in the
+    -- lid-closed profile until a reload. The override now only covers the
+    -- machine that has no lid file to read.
+    local acpi = lid_is_closed()
+    if acpi ~= nil then return acpi end
+    return lid_override == true
 end
 
 -- First profile whose monitors are ALL connected wins, so order these most
 -- specific first. Positions are top-left corners in the shared logical-pixel
 -- plane; keep edges flush or the cursor crosses dead space.
 local PROFILES = {
+    -- Three UltraGears in a row, laptop centred underneath the middle one.
+    -- 2560 each at scale 1: 0 | 2560 | 5120. Laptop is 1440 logical wide, so
+    -- 2560 + (2560 - 1440) / 2 = 3120 centres it.
+    {
+        name = "triple-ultragear",
+        need = { "ultragearLeft", "ultragearCenter", "ultragearRight", "laptop" },
+        at   = {
+            ultragearLeft   = "0x0",
+            ultragearCenter = "2560x0",
+            ultragearRight  = "5120x0",
+            laptop          = "3120x1440",
+        },
+    },
+    {
+        name = "triple-ultragear-lid-closed",
+        need = { "ultragearLeft", "ultragearCenter", "ultragearRight" },
+        at   = {
+            ultragearLeft   = "0x0",
+            ultragearCenter = "2560x0",
+            ultragearRight  = "5120x0",
+        },
+    },
     -- Ultrawide only, laptop tucked underneath.
     {
         name = "ultrawide",
@@ -94,6 +149,14 @@ local PROFILES = {
         name = "ultrawideHome",
         need = { "ultrawideHome", "laptop" },
         at   = { ultrawideHome = "0x0", laptop = "1000x1440" },
+    },
+    -- Office desk, lid shut: the laptop panel drops out, the Dell does not.
+    -- Ahead of ultrawide-lid-closed, which names the ultrawide alone and would
+    -- otherwise match first and switch the Dell off.
+    {
+        name = "office-lid-closed",
+        need = { "ultrawide", "dell" },
+        at   = { ultrawide = "0x0", dell = "3440x180" },
     },
     -- Same desk, lid shut: the laptop panel drops out of the layout entirely.
     {
@@ -275,8 +338,55 @@ local function write_state(cands, usable, profile, forced)
     })
 end
 
+--- Hyprland drops a disabled monitor from hl.get_monitors() entirely, so a
+--- panel this file switched off is invisible to the next run -- nothing can see
+--- it to switch it back on. That is why reopening the lid left the built-in
+--- panel dark: the switch bind fired, apply() ran, and the laptop was simply
+--- not in the list any more. Enable it blind and look again.
+local function wake_panel(by_key)
+    local def = CATALOG.laptop
+    if lid_closed() or by_key.laptop or not def then return by_key end
+    -- Only on a machine that has a lid. A desktop cannot have a panel hidden
+    -- this way, and a CATALOG laptop entry there would otherwise have a rule
+    -- written for it on every hotplug.
+    if lid_is_closed() == nil then return by_key end
+    hl.monitor({
+        output   = def.name or ("desc:" .. def.desc),
+        mode     = "preferred",
+        position = "auto",
+        scale    = "auto",
+        disabled = false,
+    })
+    -- A panel that is genuinely absent stays absent; this is a rule, not a
+    -- promise. detect() again either way -- Hyprland may only add the output
+    -- once this call returns, and the retry in apply() covers that case.
+    return detect()
+end
+
+--- Nothing known fits: hand every connected output back to hyprland's own
+--- preferred/auto. The catch-all rule at the top of the file only runs at load,
+--- so without this a monitor an earlier profile disabled stayed off forever.
+local function auto(by_desc)
+    for _, m in pairs(by_desc) do
+        hl.monitor({ output = m.name, mode = "preferred", position = "auto",
+                     scale = "auto", disabled = false })
+    end
+end
+
+--- Every panel CATALOG knows, enabled, whatever an earlier run did to it.
+--- Only at load: a disabled monitor is invisible to hl.get_monitors(), so
+--- without this the ONLY way back for a screen some profile switched off was to
+--- name it by hand in hyprctl. Not on hotplug -- re-enabling a screen the
+--- winning profile then disables again is the output churn that moves
+--- workspaces and kills Chromium windows.
+local function wake_all()
+    for _, def in pairs(CATALOG) do
+        hl.monitor({ output = def.name or ("desc:" .. def.desc), disabled = false })
+    end
+end
+
 local function apply_inner()
-    local by_key = detect()
+    local by_key = wake_panel(detect())
 
     local by_desc = {}
     for _, m in ipairs(hl.get_monitors()) do by_desc[m.description] = m end
@@ -295,11 +405,10 @@ local function apply_inner()
 
     write_state(cands, usable, profile, forced)
 
-    -- No profile: nothing known is plugged in. The catch-all above already gave
-    -- every output a sane preferred/auto layout, so leave it alone. That also
-    -- covers a shut lid with no external panel -- better to leave the screen as
-    -- it is than to disable the only output there is.
-    if not profile then return end
+    -- No profile fits: go auto rather than leave the desk on whatever the last
+    -- profile decided. That also covers a shut lid with no external panel --
+    -- better an enabled screen than the only output there is going dark.
+    if not profile then return auto(by_desc) end
 
     -- Only a description something claims to understand is ever turned OFF: one
     -- CATALOG matched, or one some profile names. A meeting-room projector is
@@ -416,6 +525,7 @@ end
 hl.on("monitor.added", schedule_apply)
 hl.on("monitor.removed", schedule_apply)
 
+wake_all()
 apply()
 
 -- The lid fires no monitor event -- Hyprland keeps eDP-1 enabled either way --
@@ -424,3 +534,23 @@ apply()
 -- lid close these never matter; they are what makes HandleLidSwitch=ignore work.
 hl.bind("switch:on:Lid Switch",  function() lid_override = true;  apply() end, { locked = true })
 hl.bind("switch:off:Lid Switch", function() lid_override = false; apply() end, { locked = true })
+
+-- The binds above give the instant response; this catches what they drop. A
+-- switch event CAN go missing -- one did, and the desk sat in
+-- `ultrawide-lid-closed` with the lid open until the next reload, because
+-- nothing re-read the lid afterwards. One 30-byte /proc read every two seconds
+-- is cheaper than that failure.
+local LID_POLL_MS = 2000
+local lid_seen = lid_is_closed()
+local lid_poll
+lid_poll = hl.timer(function()
+    local now = lid_is_closed()
+    if now ~= lid_seen then
+        lid_seen = now
+        apply()
+    end
+    -- A oneshot rearmed from its own callback: the repeating timer type is not
+    -- documented, and this costs the same either way.
+    lid_poll:set_timeout(LID_POLL_MS)
+    lid_poll:set_enabled(true)
+end, { timeout = LID_POLL_MS, type = "oneshot" })

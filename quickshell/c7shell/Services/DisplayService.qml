@@ -145,6 +145,8 @@ Singleton {
         position: `${m.x}x${m.y}`,
         mode: `${m.width}x${m.height}@${(m.lastIpcObject?.refreshRate ?? 0).toFixed(2)}`,
         scale: m.scale,
+        // A rotated screen is part of the arrangement, not a property of the
+        // panel: without this a profile captured in portrait came back landscape.
         transform: m.lastIpcObject?.transform ?? 0,
       })
     }

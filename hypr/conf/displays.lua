@@ -201,6 +201,9 @@ function M.profile(p)
             position = position,
             mode     = type(fields.mode) == "string" and fields.mode or nil,
             scale    = M.scale(fields.scale),
+            -- A rotated screen saved into a profile stays rotated. Refused
+            -- rather than fatal: an unreadable transform is worth losing, the
+            -- rest of the profile is not.
             transform = M.transform(fields.transform),
         }
         n = n + 1
