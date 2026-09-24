@@ -16,7 +16,7 @@ local EDP    = { name = "eDP-1", description = "BOE NE135A1M-NY1" }
 -- one back. `off` is that hidden set; hl.monitor() moves panels in and out of it
 -- exactly as the compositor does.
 local function run(monitors, lidClosed, displaysJson, after, offDesc)
-  local calls, state, off, binds, timers = {}, nil, {}, {}, {}
+  local calls, state, off, binds, handlers, timers = {}, nil, {}, {}, {}, {}
   -- The lid moves: ACPI is what conf/monitors.lua trusts, so a case that opens
   -- the lid has to move this, not just fire the bind.
   local lid = lidClosed
@@ -44,20 +44,24 @@ local function run(monitors, lidClosed, displaysJson, after, offDesc)
       local m = t.output ~= "" and resolve(t.output)
       if m and t.disabled ~= nil then off[m.description] = t.disabled or nil end
     end,
-    on = function() end,
+    on = function(event, fn) handlers[event] = fn end,
     bind = function(key, fn) binds[key] = fn end,
-    -- The hotplug debounce hands apply() to a timer. Fire it immediately: the
-    -- suite asserts what a settled burst produces, not how long it waits.
-    -- Two timers use this: the hotplug debounce, which the suite wants to fire
-    -- at once, and the lid poll, which rearms itself and would recurse for ever
-    -- if it did. Fire each callback once per enable, and only on the first.
-    timer = function(fn)
-      timers[#timers + 1] = fn
-      local fired = false
-      return { set_enabled = function(_, on)
-                 if on and not fired then fired = true; fn() end
-               end,
-               set_timeout = function() end }
+    -- Close enough to hl's timers: monitors.lua only ever restarts one
+    -- (disable, set_timeout, enable) and never cancels one that has fired.
+    -- Nothing fires on its own; a case calls elapse() to run what the timer
+    -- holds. Two are registered: the hotplug debounce first, the lid poll last.
+    timer = function(fn, opts)
+      local t = { fn = fn, timeout = opts and opts.timeout, fired = 0, enabled = false }
+      function t:set_enabled(on) self.enabled = on end
+      function t:set_timeout(ms) self.timeout = ms end
+      function t:elapse()
+        if not self.enabled then return end
+        self.enabled = false
+        self.fired = self.fired + 1
+        self.fn()
+      end
+      timers[#timers + 1] = t
+      return t
     end,
   }
   local realopen = io.open
@@ -115,7 +119,8 @@ local function run(monitors, lidClosed, displaysJson, after, offDesc)
     end
   end
   table.sort(enabled); table.sort(disabled)
-  return enabled, disabled, state, specs, binds, calls
+  return enabled, disabled, state, specs, { handlers = handlers, timer = timers[1],
+                                            calls = calls }
 end
 
 local fails = 0
@@ -212,6 +217,30 @@ checkMode("json mode present in available_modes is used",
   { LG_MODES, EDP }, false,
   json_profiles('{"name":"lg-only","displays":{' .. LG_AT .. ':{"position":"0x0","mode":"3440x1440@100"}}}'),
   "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", "3440x1440@100")
+
+-- -- profile rotation ---------------------------------------------------------
+-- A profile carries the rotation the settings app saved with it; before that it
+-- was dropped between displays.profiles() and hl.monitor(), so a saved profile
+-- came back up unrotated.
+local function checkTransform(label, monitors, displaysJson, wantOutput, wantTransform)
+  local _, _, _, specs = run(monitors, false, displaysJson)
+  local got = specs[wantOutput] and specs[wantOutput].transform
+  local ok = got == wantTransform
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  print("          got:  " .. tostring(got))
+  if not ok then print("          want: " .. tostring(wantTransform)) end
+end
+
+checkTransform("json profile rotation reaches hl.monitor()", { LG, EDP },
+  json_profiles('{"name":"lg-only","displays":{' .. LG_AT .. ':{"position":"0x0","transform":3}}}'),
+  "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", 3)
+
+-- displays.transform refuses it, and a profile without a usable rotation simply
+-- has none -- the CATALOG entry's own transform is what monitors.lua then keeps.
+checkTransform("a flipped transform in a json profile is refused", { LG, EDP },
+  json_profiles('{"name":"lg-only","displays":{' .. LG_AT .. ':{"position":"0x0","transform":7}}}'),
+  "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", nil)
 
 -- -- the active override ----------------------------------------------------
 -- Pinning a profile picks it even though an earlier candidate also fits.
@@ -319,7 +348,7 @@ local function checkLidPoll(label, monitors, wantEnabled, wantDisabled)
     setLid(false)
     local realmonitor = _G.hl.monitor
     _G.hl.monitor = function(t) calls[#calls + 1] = t; realmonitor(t) end
-    poll()
+    poll.fn()
     _G.hl.monitor = realmonitor
   end)
 
@@ -374,6 +403,46 @@ checkTransform("a flipped transform in a profile is refused", { LG, EDP },
   json_profiles('{"name":"portrait","displays":{'
     .. LG_AT .. ':{"position":"0x0","transform":6}}}'),
   "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", nil)
+
+-- ...but a layout the user dragged it into IS applied: displays.json is the
+-- source of truth for every monitor staying on, not just the ones a profile
+-- happens to name. Without this the panel snapped back to "auto" every reload.
+check("a saved layout for an unknown monitor is applied", { EDP, PROJECTOR }, false,
+  { "desc:Acme Projector 42 @ 2000x0", "eDP-1 @ 0x0" }, {},
+  '{"layouts":{"Acme Projector 42|BOE NE135A1M-NY1":{"Acme Projector 42":{"position":"2000x0"}}}}')
+
+-- -- hotplug ----------------------------------------------------------------
+-- A dock's connectors do not come back together. Applying straight off
+-- monitor.added saw a partial set and locked in the wrong profile, and nothing
+-- re-triggered once the rest arrived, so the events are debounced instead.
+local function checkHotplug(label, fn)
+  local ok, err = pcall(fn)
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  if not ok then print("          " .. tostring(err)) end
+end
+
+checkHotplug("a burst of hotplug events applies once, after it goes quiet", function()
+  local _, _, _, _, hp = run({ LG, EDP }, false)
+  local before = #hp.calls
+  assert(hp.handlers["monitor.added"], "monitor.added is not handled")
+  hp.handlers["monitor.added"]()
+  hp.handlers["monitor.added"]()
+  hp.handlers["monitor.removed"]()
+  assert(#hp.calls == before, "the burst applied " .. (#hp.calls - before) .. " times before settling")
+  hp.timer:elapse()
+  assert(#hp.calls > before, "nothing applied once the burst went quiet")
+  assert(hp.timer.fired == 1, "applied " .. hp.timer.fired .. " times for one burst")
+end)
+
+checkHotplug("the hotplug listeners are registered before the first apply", function()
+  -- A monitor.added that fires while Hyprland is still enumerating outputs is
+  -- for a display that will not hotplug again; with the listener registered
+  -- after apply(), that event was lost and the layout stayed stuck.
+  local _, _, _, _, hp = run({ EDP }, false)
+  assert(hp.handlers["monitor.added"], "no monitor.added handler after load")
+  assert(hp.handlers["monitor.removed"], "no monitor.removed handler after load")
+end)
 
 -- -- the state file ---------------------------------------------------------
 -- The settings app never reads conf/monitors.lua, so this document is the only

@@ -24,6 +24,20 @@ SettingsPage {
   title: "Displays"
   subtitle: "arrangement · scale · brightness"
 
+  // The name field under the profile header is grown, not a dialog.
+  property bool naming: false
+
+  // Saves the live layout under the typed name and closes the field. Refuses an
+  // empty name; DisplayService refuses one that would write a profile lua could
+  // not use, so a bad capture never lands in the file.
+  function saveNamed() {
+    const name = nameField.text.trim()
+    if (name === "") return
+    DisplayService.saveProfile(name)
+    nameField.text = ""
+    root.naming = false
+  }
+
   // While rearranging, the tiles drag and the page must not flick under them.
   property bool rearranging: false
   interactive: !root.rearranging
@@ -51,10 +65,88 @@ SettingsPage {
   // what this machine knows. Empty until displays-state.json exists.
   SettingsCard {
     width: parent.width
-    visible: DisplayService.profiles.length > 0
     spacing: 9
 
-    SectionLabel { text: "profile" }
+    Item {
+      width: parent.width
+      implicitHeight: 18
+
+      SectionLabel {
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        text: "profile"
+      }
+
+      Chip {
+        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+        text: root.naming ? "cancel" : "save as profile"
+        accented: root.naming
+        // A profile is a snapshot of what is LIVE, so anything staged has to be
+        // applied (or cancelled) first -- otherwise the name would be saved
+        // against the layout the user just moved away from.
+        enabled: !DisplayService.hasStaged
+        onTriggered: {
+          root.naming = !root.naming
+          if (root.naming) nameField.forceActiveFocus()
+        }
+      }
+    }
+
+    Text {
+      width: parent.width
+      visible: DisplayService.hasStaged
+      wrapMode: Text.WordWrap
+      text: "press apply first — a profile saves the arrangement that is on screen now."
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.alpha(Theme.text, 0.4)
+    }
+
+    // -- name field, grown under the header rather than opened as a dialog:
+    // the settings window's own focus is already here.
+    Rectangle {
+      width: parent.width
+      visible: root.naming
+      implicitHeight: 28
+      radius: Theme.radiusTile
+      color: Theme.surface04
+
+      TextInput {
+        id: nameField
+
+        anchors {
+          left: parent.left; leftMargin: 10
+          right: saveName.left; rightMargin: 8
+          verticalCenter: parent.verticalCenter
+        }
+        font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
+        color: Theme.text
+        clip: true
+        onAccepted: root.saveNamed()
+
+        Text {
+          anchors.fill: parent
+          verticalAlignment: Text.AlignVCenter
+          visible: nameField.text === ""
+          text: "desk name, e.g. \"docked\""
+          font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+          color: Theme.alpha(Theme.text, 0.35)
+        }
+      }
+
+      Text {
+        id: saveName
+        anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+        text: DisplayService.isSaved(nameField.text.trim()) ? "replace" : "save"
+        font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
+        color: nameField.text.trim() === ""
+          ? Theme.alpha(Theme.text, 0.3) : Theme.accentSoft
+
+        MouseArea {
+          anchors.fill: parent
+          anchors.margins: -4
+          onClicked: root.saveNamed()
+        }
+      }
+    }
 
     ProfileRow {
       profName: "auto"
@@ -72,6 +164,7 @@ SettingsPage {
       ProfileRow {
         required property var modelData
         profName: modelData.name
+        displays: modelData.displays
         sub: (modelData.source === "json" ? "saved" : "built-in")
           + (modelData.shadows ? " · overrides built-in" : "")
           + (!modelData.available ? " · not all screens connected" : "")
@@ -238,6 +331,8 @@ SettingsPage {
     property string sub: ""
     property bool available: true
     property bool current: false
+    // { "<desc>": { position, mode, scale } }, straight out of displays-state.json.
+    property var displays: ({})
     signal use()
 
     width: parent.width
@@ -261,12 +356,89 @@ SettingsPage {
       }
     }
 
+    HoverHandler { id: prowHover }
+
+    // The shape of the arrangement, on hover: enough to tell "laptop left of
+    // ultrawide" from "laptop under it" without switching to the profile.
+    ProfilePreview {
+      anchors { right: useChip.left; rightMargin: 8; verticalCenter: parent.verticalCenter }
+      width: 76
+      height: 22
+      displays: prow.displays
+      visible: prowHover.hovered
+    }
+
     Chip {
+      id: useChip
+
       anchors { right: parent.right; verticalCenter: parent.verticalCenter }
       text: prow.current ? "active" : "use"
       accented: prow.current
       enabled: prow.available && !prow.current
       onTriggered: prow.use()
+    }
+  }
+
+  // A profile's saved arrangement as boxes, in the same logical coordinate
+  // space ArrangeCanvas draws the live desk in: position is the logical
+  // top-left, mode over scale is the logical size. Draws nothing for a profile
+  // with no positions -- "auto" has none.
+  component ProfilePreview: Item {
+    id: prev
+
+    property var displays: ({})
+
+    readonly property var rects: {
+      const out = []
+      for (const d of Object.values(prev.displays ?? ({}))) {
+        const p = /^(-?\d+)x(-?\d+)$/.exec(d.position ?? "")
+        if (!p) continue
+        const m = /^(\d+)x(\d+)/.exec(d.mode ?? "")
+        const s = d.scale > 0 ? d.scale : 1
+        out.push({
+          x: parseInt(p[1]), y: parseInt(p[2]),
+          // A profile may leave the mode to hyprland; 1920x1080 keeps such a
+          // screen a plausible box instead of a zero-size one.
+          w: (m ? parseInt(m[1]) : 1920) / s,
+          h: (m ? parseInt(m[2]) : 1080) / s
+        })
+      }
+      return out
+    }
+
+    // Fit the bounding box into this item, centred. Same k-scaling as
+    // ArrangeCanvas, without the drag half.
+    readonly property var plan: {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+      for (const r of prev.rects) {
+        x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y)
+        x1 = Math.max(x1, r.x + r.w); y1 = Math.max(y1, r.y + r.h)
+      }
+      if (!isFinite(x0)) return { k: 0, x0: 0, y0: 0, ox: 0, oy: 0 }
+      const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0)
+      const k = Math.min(prev.width / w, prev.height / h)
+      return {
+        k: k, x0: x0, y0: y0,
+        ox: (prev.width - w * k) / 2,
+        oy: (prev.height - h * k) / 2
+      }
+    }
+
+    Repeater {
+      model: prev.rects
+
+      Rectangle {
+        required property var modelData
+
+        x: prev.plan.ox + (modelData.x - prev.plan.x0) * prev.plan.k
+        y: prev.plan.oy + (modelData.y - prev.plan.y0) * prev.plan.k
+        // Minus a pixel so butted-up screens read as two boxes, not one.
+        width: Math.max(2, modelData.w * prev.plan.k - 1)
+        height: Math.max(2, modelData.h * prev.plan.k - 1)
+        radius: 2
+        color: Theme.alpha(Theme.text, 0.12)
+        border { width: 1; color: Theme.alpha(Theme.text, 0.35) }
+      }
     }
   }
 
@@ -316,9 +488,12 @@ SettingsPage {
 
     // Rotation, as Hyprland's transform 0..3. The flipped variants (4..7) are
     // not offered here; a monitor already sitting on one still reads correctly
-    // because the label list is indexed by value.
+    // because the label list is indexed by value. Staged like mode and scale,
+    // so the picker shows the pending value until commit or revert.
     readonly property var rotations: ["normal", "90°", "180°", "270°"]
-    readonly property int curTransform: card.monitor.lastIpcObject?.transform ?? 0
+    readonly property int curTransform:
+      DisplayService.stagedFor(card.monitor.name).transform
+        ?? (card.monitor.lastIpcObject?.transform ?? 0)
 
     readonly property int brightnessRow: BrightnessService.rowFor(card.monitor.name)
     readonly property var backend: card.brightnessRow >= 0
@@ -514,11 +689,11 @@ SettingsPage {
         anchors { left: rotLabel.right; leftMargin: 12; verticalCenter: parent.verticalCenter }
         width: 118
         options: card.rotations
-        // The monitor is the source of truth: a transform Hyprland refuses
-        // springs the label back rather than leaving it claiming a rotation
-        // that never took.
+        // The monitor is the source of truth once the staging clears: a
+        // transform Hyprland refuses springs the label back rather than
+        // leaving it claiming a rotation that never took.
         current: card.rotations[card.curTransform] ?? card.rotations[0]
-        onPicked: label => DisplayService.apply(card.monitor.name,
+        onPicked: label => DisplayService.stage(card.monitor.name,
           { transform: card.rotations.indexOf(label) })
       }
     }
