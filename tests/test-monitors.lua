@@ -154,6 +154,30 @@ checkMode("json mode present in available_modes is used",
   json_profiles('{"name":"lg-only","displays":{' .. LG_AT .. ':{"position":"0x0","mode":"3440x1440@100"}}}'),
   "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", "3440x1440@100")
 
+-- -- profile rotation ---------------------------------------------------------
+-- A profile carries the rotation the settings app saved with it; before that it
+-- was dropped between displays.profiles() and hl.monitor(), so a saved profile
+-- came back up unrotated.
+local function checkTransform(label, monitors, displaysJson, wantOutput, wantTransform)
+  local _, _, _, specs = run(monitors, false, displaysJson)
+  local got = specs[wantOutput] and specs[wantOutput].transform
+  local ok = got == wantTransform
+  if not ok then fails = fails + 1 end
+  print((ok and "  PASS  " or "  FAIL  ") .. label)
+  print("          got:  " .. tostring(got))
+  if not ok then print("          want: " .. tostring(wantTransform)) end
+end
+
+checkTransform("json profile rotation reaches hl.monitor()", { LG, EDP },
+  json_profiles('{"name":"lg-only","displays":{' .. LG_AT .. ':{"position":"0x0","transform":3}}}'),
+  "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", 3)
+
+-- displays.transform refuses it, and a profile without a usable rotation simply
+-- has none -- the CATALOG entry's own transform is what monitors.lua then keeps.
+checkTransform("a flipped transform in a json profile is refused", { LG, EDP },
+  json_profiles('{"name":"lg-only","displays":{' .. LG_AT .. ':{"position":"0x0","transform":7}}}'),
+  "desc:LG Electronics LG ULTRAWIDE 0x0001ABCD", nil)
+
 -- -- the active override ----------------------------------------------------
 -- Pinning a profile picks it even though an earlier candidate also fits.
 check("active pins a profile that is not first", { LG, EDP }, false,
