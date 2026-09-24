@@ -145,6 +145,7 @@ Singleton {
         position: `${m.x}x${m.y}`,
         mode: `${m.width}x${m.height}@${(m.lastIpcObject?.refreshRate ?? 0).toFixed(2)}`,
         scale: m.scale,
+        transform: m.lastIpcObject?.transform ?? 0,
       })
     }
     // conf/displays.lua rejects a profile WHOLE if any one display lacks a

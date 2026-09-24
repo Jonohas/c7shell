@@ -8,11 +8,10 @@ import qs.Services
 // out in Hyprland's own coordinate space and applied on drop.
 //
 // Hyprland positions monitors in LOGICAL pixels — a 2880x1920 panel at scale 2
-// occupies 1440x960 of the coordinate space, and a rotated one occupies its own
-// mode with the axes swapped — so every rectangle here is lw() by lh() rather
-// than the reported width/height, and the plan re-fits itself when a scale
-// slider moves. Reading m.x/m.y/m.width/m.height/m.scale inside plan() is what
-// makes the whole layout a live binding: QML captures those property reads even
+// occupies 1440x960 of the coordinate space — so every rectangle here is
+// width/scale by height/scale, and the plan re-fits itself when a scale slider
+// moves. Reading m.x/m.y/m.width/m.height/m.scale inside plan() is what makes
+// the whole layout a live binding: QML captures those property reads even
 // through the loop.
 Item {
   id: root
@@ -35,16 +34,18 @@ Item {
     return r ? parseInt(r[2]) : m.y
   }
 
-  // A monitor's logical SIZE. Hyprland reports width/height as the panel's own
-  // mode, untransformed: a 2560x1440 screen rotated 90 degrees still reads
-  // 2560x1440 while occupying 1440x2560 of the coordinate space. The odd
-  // transforms (1/3, and the flipped 5/7) swap the axes; the even ones do not.
-  function lw(m) {
-    return ((m.lastIpcObject?.transform ?? 0) % 2 === 1 ? m.height : m.width) / m.scale
+  // A monitor's effective logical SIZE. Hyprland reports width/height as the
+  // panel's own mode, untransformed: a 2560x1440 screen rotated 90 degrees
+  // still reads 2560x1440 while occupying 1440x2560 of the coordinate space.
+  // The odd transforms (1/3, and the flipped 5/7) swap the axes; the even ones
+  // do not. Staged rotation counts, so the plan reorients before apply, same as
+  // a staged move.
+  function et(m) {
+    return DisplayService.stagedFor(m.name).transform
+      ?? (m.lastIpcObject?.transform ?? 0)
   }
-  function lh(m) {
-    return ((m.lastIpcObject?.transform ?? 0) % 2 === 1 ? m.width : m.height) / m.scale
-  }
+  function lw(m) { return (root.et(m) % 2 === 1 ? m.height : m.width) / m.scale }
+  function lh(m) { return (root.et(m) % 2 === 1 ? m.width : m.height) / m.scale }
 
   // Fit the bounding box of every monitor into the canvas with a margin, and
   // centre it. `k` is canvas px per logical px; everything else converts

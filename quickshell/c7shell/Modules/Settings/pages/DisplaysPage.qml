@@ -24,6 +24,20 @@ SettingsPage {
   title: "Displays"
   subtitle: "arrangement · scale · brightness"
 
+  // The name field under the profile header is grown, not a dialog.
+  property bool naming: false
+
+  // Saves the live layout under the typed name and closes the field. Refuses an
+  // empty name; DisplayService refuses one that would write a profile lua could
+  // not use, so a bad capture never lands in the file.
+  function saveNamed() {
+    const name = nameField.text.trim()
+    if (name === "") return
+    DisplayService.saveProfile(name)
+    nameField.text = ""
+    root.naming = false
+  }
+
   // While rearranging, the tiles drag and the page must not flick under them.
   property bool rearranging: false
   interactive: !root.rearranging
@@ -51,10 +65,88 @@ SettingsPage {
   // what this machine knows. Empty until displays-state.json exists.
   SettingsCard {
     width: parent.width
-    visible: DisplayService.profiles.length > 0
     spacing: 9
 
-    SectionLabel { text: "profile" }
+    Item {
+      width: parent.width
+      implicitHeight: 18
+
+      SectionLabel {
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        text: "profile"
+      }
+
+      Chip {
+        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+        text: root.naming ? "cancel" : "save as profile"
+        accented: root.naming
+        // A profile is a snapshot of what is LIVE, so anything staged has to be
+        // applied (or cancelled) first -- otherwise the name would be saved
+        // against the layout the user just moved away from.
+        enabled: !DisplayService.hasStaged
+        onTriggered: {
+          root.naming = !root.naming
+          if (root.naming) nameField.forceActiveFocus()
+        }
+      }
+    }
+
+    Text {
+      width: parent.width
+      visible: DisplayService.hasStaged
+      wrapMode: Text.WordWrap
+      text: "press apply first — a profile saves the arrangement that is on screen now."
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.alpha(Theme.text, 0.4)
+    }
+
+    // -- name field, grown under the header rather than opened as a dialog:
+    // the settings window's own focus is already here.
+    Rectangle {
+      width: parent.width
+      visible: root.naming
+      implicitHeight: 28
+      radius: Theme.radiusTile
+      color: Theme.surface04
+
+      TextInput {
+        id: nameField
+
+        anchors {
+          left: parent.left; leftMargin: 10
+          right: saveName.left; rightMargin: 8
+          verticalCenter: parent.verticalCenter
+        }
+        font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
+        color: Theme.text
+        clip: true
+        onAccepted: root.saveNamed()
+
+        Text {
+          anchors.fill: parent
+          verticalAlignment: Text.AlignVCenter
+          visible: nameField.text === ""
+          text: "desk name, e.g. \"docked\""
+          font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+          color: Theme.alpha(Theme.text, 0.35)
+        }
+      }
+
+      Text {
+        id: saveName
+        anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+        text: DisplayService.isSaved(nameField.text.trim()) ? "replace" : "save"
+        font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
+        color: nameField.text.trim() === ""
+          ? Theme.alpha(Theme.text, 0.3) : Theme.accentSoft
+
+        MouseArea {
+          anchors.fill: parent
+          anchors.margins: -4
+          onClicked: root.saveNamed()
+        }
+      }
+    }
 
     ProfileRow {
       profName: "auto"
@@ -316,9 +408,12 @@ SettingsPage {
 
     // Rotation, as Hyprland's transform 0..3. The flipped variants (4..7) are
     // not offered here; a monitor already sitting on one still reads correctly
-    // because the label list is indexed by value.
+    // because the label list is indexed by value. Staged like mode and scale,
+    // so the picker shows the pending value until commit or revert.
     readonly property var rotations: ["normal", "90°", "180°", "270°"]
-    readonly property int curTransform: card.monitor.lastIpcObject?.transform ?? 0
+    readonly property int curTransform:
+      DisplayService.stagedFor(card.monitor.name).transform
+        ?? (card.monitor.lastIpcObject?.transform ?? 0)
 
     readonly property int brightnessRow: BrightnessService.rowFor(card.monitor.name)
     readonly property var backend: card.brightnessRow >= 0
@@ -514,11 +609,11 @@ SettingsPage {
         anchors { left: rotLabel.right; leftMargin: 12; verticalCenter: parent.verticalCenter }
         width: 118
         options: card.rotations
-        // The monitor is the source of truth: a transform Hyprland refuses
-        // springs the label back rather than leaving it claiming a rotation
-        // that never took.
+        // The monitor is the source of truth once the staging clears: a
+        // transform Hyprland refuses springs the label back rather than
+        // leaving it claiming a rotation that never took.
         current: card.rotations[card.curTransform] ?? card.rotations[0]
-        onPicked: label => DisplayService.apply(card.monitor.name,
+        onPicked: label => DisplayService.stage(card.monitor.name,
           { transform: card.rotations.indexOf(label) })
       }
     }
