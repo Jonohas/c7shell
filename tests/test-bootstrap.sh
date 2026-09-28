@@ -7,16 +7,14 @@
 # command is logged by the stubs, so "changed nothing" is checked, not assumed.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 bootstrap=$here/../bin/c7shell-bootstrap
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+mktmp
 
 bin=$tmp/bin
 log=$tmp/ran.log
 mkdir -p "$bin"
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 for helper in grep uname getent id sed cat; do ln -s "$(command -v "$helper")" "$bin/$helper"; done
 

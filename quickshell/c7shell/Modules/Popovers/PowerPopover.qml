@@ -3,6 +3,7 @@ import QtQuick
 import qs.Theme
 import qs.Common
 import qs.Services
+import qs.Modules.Power
 
 // 17b: the battery pill's own popover. Charge at the top, the three tuned
 // profiles under it, each carrying ITS OWN runtime estimate -- which is the
@@ -94,79 +95,12 @@ GlassPopover {
   // Amber-bordered, and the profile list is HIDDEN rather than faked. The
   // battery readout above carries on regardless, which is the point: the pill
   // is still worth opening on a machine with no tuned.
-  Rectangle {
-    width: parent.width
+  TunedNotice {
     visible: !TunedService.available
-    implicitHeight: missing.implicitHeight + 24
-    radius: Theme.radiusTile
-    color: Theme.alpha(Theme.warning, 0.06)
-    border.width: 1
-    border.color: Theme.alpha(Theme.warning, 0.3)
-
-    Column {
-      id: missing
-
-      anchors {
-        left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter
-        leftMargin: 12; rightMargin: 12
-      }
-      spacing: 9
-
-      Row {
-        width: parent.width
-        spacing: 10
-
-        Icon {
-          anchors.verticalCenter: parent.verticalCenter
-          name: "alert-triangle"
-          size: 14
-          tint: Theme.warning
-        }
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: TunedService.installed ? "tuned is not running" : "tuned is not installed"
-          font { family: Theme.fontMono; pixelSize: 11; weight: 600 }
-          color: Theme.text
-        }
-      }
-
-      Text {
-        width: parent.width
-        text: TunedService.installed
-          ? "The profile list is hidden rather than faked. Battery readout still works."
-          : "Install it to switch power profiles from here. Battery readout still works."
-        font { family: Theme.fontMono; pixelSize: 9; weight: 400 }
-        lineHeight: 1.5
-        wrapMode: Text.WordWrap
-        color: Theme.alpha(Theme.text, 0.45)
-      }
-
-      Rectangle {
-        width: parent.width
-        // Offered only when there is a service to enable: a button that cannot
-        // work is worse than no button.
-        visible: TunedService.installed
-        implicitHeight: 26
-        radius: Theme.radiusChip
-        color: enableMouse.containsMouse ? Theme.accentSoft : Theme.accent
-
-        Behavior on color { ColorAnimation { duration: 120 } }
-
-        Text {
-          anchors.centerIn: parent
-          text: "enable tuned.service"
-          font { family: Theme.fontMono; pixelSize: 10; weight: 600 }
-          color: Theme.textOnAccent
-        }
-
-        MouseArea {
-          id: enableMouse
-          anchors.fill: parent
-          hoverEnabled: true
-          onClicked: PowerService.enableTuned()
-        }
-      }
-    }
+    compact: true
+    blurb: TunedService.installed
+      ? "The profile list is hidden rather than faked. Battery readout still works."
+      : "Install it to switch power profiles from here. Battery readout still works."
   }
 
   // -- profiles --------------------------------------------------------------

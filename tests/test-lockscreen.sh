@@ -11,12 +11,10 @@
 # screen.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 conf=$here/../hypr/hyprlock.conf
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
+mktmp
 
 [[ -f $conf ]] || fail 'hypr/hyprlock.conf is missing -- SUPER+L, the power menu lock row and the idle lock all do nothing without it'
 

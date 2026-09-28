@@ -11,12 +11,10 @@
 # the newline is asserted here where a future edit that drops it fails loudly.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-repo=$here/..
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 picker=$repo/quickshell/c7shell/Modules/SharePicker/PickerApp.qml
 wrapper=$repo/quickshell/c7shell/bin/screenshare-picker.sh
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 [[ -f $picker ]]  || fail 'PickerApp.qml is missing'
 [[ -f $wrapper ]] || fail 'screenshare-picker.sh is missing'

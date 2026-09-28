@@ -11,17 +11,11 @@
 # the backdrop -- is not logic that can be silently wrong.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-src=$here/../quickshell/c7shell
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
+mktmp
 
-fail() { printf 'FAIL: %b\n' "$1" >&2; exit 1; }
-
-command -v qml6 >/dev/null || {
-  echo 'SKIP: qml6 not installed (package: qt6-declarative)'
-  exit 0
-}
+need_qml6
 
 mkdir -p "$tmp/qs/Common" "$tmp/qs/Services" "$tmp/qs/Theme" \
          "$tmp/qs/Modules/Auth" "$tmp/Quickshell" "$tmp/Quickshell/Io"
@@ -43,8 +37,6 @@ printf 'module qs.Modules.Auth\nAuthPrompt 1.0 AuthPrompt.qml\nPromptButton 1.0 
 
 # The Theme stand-in, from tests/fixtures/theme-stub.sh -- one copy, with its
 # colours read from the same palette.json the real Theme reads.
-# shellcheck source=fixtures/theme-stub.sh
-. "$here/fixtures/theme-stub.sh"
 write_theme_stub "$tmp/qs" "$src"
 
 # The Quickshell types AuthService names. Process is the one with any surface:

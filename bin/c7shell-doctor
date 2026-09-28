@@ -9,6 +9,18 @@
 # black screen and a bounce straight back to the greeter, with the reason
 # buried in a log -- so check it up front instead.
 set -euo pipefail
+# The sddm theme parse and the drop-in body, shared with
+# c7shell-bootstrap and c7shell-upgrade: share/c7shell-sddm.sh. The repo layout
+# answers first, so a checkout and the test suite run the copy beside them;
+# an installed script falls through to /usr/lib/c7shell. A missing lib fails
+# the source and `set -e` ends the run, which is right -- c7shell-doctor
+# cannot do its greeter step without it.
+# Pure parameter expansion, no dirname: c7shell-doctor runs its own checks
+# with PATH pointed at a fake tree, where no external command exists yet.
+_c7lib=${C7SHELL_LIB:-${0%/*}/../share}
+[[ -r $_c7lib/c7shell-sddm.sh ]] || _c7lib=/usr/lib/c7shell
+# shellcheck source=../share/c7shell-sddm.sh
+. "$_c7lib/c7shell-sddm.sh"
 
 conf=${XDG_CONFIG_HOME:-$HOME/.config}
 # Prefix for the absolute paths checked below. Empty in normal use; the test
@@ -511,23 +523,11 @@ section 'greeter'
 # in /etc/sddm.conf.d that only c7shell-bootstrap or c7shell-upgrade writes. All
 # warnings, never failures -- a machine may deliberately run another display
 # manager, and the session works either way.
-sddm_theme_current() {
-  local f line value=''
-  for f in "$root"/etc/sddm.conf "$root"/etc/sddm.conf.d/*.conf; do
-    [[ -f $f ]] || continue
-    while IFS= read -r line; do
-      [[ $line =~ ^[[:space:]]*Current[[:space:]]*=[[:space:]]*(.*)$ ]] || continue
-      value=${BASH_REMATCH[1]}
-      value=${value%"${value##*[![:space:]]}"}
-    done < "$f"
-  done
-  printf '%s' "$value"
-}
 
 sddm_theme=$root/usr/share/sddm/themes/c7shell
 if [[ -d $sddm_theme ]]; then
   ok '/usr/share/sddm/themes/c7shell'
-  current=$(sddm_theme_current)
+  current=$(sddm_theme_current "$root")
   case $current in
     c7shell) ok 'sddm uses the c7shell greeter theme' ;;
     '')

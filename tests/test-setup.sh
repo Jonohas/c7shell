@@ -2,10 +2,10 @@
 # Self-check for bin/c7shell-setup. Run it directly: tests/test-setup.sh
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 setup=$here/../bin/c7shell-setup
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+mktmp
 
 export C7SHELL_SHARE=$tmp/share
 export XDG_CONFIG_HOME=$tmp/conf
@@ -36,8 +36,6 @@ import os
 conf = os.environ["XDG_CONFIG_HOME"]
 open(f"{conf}/kdeglobals", "w").write("[General]\nColorScheme=C7Shell\n")
 PYEOF
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 # dry-run changes nothing
 "$setup" --dry-run >/dev/null
