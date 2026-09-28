@@ -83,6 +83,9 @@ optdepends=(
   'breeze-icons: icon theme Qt/KDE apps expect'
   'hyprlauncher: fallback launcher (the shell provides its own)'
   'ddcutil: DDC/CI backlight control for external monitors'
+  # Settings -> displays -> eye saver. Without it the toggle says so and does
+  # nothing; the gamma of every output is this one process's to hold.
+  'hyprsunset: the eye saver (blue light filter) in settings -> displays'
   'brightnessctl: backlight control for internal panels'
   'upower: battery readout in the bar'
   # Also the lock screen's now-playing line: the bar reads MPRIS over D-Bus

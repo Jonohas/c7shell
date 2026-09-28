@@ -846,6 +846,7 @@ optional_entries=(
   # updates are counted and applied in the same run as the repo and AUR ones;
   # without it that row simply does not appear.
   "cmd:flatpak:flatpak:flatpak apps in the same update flow as pacman and the AUR"
+  "cmd:hyprsunset:hyprsunset:the eye saver (blue light filter) in settings -> displays"
 )
 
 
