@@ -9,16 +9,11 @@
 # files cannot be instantiated directly.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
+mktmp
 
-fail() { printf 'FAIL: %b\n' "$1" >&2; exit 1; }
-
-command -v qml6 >/dev/null || {
-  echo 'SKIP: qml6 not installed (package: qt6-declarative)'
-  exit 0
-}
+need_qml6
 
 mkdir -p "$tmp/osdtest" "$tmp/Quickshell"
 cp "$here/../quickshell/c7shell/Services/OsdManager.qml" "$tmp/osdtest/"

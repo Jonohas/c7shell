@@ -9,13 +9,11 @@
 # every state and fails on any QML warning at all.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 theme=$here/../sddm/themes/c7shell
 preview=$here/greeter-preview.qml
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
+mktmp
 
 # --- the theme is a theme -------------------------------------------------
 for f in metadata.desktop theme.conf Main.qml Greeter.qml qmldir Theme.qml PaletteStore.qml; do

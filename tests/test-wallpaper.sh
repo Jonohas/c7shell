@@ -16,12 +16,11 @@
 # reads the wallpaper's own black, with it down Hyprland's #111111.  # palette-literal-ok: hyprland's built-in background, not ours
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 shell=$here/../quickshell/c7shell
 paper=$shell/Modules/Wallpaper/Wallpaper.qml
 store=$shell/Services/AppearanceStore.qml
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 [[ -f $paper ]] || fail 'Modules/Wallpaper/Wallpaper.qml is missing'
 

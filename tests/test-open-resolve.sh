@@ -9,12 +9,10 @@
 # time someone screenshots and lands in the browser.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 svc=$here/../quickshell/c7shell/Services/CaptureService.qml
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
-
-fail() { printf 'FAIL: %b\n' "$1" >&2; exit 1; }
+mktmp
 
 # Pull the concatenated openScript literal out of the service. The block sits
 # between `openScript:` and `function openArgv`, and only its four parts are

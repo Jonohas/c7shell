@@ -15,8 +15,8 @@
 # tests/portal-filechooser-stub.py on it and runs the real script against it.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-repo=$here/..
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 shell=$repo/quickshell/c7shell
 chooser=$shell/scripts/c7shell-filechooser.py
 tmp=$(mktemp -d)
@@ -27,8 +27,6 @@ cleanup() {
   rm -rf -- "$tmp"
 }
 trap cleanup EXIT
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 # --- the parts that have to stay wired together -----------------------------
 [[ -f $chooser ]] || fail 'quickshell/c7shell/scripts/c7shell-filechooser.py is missing'

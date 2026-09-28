@@ -10,7 +10,8 @@
 # caller nobody can name. --no-polkit is in the daemon for exactly this reason.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 authd=$here/../bin/c7-authd
 askpass=$here/../bin/c7-askpass
 tmp=$(mktemp -d)
@@ -20,8 +21,6 @@ cleanup() {
   rm -rf -- "$tmp"
 }
 trap cleanup EXIT
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 sock=$tmp/askpass.sock
 out=$tmp/out.ndjson

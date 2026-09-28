@@ -6,17 +6,15 @@
 # (C7SHELL_ROOT) holding the files and QML module directories it looks for.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 doctor=$here/../bin/c7shell-doctor
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+mktmp
 
 bin=$tmp/bin
 root=$tmp/root
 conf=$tmp/conf
 mkdir -p "$bin" "$root" "$conf"
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 # The doctor itself needs these to run under a PATH with nothing else on it.
 for helper in grep head date stat; do ln -s "$(command -v "$helper")" "$bin/$helper"; done

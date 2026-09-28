@@ -9,15 +9,13 @@
 # unprivileged by design.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 c7up=$here/../bin/c7up
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+mktmp
 
 bin=$tmp/bin
 mkdir -p "$bin" "$tmp/state" "$tmp/cache" "$tmp/config"
-
-fail() { printf 'FAIL: %b\n' "$1" >&2; exit 1; }
 
 command -v python3 >/dev/null || { echo 'SKIP: python3 not installed'; exit 0; }
 

@@ -9,12 +9,10 @@
 # being root, because they happen before any write.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 helper=$here/../bin/c7power-root
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
-
-fail() { printf 'FAIL: %b\n' "$1" >&2; exit 1; }
+mktmp
 
 # --------------------------------------------------------------------------
 # 1. c7power-root takes a verb, never a command line.
