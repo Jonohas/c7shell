@@ -237,6 +237,49 @@ SettingsPage {
     }
   }
 
+  // -- eye saver ----------------------------------------------------------
+  // One filter over the whole desk, not a per-monitor setting: hyprsunset owns
+  // the gamma of every output at once. Unlike everything else on this page it
+  // applies the moment it is touched -- there is nothing to stage when the
+  // change IS the preview.
+  SettingsCard {
+    width: parent.width
+    spacing: 9
+
+    SectionLabel { text: "eye saver" }
+
+    ToggleRow {
+      width: parent.width
+      label: "warm the screen"
+      checked: EyeSaverService.enabled
+      onToggled: EyeSaverService.setEnabled(!EyeSaverService.enabled)
+    }
+
+    SliderRow {
+      width: parent.width
+      label: "temperature"
+      value: EyeSaverService.temperature
+      from: EyeSaverService.minTemperature
+      to: EyeSaverService.maxTemperature
+      step: 100
+      suffix: "K"
+      onMoved: v => EyeSaverService.setTemperature(v)
+    }
+
+    Text {
+      width: parent.width
+      wrapMode: Text.WordWrap
+      text: EyeSaverService.probed && !EyeSaverService.available
+        ? "hyprsunset is not installed, so nothing is filtering the screen. "
+          + "install it (pacman -S hyprsunset) and the toggle starts working."
+        : "cuts the blue end of every screen's gamma. lower is warmer; 6500K is "
+          + "daylight, which is the same as off. the filter lives with the shell "
+          + "-- it is gone the moment the session is."
+      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
+      color: Theme.alpha(Theme.text, 0.4)
+    }
+  }
+
   Repeater {
     model: Hyprland.monitors
 
