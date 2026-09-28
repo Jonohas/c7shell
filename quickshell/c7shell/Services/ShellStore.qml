@@ -66,6 +66,13 @@ Singleton {
   // the mosaic that says what to look at is the reason it exists.
   readonly property string screenshotAction: root.values.screenshotAction
 
+  // -- eye saver --
+  // The warm-gamma filter EyeSaverService drives. Kept here rather than in
+  // displays.json: that file is a per-desk layout hyprland's lua reads back,
+  // and the filter is neither per-desk nor anything lua has to know about.
+  readonly property bool eyeSaver: root.values.eyeSaver
+  readonly property int eyeSaverTemperature: root.values.eyeSaverTemperature
+
   // -- screenshot toast handlers --
   // The apps the capture toast's "open" and "folder" buttons launch. Empty
   // means auto-detect a common one, and xdg-open only as the last resort --
@@ -110,6 +117,12 @@ Singleton {
       property int batteryWarnBelow: 15
 
       property string screenshotAction: "annotate"
+
+      // Off, at a temperature warm enough to be worth turning on. 6500 K is
+      // daylight, i.e. no filter, so it would make the toggle look broken.
+      property bool eyeSaver: false
+      property int eyeSaverTemperature: 4000
+
       property string fileManager: ""
       property string imageViewer: ""
     }

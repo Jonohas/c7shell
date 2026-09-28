@@ -11,17 +11,11 @@
 # arrive continuously while scanning threw away passwords mid-typing (#124).
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-src=$here/../quickshell/c7shell
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
+mktmp
 
-fail() { printf 'FAIL: %b\n' "$1" >&2; exit 1; }
-
-command -v qml6 >/dev/null || {
-  echo 'SKIP: qml6 not installed (package: qt6-declarative)'
-  exit 0
-}
+need_qml6
 
 mkdir -p "$tmp/qs/Services" "$tmp/qs/Common" "$tmp/qs/Theme" \
   "$tmp/Quickshell/Io" "$tmp/Quickshell/Networking"
@@ -37,8 +31,6 @@ printf 'module qs.Common\nPskField 1.0 PskField.qml\n' > "$tmp/qs/Common/qmldir"
 
 # The Theme stand-in, from tests/fixtures/theme-stub.sh -- one copy, with its
 # colours read from the same palette.json the real Theme reads.
-# shellcheck source=fixtures/theme-stub.sh
-. "$here/fixtures/theme-stub.sh"
 write_theme_stub "$tmp/qs" "$src"
 
 # -- the Quickshell types NetworkService names -------------------------------

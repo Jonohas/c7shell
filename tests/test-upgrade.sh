@@ -8,11 +8,11 @@
 # under --dry-run: it never runs git or pacman there either.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 upgrade=$here/../bin/c7shell-upgrade
 setup=$here/../bin/c7shell-setup
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+mktmp
 
 export C7SHELL_SHARE=$tmp/share
 export XDG_CONFIG_HOME=$tmp/conf
@@ -20,7 +20,6 @@ export C7SHELL_STATE=$tmp/state
 export C7SHELL_ROOT=$tmp/root
 export C7SHELL_SDDM_THEMES=$tmp/root/usr/share/sddm/themes
 
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 ship() { mkdir -p -- "$(dirname -- "$C7SHELL_SHARE/$1")"; printf '%s\n' "$2" > "$C7SHELL_SHARE/$1"; }
 local_is() { [[ $(cat "$XDG_CONFIG_HOME/$1") == "$2" ]] || fail "$1 should be '$2', is '$(cat "$XDG_CONFIG_HOME/$1")'"; }
 

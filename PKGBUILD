@@ -84,6 +84,9 @@ optdepends=(
   'breeze-icons: icon theme Qt/KDE apps expect'
   'hyprlauncher: fallback launcher (the shell provides its own)'
   'ddcutil: DDC/CI backlight control for external monitors'
+  # Settings -> displays -> eye saver. Without it the toggle says so and does
+  # nothing; the gamma of every output is this one process's to hold.
+  'hyprsunset: the eye saver (blue light filter) in settings -> displays'
   'brightnessctl: backlight control for internal panels'
   'upower: battery readout in the bar'
   # Also the lock screen's now-playing line: the bar reads MPRIS over D-Bus
@@ -218,6 +221,12 @@ package() {
   # tuned.service. Same trust boundary and the same place as c7up-root -- a
   # fixed verb, never a command line, and nowhere near anyone's PATH.
   install -Dm755 bin/c7power-root "$pkgdir/usr/lib/c7shell/c7power-root"
+  # Sourced by c7shell-bootstrap, c7shell-upgrade and c7shell-doctor: the sddm
+  # theme parse and the drop-in body they all have to agree about. Not on PATH
+  # and not executable -- it is a library, so it sits with the other non-PATH
+  # helpers and the three scripts find it there once installed.
+  install -Dm644 share/c7shell-sddm.sh "$pkgdir/usr/lib/c7shell/c7shell-sddm.sh"
+
   # auth_admin_keep, so one authorisation covers the repo half and the AUR half
   # of the same run. Without this pkexec falls back to its generic action,
   # whose dialog names a binary rather than the task.

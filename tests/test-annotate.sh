@@ -10,12 +10,12 @@
 # needs a compositor. What they contribute is checked statically at the bottom.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-src=$here/../quickshell/c7shell
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
+mktmp
 
-fail() { printf 'FAIL: %b\n' "$1" >&2; exit 1; }
+# No need_qml6 here: the renderer half is a plain program and runs without it,
+# so this script skips the scene checks rather than the whole file.
 
 renderer=$src/scripts/c7shell-render.py
 [[ -x $renderer ]] || fail "scripts/c7shell-render.py is missing or not executable.

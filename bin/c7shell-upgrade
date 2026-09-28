@@ -52,6 +52,18 @@ force=0
 # a "restart it yourself" with no command in it, which is precisely the pair of
 # things rev 2 had just fixed.
 upgrade_revision=3
+# The sddm theme parse and the drop-in body, shared with
+# c7shell-bootstrap and c7shell-doctor: share/c7shell-sddm.sh. The repo layout
+# answers first, so a checkout and the test suite run the copy beside them;
+# an installed script falls through to /usr/lib/c7shell. A missing lib fails
+# the source and `set -e` ends the run, which is right -- c7shell-upgrade
+# cannot do its greeter step without it.
+# Pure parameter expansion, no dirname: c7shell-doctor runs its own checks
+# with PATH pointed at a fake tree, where no external command exists yet.
+_c7lib=${C7SHELL_LIB:-${0%/*}/../share}
+[[ -r $_c7lib/c7shell-sddm.sh ]] || _c7lib=/usr/lib/c7shell
+# shellcheck source=../share/c7shell-sddm.sh
+. "$_c7lib/c7shell-sddm.sh"
 
 etc_root=${C7SHELL_ROOT:-}
 sddm_dropin=$etc_root/etc/sddm.conf.d/10-c7shell.conf
@@ -518,37 +530,6 @@ fi
 
 greeter_note=''
 
-sddm_theme_current() {
-  # Last Current= wins: sddm.conf first, then the drop-ins in name order.
-  local f line value=''
-  for f in "$etc_root"/etc/sddm.conf "$etc_root"/etc/sddm.conf.d/*.conf; do
-    [[ -f $f ]] || continue
-    while IFS= read -r line; do
-      [[ $line =~ ^[[:space:]]*Current[[:space:]]*=[[:space:]]*(.*)$ ]] || continue
-      value=${BASH_REMATCH[1]}
-      value=${value%"${value##*[![:space:]]}"}
-    done < "$f"
-  done
-  printf '%s' "$value"
-}
-
-# Same body c7shell-bootstrap writes; keep the two in step.
-sddm_dropin_body() {
-  cat <<'CONF'
-# Written by c7shell-upgrade. Delete this file (or add a drop-in that sorts
-# after it) to go back to another greeter theme.
-[Theme]
-Current=c7shell
-
-[General]
-# The greeter's hostname line reads the kernel version out of /proc/version and
-# the battery out of /sys, both through QML's XMLHttpRequest -- which refuses
-# file:// reads unless this is set. Without it the greeter still comes up; the
-# line just loses everything but the session name.
-GreeterEnvironment=QML_XHR_ALLOW_FILE_READ=1
-CONF
-}
-
 as_root() {
   if ((dry)); then printf '  would run (root): %s\n' "$*"; return 0; fi
   if command -v sudo >/dev/null; then sudo "$@"
@@ -561,7 +542,7 @@ as_root() {
 
 if ((do_greeter)); then
   step 'greeter theme'
-  current=$(sddm_theme_current)
+  current=$(sddm_theme_current "$etc_root")
   # By path, not by `command -v`: the whole step is prefixed by C7SHELL_ROOT so
   # it can be exercised against a fake tree, and /usr/share/sddm/themes proves
   # nothing -- this package creates it whether sddm is installed or not.

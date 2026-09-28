@@ -10,11 +10,10 @@
 # installed, which meant nothing locked at all.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-root=$here/..
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
+root=$repo
 pkgbuild=$root/PKGBUILD
-
-fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 [[ -f $pkgbuild ]] || fail 'PKGBUILD is missing'
 
@@ -46,5 +45,27 @@ for prog in "$root"/bin/*; do
   [[ -f $prog ]] || continue
   [[ -x $prog ]] || fail "bin/${prog##*/} is not executable"
 done
+
+# --------------------------------------------------------------------------
+# A library a bin/ script sources is not a program, so the loop above does not
+# see it -- and an uninstalled one is worse than a missing program: the source
+# fails, `set -e` ends the run, and the user gets a line number instead of a
+# reason. share/c7shell-sddm.sh is the first of these; the check is general so
+# the second one cannot arrive unnoticed.
+# --------------------------------------------------------------------------
+while read -r lib; do
+  grep -qE "install -Dm[0-9]+ share/$lib " "$pkgbuild" \
+    || fail "bin/ sources share/$lib, which package() never installs.
+An installed script would die on the source with no explanation of what is gone."
+done < <(grep -hoE 'c7shell-[A-Za-z0-9._-]+\.sh' "$root"/bin/* | sort -u)
+
+# And it has to land where the scripts look for it. The loader in each of them
+# falls back to one hardcoded directory, so package() putting the file anywhere
+# else is the same failure with an install line in front of it.
+while read -r dir; do
+  grep -qE "install -Dm[0-9]+ share/[A-Za-z0-9._-]+ \"\\\$pkgdir$dir/" "$pkgbuild" \
+    || fail "the bin/ scripts fall back to $dir for their shared library, and
+package() installs nothing there."
+done < <(grep -hoE '_c7lib=/usr/lib/[A-Za-z0-9._-]+' "$root"/bin/* | sed 's/.*=//' | sort -u)
 
 printf 'PASS: packaging (%s programs in bin/)\n' "$(find "$root/bin" -maxdepth 1 -type f | wc -l)"

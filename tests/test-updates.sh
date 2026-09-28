@@ -8,17 +8,11 @@
 # properties -- is real. No compositor, no package manager, no root.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-src=$here/../quickshell/c7shell
-tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
+mktmp
 
-fail() { printf 'FAIL: %b\n' "$1" >&2; exit 1; }
-
-command -v qml6 >/dev/null || {
-  echo 'SKIP: qml6 not installed (package: qt6-declarative)'
-  exit 0
-}
+need_qml6
 
 mkdir -p "$tmp/qs/Common" "$tmp/qs/Services" "$tmp/qs/Theme" \
          "$tmp/Quickshell" "$tmp/Quickshell/Io"
@@ -37,8 +31,6 @@ printf 'module qs.Services\nsingleton UpdatesService 1.0 UpdatesService.qml\nsin
 
 # The Theme stand-in, from tests/fixtures/theme-stub.sh -- one copy, with its
 # colours read from the same palette.json the real Theme reads.
-# shellcheck source=fixtures/theme-stub.sh
-. "$here/fixtures/theme-stub.sh"
 write_theme_stub "$tmp/qs" "$src"
 
 # The Quickshell types UpdatesService names. Process is the only one with any
