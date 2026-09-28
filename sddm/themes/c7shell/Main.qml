@@ -28,6 +28,8 @@ Item {
     const v = parseInt(config.stringValue("maxAttempts"), 10)
     return isNaN(v) || v < 1 ? 3 : v
   }
+  // Draw the card, panels and bars on every screen rather than the primary one.
+  readonly property bool cfgAllScreens: config.stringValue("loginOnAllScreens") === "true"
   readonly property int cfgCooldown: {
     const v = parseInt(config.stringValue("cooldownSeconds"), 10)
     return isNaN(v) || v < 0 ? 30 : v
@@ -59,7 +61,10 @@ Item {
     userList: container.cfgUserList
     maxAttempts: container.cfgAttempts
     cooldownSeconds: container.cfgCooldown
-    primary: primaryScreen
+    // Each screen's instance keeps its own field, selected user and cooldown;
+    // sddm gives the keyboard to one window, so only the focused card fills in.
+    primary: primaryScreen || container.cfgAllScreens
+    scaleAuthority: primaryScreen
 
     // Both models remember what was used last, which is the whole reason the
     // greeter opens on the right account with the right session preselected.
