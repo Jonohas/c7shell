@@ -85,7 +85,7 @@ PanelWindow {
 
   // Esc means the same thing at two depths: leave the tool, then leave the
   // editor. Anything drawn is asked about once on the way out.
-  function escape() {
+  function stepBack() {
     if (AnnotateService.tool !== "select") {
       AnnotateService.tool = "select"
       return
@@ -110,7 +110,7 @@ PanelWindow {
 
       switch (event.key) {
       case Qt.Key_Escape:
-        win.escape(); event.accepted = true; return
+        win.stepBack(); event.accepted = true; return
       case Qt.Key_Return:
       case Qt.Key_Enter:
         AnnotateService.apply(); event.accepted = true; return
