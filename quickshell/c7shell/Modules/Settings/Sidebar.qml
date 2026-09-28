@@ -39,7 +39,6 @@ Item {
       label: "shell",
       items: [
         { page: "topbar", label: "topbar & widgets" },
-        { page: "screenshots", label: "screenshots" },
         { page: "keybinds", label: "keybinds" }
       ]
     }

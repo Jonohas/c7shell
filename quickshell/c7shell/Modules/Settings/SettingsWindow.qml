@@ -93,7 +93,6 @@ Scope {
         case "audio": return audioPage
         case "displays": return displaysPage
         case "topbar": return topbarPage
-        case "screenshots": return screenshotsPage
         case "system": return systemPage
         case "power": return powerPage
         }
@@ -107,7 +106,6 @@ Scope {
     Component { id: audioPage; AudioPage {} }
     Component { id: displaysPage; DisplaysPage {} }
     Component { id: topbarPage; TopbarPage {} }
-    Component { id: screenshotsPage; ScreenshotsPage {} }
     Component { id: systemPage; SystemPage {} }
     Component { id: powerPage; PowerPage {} }
 
