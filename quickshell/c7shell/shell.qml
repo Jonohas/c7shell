@@ -6,6 +6,7 @@ import Quickshell
 import qs.Modules.Auth
 import qs.Modules.Bar
 import qs.Modules.Launcher
+import qs.Modules.Annotate
 import qs.Modules.Capture
 import qs.Modules.Popovers
 import qs.Modules.Osd
@@ -26,6 +27,11 @@ Scope {
   // The "3s" chip's seconds. Its own surface because the overlay is unmapped
   // for the whole countdown -- see CountdownPill.qml.
   CountdownPill {}
+  // Where a capture lands before the clipboard, unless the preference says
+  // otherwise. Its own surface rather than a second mode of the overlay: the
+  // overlay aims at the screen and this holds a picture, and one window that
+  // did both is what #142 was.
+  AnnotateWindow {}
 
   // One instance each, not per-screen: a popover anchors itself to whichever
   // bar item opened it.

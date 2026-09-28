@@ -64,12 +64,27 @@ Singleton {
     return `${root.dir}/shot-${Qt.formatDateTime(new Date(), "yyyyMMdd-HHmmss")}.png`
   }
 
-  // The tail both routes share -- grim writing the file itself, and the crop
-  // cut out of a frozen frame. The PNG is written and it is good whatever the
-  // clipboard does next, so the toast is raised first: coupling the two behind
-  // `&&` meant a wl-copy failure swallowed the toast for a perfectly fine
-  // screenshot.
+  // Where a finished capture goes. Two destinations and one decision: the
+  // annotate editor, or straight out to the clipboard and the toast.
+  //
+  // The editor is the default because a screenshot is usually taken to show
+  // somebody something, and the arrow, the box and the mosaic that say WHAT to
+  // look at are the reason this exists. `↵` in there is the same clipboard
+  // this would otherwise have gone to, so the shortest path is one keypress
+  // longer, not a different one.
   function finish(file, copy) {
+    if (ShellStore.screenshotAction === "annotate") {
+      AnnotateService.begin(file, copy)
+      return
+    }
+    root.deliver(file, copy)
+  }
+
+  // The tail every route shares -- grim writing the file, and the editor's
+  // render. The PNG is written and it is good whatever the clipboard does
+  // next, so the toast is raised first: coupling the two behind `&&` meant a
+  // wl-copy failure swallowed the toast for a perfectly fine screenshot.
+  function deliver(file, copy) {
     root.captured(file)
     // grim writes either a file or stdout, never both, so the copy re-reads
     // the file just written. sh is here only for the redirect, and the one
@@ -100,95 +115,6 @@ Singleton {
     shot.copy = copy
     shot.command = grim
     shot.running = true
-  }
-
-  // -- the delayed capture's frozen frame ---------------------------------
-  // Why the shutter comes first. The delay is for capturing something that is
-  // only on screen while the pointer is on it: a hover menu, a tooltip, a
-  // preview. A rectangle drawn before that shutter cannot be around that
-  // thing, because moving the pointer over to draw it is precisely what makes
-  // it disappear -- and you do not know where to draw until you have seen it.
-  //
-  // So at zero the whole output is captured, the overlay reopens on that still
-  // frame, and the rectangle is drawn over a hover menu that is now a picture
-  // and holds still. grim reads the compositor and cannot re-crop a file, so
-  // the cut is scripts/c7shell-crop.py.
-  readonly property string tmpDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
-  readonly property string cropper:
-    Qt.resolvedUrl("../scripts/c7shell-crop.py").toString().replace(/^file:\/\//, "")
-
-  // Non-empty exactly while the overlay is selecting on a still instead of the
-  // live screen. It carries the file, because the overlay has to draw it.
-  property string frozen: ""
-  readonly property url frozenUrl: root.frozen === "" ? "" : `file://${root.frozen}`
-  // The copy chip, read at arm time and carried across the reopen: the toolbar
-  // is a different session of itself by the time the crop happens.
-  property bool frozenCopy: true
-
-  function freeze(output, copy) {
-    if (freezeProc.running) {
-      root.fail("screenshot skipped", "the previous frame is still being written")
-      return
-    }
-    // A new name every time. Qt's image cache is keyed on the URL, so one
-    // reused path drew the PREVIOUS capture's frame under the new selection --
-    // a screenshot of the wrong moment, with nothing on screen to say so.
-    const file = `${root.tmpDir}/c7shell-freeze-${Date.now()}.png`
-    freezeProc.pending = file
-    root.frozenCopy = copy
-    freezeProc.exec(output ? ["grim", "-o", output, file] : ["grim", file])
-  }
-
-  // Claims the frame: the overlay closes immediately after calling this, and
-  // closing on an unclaimed still throws it away.
-  function cropFrozen(x, y, w, h) {
-    const src = root.frozen
-    if (src === "") return
-    cropProc.source = src
-    cropProc.pending = root.shotFile()
-    cropProc.copy = root.frozenCopy
-    root.frozen = ""
-    cropProc.exec(["python3", root.cropper, src, cropProc.pending,
-                   String(Math.round(x)), String(Math.round(y)),
-                   String(Math.round(w)), String(Math.round(h))])
-  }
-
-  // A full screenshot of the desktop in the runtime dir is not something to
-  // leave behind because somebody pressed esc.
-  function discardFrozen() {
-    if (root.frozen === "") return
-    Quickshell.execDetached(["rm", "-f", root.frozen])
-    root.frozen = ""
-  }
-
-  Process {
-    id: freezeProc
-    property string pending: ""
-    stderr: StdioCollector { id: freezeErr }
-    onExited: (code, status) => {
-      if (code !== 0 || status !== 0) {
-        root.fail("screenshot failed", freezeErr.text.trim() || `grim exited ${code}`)
-        return
-      }
-      // Setting this is what brings the overlay back up on the still.
-      root.frozen = freezeProc.pending
-    }
-  }
-
-  Process {
-    id: cropProc
-    property string source: ""
-    property string pending: ""
-    property bool copy: false
-    stderr: StdioCollector { id: cropErr }
-    onExited: (code, status) => {
-      Quickshell.execDetached(["rm", "-f", cropProc.source])
-      if (code !== 0 || status !== 0) {
-        root.fail("screenshot failed", cropErr.text.trim() || `crop exited ${code}`)
-        return
-      }
-      root.finish(cropProc.pending, cropProc.copy)
-    }
   }
 
   // Queued, because both actions share one Process: exec() on a live one is
