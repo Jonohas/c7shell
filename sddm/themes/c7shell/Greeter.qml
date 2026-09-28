@@ -32,8 +32,12 @@ FocusScope {
   property int cooldownSeconds: 30
   // Everything but the backdrop is drawn on the primary screen only: a second
   // monitor gets the same ground, so the pair looks deliberate rather than
-  // duplicated.
+  // duplicated. theme.conf's loginOnAllScreens=true sets this on every screen
+  // instead, which puts a card on each of them.
   property bool primary: true
+  // Which instance owns the shared Theme.s. Exactly one screen may, whatever
+  // `primary` says -- see applyScale().
+  property bool scaleAuthority: true
 
   // The field's contents. Only the preview harness writes this -- sddm's
   // greeter has a keyboard.
@@ -526,9 +530,11 @@ FocusScope {
   // Theme.s turns the mockup's 1120x630 units into screen pixels. Only the
   // primary screen sets it -- sddm instantiates the theme once per screen and
   // the singleton is shared, so a second monitor must not resize the card --
-  // and it is capped: past ~1.6 the card stops reading as a login card.
+  // and it is capped: past ~1.6 the card stops reading as a login card. This
+  // stays on the primary screen even with loginOnAllScreens=true: the cards
+  // then match each other rather than each sizing to its own panel.
   function applyScale() {
-    if (!root.primary || root.width <= 0 || root.height <= 0) return
+    if (!root.scaleAuthority || root.width <= 0 || root.height <= 0) return
     const fit = Math.min(root.width / 1120, root.height / 630)
     Theme.s = Math.max(1, Math.min(1.6, fit * 0.7))
   }

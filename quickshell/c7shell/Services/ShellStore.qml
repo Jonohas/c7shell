@@ -66,6 +66,15 @@ Singleton {
   // the mosaic that says what to look at is the reason it exists.
   readonly property string screenshotAction: root.values.screenshotAction
 
+  // -- screenshot toast handlers --
+  // The apps the capture toast's "open" and "folder" buttons launch. Empty
+  // means auto-detect a common one, and xdg-open only as the last resort --
+  // xdg-open follows the system default, which on a bare Wayland session is
+  // just as often the browser as an image viewer. A binary name (or full argv
+  // as a string, e.g. "flatpak run org.foo") set here wins over detection.
+  readonly property string fileManager: root.values.fileManager
+  readonly property string imageViewer: root.values.imageViewer
+
   FileView {
     id: file
 
@@ -101,6 +110,8 @@ Singleton {
       property int batteryWarnBelow: 15
 
       property string screenshotAction: "annotate"
+      property string fileManager: ""
+      property string imageViewer: ""
     }
   }
 }

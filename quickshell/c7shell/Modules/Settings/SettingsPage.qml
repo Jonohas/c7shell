@@ -16,6 +16,10 @@ Item {
   // subtitle, so the title still owns the top line on its own.
   property alias headerTrailing: headerSlot.data
 
+  // Lets a page freeze the scroll -- the displays page turns it off while a
+  // screen tile is being dragged, so the drag does not fight the flick.
+  property alias interactive: scroll.interactive
+
   Row {
     id: headerSlot
     anchors { right: parent.right; top: parent.top; topMargin: 4 }
