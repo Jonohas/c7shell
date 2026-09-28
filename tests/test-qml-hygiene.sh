@@ -8,10 +8,8 @@
 # desktop with no bar on it.
 set -euo pipefail
 
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-src=$here/../quickshell/c7shell
-
-fail() { printf 'FAIL: %b\n' "$1" >&2; exit 1; }
+# shellcheck source=fixtures/harness.sh
+. "$(dirname -- "$0")/fixtures/harness.sh"
 
 # --------------------------------------------------------------------------
 # font.pixelSize and font.weight are ints. A fractional literal is not rounded
@@ -345,5 +343,76 @@ PYEOF
   nothing else would ever notice:\n$drift"
   fi
 fi
+
+# --------------------------------------------------------------------------
+# A component named from a directory the file does not import resolves only by
+# accident of directory adjacency -- which is how a delegate lifted out of a
+# page into a subdirectory keeps working in the editor and fails at load.
+# quickshell builds a directory's qmldir from the STATIC imports it can see, so
+# the failure is "unknown type" on a page nobody opened yet, and that aborts
+# the whole configuration.
+#
+# Only names this repository actually ships are checked. A type with no
+# <Name>.qml anywhere under the shell is QtQuick's or Quickshell's, and neither
+# needs a qs.* import to resolve.
+# --------------------------------------------------------------------------
+if command -v python3 >/dev/null; then
+  unreachable=$(python3 - "$src" <<'PYEOF' || true
+import os, re, sys
+
+src = sys.argv[1]
+
+# Every component this repository ships, by type name -> the directories it
+# lives in. A name in two directories is resolvable from either.
+owners = {}
+for dirpath, _, files in os.walk(src):
+    for f in files:
+        if f.endswith(".qml") and f[0].isupper():
+            owners.setdefault(f[:-4], set()).add(dirpath)
+
+USE = re.compile(r"^\s*(?:component\s+[A-Za-z0-9_]+:\s*)?([A-Z][A-Za-z0-9_]*)\s*\{")
+INLINE = re.compile(r"^\s*component\s+([A-Za-z0-9_]+)\s*:")
+IMPORT = re.compile(r"^import\s+qs\.([A-Za-z0-9_.]+)\s*$", re.M)
+
+for dirpath, _, files in os.walk(src):
+    for f in sorted(files):
+        if not f.endswith(".qml"):
+            continue
+        path = os.path.join(dirpath, f)
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        # Comments out first: a type named in prose is not a type in use.
+        body = re.sub(r"//.*", "", text)
+
+        # Its own directory is an implicit import, and so is everything it asks
+        # for by name.
+        reachable = {dirpath}
+        for mod in IMPORT.findall(text):
+            reachable.add(os.path.join(src, *mod.split(".")))
+        # Its own inline components, and itself.
+        local = set(INLINE.findall(body)) | {f[:-4]}
+
+        for line in body.split("\n"):
+            m = USE.match(line)
+            if not m:
+                continue
+            name = m.group(1)
+            if name in local or name not in owners:
+                continue
+            if owners[name] & reachable:
+                continue
+            where = ", ".join(sorted(
+                "qs." + os.path.relpath(d, src).replace("/", ".")
+                for d in owners[name]))
+            print(f"  {os.path.relpath(path, src)} uses {name}, which lives in {where}")
+PYEOF
+)
+  if [[ -n $unreachable ]]; then
+    fail "these files name a component from a directory they do not import, so it
+  resolves by directory adjacency rather than by an import quickshell can see:
+$unreachable"
+  fi
+fi
+
 
 echo 'test-qml-hygiene.sh: all checks passed'
