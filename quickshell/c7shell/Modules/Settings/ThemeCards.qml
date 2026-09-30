@@ -14,11 +14,6 @@ Row {
   // variant rather than to the running theme, so they are palette.json's
   // `previews` and not its `variants` — a preview describes a ground, it is not
   // that ground.
-  //
-  // `ready` is whether Theme can actually render the variant. A card listed
-  // before its palette exists is shown and disabled rather than offered and
-  // inert: a control that changes nothing is worse than one that says it
-  // cannot yet.
   readonly property var variants: PaletteStore.palette.previews ?? []
 
   Repeater {
@@ -33,11 +28,9 @@ Row {
 
       width: (root.width - root.spacing * 2) / 3
       implicitHeight: 82
-      opacity: card.modelData.ready ? 1 : 0.45
 
       MouseArea {
         anchors.fill: parent
-        enabled: card.modelData.ready
         onClicked: AppearanceStore.values.theme = card.modelData.key
       }
 

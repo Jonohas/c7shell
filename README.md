@@ -213,10 +213,7 @@ python3 ~/.config/quickshell/c7shell/scripts/c7shell-filechooser.py \
 ```
 
 The shell's own palette does not follow this setting: picking `light` here makes
-apps light, not the bar. The shell's own light palette is the *variant*: the
-"light" card beside dark and oled on the same page. It re-inks kdeglobals, the
-lock screen and imv as well, and leaves this preference alone -- pick both for
-a light desktop end to end.
+apps light, not the bar. The light *variant* is the "light" card on the same page.
 
 To export by hand at any time — kdeglobals, the lock screen palette and the
 preference, all three:

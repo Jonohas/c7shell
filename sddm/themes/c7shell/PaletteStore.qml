@@ -57,8 +57,7 @@ QtObject {
           "bg": "#0d0d10",
           "ink": "#ffffff",
           "bar": 0.12,
-          "block": 0.07,
-          "ready": true
+          "block": 0.07
         },
         {
           "key": "oled",
@@ -66,8 +65,7 @@ QtObject {
           "bg": "#050506",
           "ink": "#ffffff",
           "bar": 0.09,
-          "block": 0.05,
-          "ready": true
+          "block": 0.05
         },
         {
           "key": "light",
@@ -75,8 +73,7 @@ QtObject {
           "bg": "#e9e6e2",
           "ink": "#000000",
           "bar": 0.12,
-          "block": 0.07,
-          "ready": true
+          "block": 0.07
         }
       ]
     })

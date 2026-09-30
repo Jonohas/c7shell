@@ -27,13 +27,9 @@ Singleton {
   readonly property real glassAlphaBar: 0.78
   readonly property real glassAlphaPanel: 0.80
 
-  // A variant may override any ink; what it leaves out is palette.json's
-  // top-level value. `light` overrides them all.
+  // variant ink, else palette.json's top-level one
   function tone(key) { return root.variant[key] ?? PaletteStore.palette[key] }
 
-  // What every raised surface, hairline and hover pill is a translucent layer
-  // of: white on the dark grounds, black on light, so a surface still reads as
-  // one step off the ground either way.
   readonly property color overlay: root.tone("overlay")
   readonly property color surface04: root.alpha(root.overlay, 0.04)
   readonly property color surface05: root.alpha(root.overlay, 0.05)
@@ -52,14 +48,14 @@ Singleton {
   readonly property color accentBorder: root.alpha(root.accent, 0.30)
   readonly property color accentGlow: root.alpha(root.accent, 0.50)
 
-  readonly property color surface10: root.alpha(root.overlay, 0.10)   // slider tracks (1g)
+  readonly property color surface10: root.alpha(root.overlay, 0.10)     // slider tracks (1g)
   readonly property color accentFillSoft: root.alpha(root.accent, 0.11)  // active device row (1g)
   readonly property color accentBorderSoft: root.alpha(root.accent, 0.22) // its border (1g)
   readonly property color accentSoftFill: root.alpha(root.accentSoft, 0.70) // input slider fill (1g)
   readonly property color sliderGlowColor: root.alpha(root.accent, 0.40) // §Geometry: glow 0 0 12px
 
   // handoff2 quick-settings interaction tokens
-  readonly property color hoverPill: root.alpha(root.overlay, 0.09)   // icon hover pill
+  readonly property color hoverPill: root.alpha(root.overlay, 0.09)       // icon hover pill
   readonly property color accentFillActive: root.alpha(root.accent, 0.16) // open-popover pill
   readonly property color powerHover: root.alpha(root.accent, 0.28)       // power button hover
   readonly property int radiusSlot: 8                                     // 24x22 hit-target pill

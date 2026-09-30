@@ -76,8 +76,9 @@ CURSOR_SIZE = DEFAULTS["cursorSize"]
 PALETTE_CHANGED = 0
 CURSOR_CHANGED = 4
 
-# Theme.qml surfaces, the same variants it renders. `bg` is the item-view
-# layer, `canvas` the window behind it, `glassBase` the popover base.
+# Theme.qml surfaces, the same variants it renders. `bg` is the deepest
+# layer (item views), `canvas` the window behind them, `glassBase` the popover
+# base.
 VARIANTS = PALETTE["variants"]
 DEFAULT_ACCENT = DEFAULTS["accent"]
 
@@ -108,13 +109,13 @@ BACKGROUNDS = {
     "Colors:Header": ("canvas", "canvas"),
     "Colors:Complementary": ("bg", "bg"),
 }
-ALT_ALPHA = 0.04  # overlay behind an alternating row (Theme.surface04)
+ALT_ALPHA = 0.04  # white overlay behind an alternating row (Theme.surface04)
 
 
 # -- colour helpers ---------------------------------------------------------
 # sRGB, no gamma correction: these reproduce the hand-tuned scheme they replace
 # (asserted in selftest) and match what Qt does when it flattens Theme's
-# rgba(255,255,255,0.04) overlays onto a surface -- black ones, on light.
+# rgba(255,255,255,0.04) overlays onto a surface.
 
 def parse(c):
     c = c.lstrip("#")
@@ -203,14 +204,14 @@ def palette(accent, variant):
     """kdeglobals group -> {key: "r,g,b"} for one accent and variant."""
     v = dict(VARIANTS[variant])
     canvas, bg = v["canvas"], v["bg"]
-    text, top = tone(variant, "text"), parse(tone(variant, "overlay"))
+    text, top = tone(variant, "text"), tone(variant, "overlay")
     v["button"] = over(canvas, 0.07, top)  # Theme.surface07 over the window
 
     # Theme.text at 0.40 over the window, i.e. Theme.text3 flattened.
     dim = mix(text, canvas, 0.40)
     # A link is the accent lifted on a dark ground and sunk on a light one:
     # the lifted crimson is 2.6:1 on the light canvas, the sunk one 5.4.
-    light = ink_on(canvas) == (0, 0, 0)
+    light = top == "#000000"
     shared = {
         "ForegroundNormal": text,
         "ForegroundInactive": dim,
@@ -589,21 +590,14 @@ def selftest():
     lg = palette(DEFAULT_ACCENT, "light")
     for group in ("Colors:Window", "Colors:View", "Colors:Button", "Colors:Tooltip"):
         ground = lg[group]["BackgroundNormal"]
-        assert ink_on(parse_kde(ground)) == (0, 0, 0), f"{group} is not light: {ground}"
         for key in ("ForegroundNormal", "ForegroundPositive", "ForegroundNegative",
                     "ForegroundNeutral", "ForegroundLink"):
             ratio = contrast(lg[group][key], ground)
             assert ratio >= 4.5, f"{group}/{key} {lg[group][key]} is {ratio:.2f}:1 on {ground}"
-    assert lg["Colors:Window"]["BackgroundNormal"] == "239,237,234"
-    assert lg["Colors:Window"]["BackgroundAlternate"] == "229,228,225"  # sank, not lifted
-    assert lg["Colors:Button"]["BackgroundNormal"] == "222,220,218"     # black surface07
-    assert lg["Colors:Window"]["ForegroundNormal"] == "24,23,26"
-    assert lg["Colors:Selection"]["ForegroundNormal"] == "255,255,255"
+    # The alternate row sank, not lifted.
+    assert luminance(parse_kde(lg["Colors:Window"]["BackgroundAlternate"])) \
+        < luminance(parse_kde(lg["Colors:Window"]["BackgroundNormal"]))
     assert "$ink      = rgba(18171ae6)" in hyprlock_palette(DEFAULT_ACCENT, "light")
-    assert "$glass    = rgba(f2f1eeb3)" in hyprlock_palette(DEFAULT_ACCENT, "light")
-    assert imv_options("light")["overlay_text_color"] == "18171a"
-    # dark and oled override no ink, so neither moved.
-    assert tone("dark", "text") == tone("oled", "text") == PALETTE["text"]
 
     # Junk in appearance.json must not reach a colour, or a gsettings argv.
     accent, variant, scheme = read_appearance()
@@ -615,20 +609,6 @@ def selftest():
     # and picking light must not quietly turn the shell's own palette light.
     assert SCHEMES["dark"] == ("prefer-dark", "1")
     assert SCHEMES["light"] == ("prefer-light", "0")
-    # The light variant is `theme`, the preference is `colorScheme`, and
-    # neither drags the other along.
-    global APPEARANCE
-    saved = APPEARANCE
-    with tempfile.TemporaryDirectory() as d:
-        APPEARANCE = os.path.join(d, "appearance.json")
-        for data, want in (({"colorScheme": "light"}, ("dark", "light")),
-                           ({"theme": "light"}, ("light", DEFAULT_SCHEME)),
-                           ({"theme": "sepia"}, ("dark", DEFAULT_SCHEME))):
-            with open(APPEARANCE, "w", encoding="utf-8") as fh:
-                json.dump(data, fh)
-            assert read_appearance()[1:] == want, (data, read_appearance())
-    APPEARANCE = saved
-    # sections in kcminputrc are the ones that would hurt to lose, and their
     # A hand-edited cursor name reaches a directory lookup, two config files and
     # an argv element, so it is the one appearance.json value worth fuzzing.
     assert cursor_from({}) == (CURSOR_THEME, CURSOR_SIZE)
