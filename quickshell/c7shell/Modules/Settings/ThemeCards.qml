@@ -15,10 +15,10 @@ Row {
   // `previews` and not its `variants` — a preview describes a ground, it is not
   // that ground.
   //
-  // `ready` is whether Theme can actually render the variant. Light needs a
-  // whole second palette — text, surfaces and hairlines are all light-on-dark —
-  // so its card is shown and disabled rather than offered and inert: a control
-  // that changes nothing is worse than one that says it cannot yet.
+  // `ready` is whether Theme can actually render the variant. A card listed
+  // before its palette exists is shown and disabled rather than offered and
+  // inert: a control that changes nothing is worse than one that says it
+  // cannot yet.
   readonly property var variants: PaletteStore.palette.previews ?? []
 
   Repeater {

@@ -27,11 +27,19 @@ Singleton {
   readonly property real glassAlphaBar: 0.78
   readonly property real glassAlphaPanel: 0.80
 
-  readonly property color surface04: Qt.rgba(1, 1, 1, 0.04)
-  readonly property color surface05: Qt.rgba(1, 1, 1, 0.05)
-  readonly property color surface07: Qt.rgba(1, 1, 1, 0.07)
-  readonly property color hairline: Qt.rgba(1, 1, 1, 0.08)
-  readonly property color hairlineStrong: Qt.rgba(1, 1, 1, 0.10)
+  // A variant may override any ink; what it leaves out is palette.json's
+  // top-level value. `light` overrides them all.
+  function tone(key) { return root.variant[key] ?? PaletteStore.palette[key] }
+
+  // What every raised surface, hairline and hover pill is a translucent layer
+  // of: white on the dark grounds, black on light, so a surface still reads as
+  // one step off the ground either way.
+  readonly property color overlay: root.tone("overlay")
+  readonly property color surface04: root.alpha(root.overlay, 0.04)
+  readonly property color surface05: root.alpha(root.overlay, 0.05)
+  readonly property color surface07: root.alpha(root.overlay, 0.07)
+  readonly property color hairline: root.alpha(root.overlay, 0.08)
+  readonly property color hairlineStrong: root.alpha(root.overlay, 0.10)
 
   // The store clamps anything the JSON offers back to palette.json's default.
   readonly property color accent: AppearanceStore.accent
@@ -44,19 +52,19 @@ Singleton {
   readonly property color accentBorder: root.alpha(root.accent, 0.30)
   readonly property color accentGlow: root.alpha(root.accent, 0.50)
 
-  readonly property color surface10: Qt.rgba(1, 1, 1, 0.10)             // slider tracks (1g)
+  readonly property color surface10: root.alpha(root.overlay, 0.10)   // slider tracks (1g)
   readonly property color accentFillSoft: root.alpha(root.accent, 0.11)  // active device row (1g)
   readonly property color accentBorderSoft: root.alpha(root.accent, 0.22) // its border (1g)
   readonly property color accentSoftFill: root.alpha(root.accentSoft, 0.70) // input slider fill (1g)
   readonly property color sliderGlowColor: root.alpha(root.accent, 0.40) // §Geometry: glow 0 0 12px
 
   // handoff2 quick-settings interaction tokens
-  readonly property color hoverPill: Qt.rgba(1, 1, 1, 0.09)               // icon hover pill
+  readonly property color hoverPill: root.alpha(root.overlay, 0.09)   // icon hover pill
   readonly property color accentFillActive: root.alpha(root.accent, 0.16) // open-popover pill
   readonly property color powerHover: root.alpha(root.accent, 0.28)       // power button hover
   readonly property int radiusSlot: 8                                     // 24x22 hit-target pill
 
-  readonly property color text: PaletteStore.palette.text
+  readonly property color text: root.tone("text")
   // The same ink at the four weights the spec gives it. Derived rather than
   // listed, so a change to `text` carries to all of them.
   readonly property color text2: root.alpha(root.text, 0.55)
@@ -65,11 +73,11 @@ Singleton {
   // Ink ON an accent or otherwise selected surface. Pure white, not `text`,
   // which reads grey on crimson -- which is why five files had it as a literal.
   readonly property color textOnAccent: PaletteStore.palette.textOnAccent
-  readonly property color success: PaletteStore.palette.success
+  readonly property color success: root.tone("success")
   // The "needs attention, but nothing is broken" amber: a pacnew waiting to be
   // reviewed, and tuned not running. Four views had this literal before the
   // power page needed a fifth.
-  readonly property color warning: PaletteStore.palette.warning
+  readonly property color warning: root.tone("warning")
 
   // A well recessed INTO a panel rather than a surface raised onto it: the
   // update run's log scroller is the only one so far.

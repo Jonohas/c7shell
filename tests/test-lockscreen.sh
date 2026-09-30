@@ -290,6 +290,21 @@ grep -q 'e53a44' "$palette" \
 grep -q '000000b3' "$palette" \
   || fail "the oled variant did not reach the panel colour:\n$(cat "$palette")"
 
+# light flips the ink as well as the ground: a light panel under the old
+# near-white clock is a lock screen with no clock on it. kdeglobals, written in
+# the same run, has to come up light too.
+light=$tmp/light
+export_to "$light" '{"theme": "light"}'
+palette=$light/.config/hypr/hyprlock-palette.conf
+grep -qE '^\$ink +=  *rgba\(18171ae6\)' "$palette" \
+  || fail "the light variant did not reach the lock screen ink:\n$(cat "$palette")"
+grep -qE '^\$glass +=  *rgba\(f2f1eeb3\)' "$palette" \
+  || fail "the light variant did not reach the panel colour:\n$(cat "$palette")"
+grep -qx 'BackgroundNormal=247,246,244' "$light/.config/kdeglobals" \
+  || fail "the light variant did not reach kdeglobals:\n$(cat "$light/.config/kdeglobals")"
+grep -qx 'ForegroundNormal=24,23,26' "$light/.config/kdeglobals" \
+  || fail "light kdeglobals kept the dark ground's ink:\n$(cat "$light/.config/kdeglobals")"
+
 # Every variable a widget is coloured with has to be one the exporter writes,
 # and every variable it writes has to have a fallback in this file.
 used=$(grep -oE '^[[:space:]]*[a-z_]*color[a-z_]*[[:space:]]*=[[:space:]]*\$[A-Za-z0-9]+' "$conf" \

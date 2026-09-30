@@ -20,10 +20,9 @@ Singleton {
   // Everything that leaves this file goes through these, never through the
   // adapter: the JSON is hand-editable, so its contents are untrusted input
   // and a stray value must not reach a Lua eval or wedge the compositor.
-  // "light" is deliberately absent: Theme has no light palette yet, so
-  // accepting it would persist a variant nothing can render. The card is
-  // shown disabled rather than silently doing nothing when picked.
-  readonly property string theme: ["dark", "oled"].includes(root.values.theme)
+  // The variants palette.json defines; a hand-typed name nothing can render
+  // falls back rather than leaving Theme without a ground.
+  readonly property string theme: ["dark", "oled", "light"].includes(root.values.theme)
     ? root.values.theme : PaletteStore.defaults.theme
   // What the rest of the desktop is told we prefer -- the portal's
   // org.freedesktop.appearance color-scheme, not a shell palette. The shell

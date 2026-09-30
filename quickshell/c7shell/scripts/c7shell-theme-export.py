@@ -76,15 +76,16 @@ CURSOR_SIZE = DEFAULTS["cursorSize"]
 PALETTE_CHANGED = 0
 CURSOR_CHANGED = 4
 
-# Theme.qml surfaces, the same two variants it renders. `bg` is the deepest
-# layer (item views), `canvas` the window behind them, `glassBase` the popover
-# base.
+# Theme.qml surfaces, the same variants it renders. `bg` is the item-view
+# layer, `canvas` the window behind it, `glassBase` the popover base.
 VARIANTS = PALETTE["variants"]
-TEXT = PALETTE["text"]            # Theme.text
-POSITIVE = PALETTE["success"]     # Theme.success
-NEGATIVE = PALETTE["negative"]
-NEUTRAL = PALETTE["neutral"]
 DEFAULT_ACCENT = DEFAULTS["accent"]
+
+
+def tone(variant, key):
+    """An ink for one variant -- its own, else the top-level one. Theme.tone."""
+    return VARIANTS[variant].get(key, PALETTE[key])
+
 
 # The preferred colour scheme, and what each consumer of it wants to be told.
 # "no-preference" is deliberately not offered: it is what this session already
@@ -107,13 +108,13 @@ BACKGROUNDS = {
     "Colors:Header": ("canvas", "canvas"),
     "Colors:Complementary": ("bg", "bg"),
 }
-ALT_ALPHA = 0.04  # white overlay behind an alternating row (Theme.surface04)
+ALT_ALPHA = 0.04  # overlay behind an alternating row (Theme.surface04)
 
 
 # -- colour helpers ---------------------------------------------------------
 # sRGB, no gamma correction: these reproduce the hand-tuned scheme they replace
 # (asserted in selftest) and match what Qt does when it flattens Theme's
-# rgba(255,255,255,0.04) overlays onto a surface.
+# rgba(255,255,255,0.04) overlays onto a surface -- black ones, on light.
 
 def parse(c):
     c = c.lstrip("#")
@@ -164,14 +165,18 @@ def lighten(c, dl=0.108, sat=0.90):
     return tuple((v + m) * 255 for v in rgb)
 
 
-def ink_on(c):
-    """White or black, whichever reads on `c`. WCAG relative luminance."""
+def luminance(c):
+    """WCAG relative luminance of "#rrggbb" or an rgb tuple."""
     def lin(v):
         v /= 255
         return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
-    r, g, b = parse(c)
-    lum = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-    return (0, 0, 0) if lum > 0.45 else (255, 255, 255)
+    r, g, b = parse(c) if isinstance(c, str) else c
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+
+def ink_on(c):
+    """White or black, whichever reads on `c`."""
+    return (0, 0, 0) if luminance(c) > 0.45 else (255, 255, 255)
 
 
 # The lock screen's variables, as alpha over an opaque colour -- hyprlock draws
@@ -198,19 +203,23 @@ def palette(accent, variant):
     """kdeglobals group -> {key: "r,g,b"} for one accent and variant."""
     v = dict(VARIANTS[variant])
     canvas, bg = v["canvas"], v["bg"]
-    v["button"] = over(canvas, 0.07)  # Theme.surface07 over the window
+    text, top = tone(variant, "text"), parse(tone(variant, "overlay"))
+    v["button"] = over(canvas, 0.07, top)  # Theme.surface07 over the window
 
     # Theme.text at 0.40 over the window, i.e. Theme.text3 flattened.
-    dim = mix(TEXT, canvas, 0.40)
+    dim = mix(text, canvas, 0.40)
+    # A link is the accent lifted on a dark ground and sunk on a light one:
+    # the lifted crimson is 2.6:1 on the light canvas, the sunk one 5.4.
+    light = ink_on(canvas) == (0, 0, 0)
     shared = {
-        "ForegroundNormal": TEXT,
+        "ForegroundNormal": text,
         "ForegroundInactive": dim,
         "ForegroundActive": accent,
-        "ForegroundLink": lighten(accent),
+        "ForegroundLink": mix(accent, "#000000", 0.78) if light else lighten(accent),
         "ForegroundVisited": mix(accent, "#000000", 0.72),
-        "ForegroundNegative": NEGATIVE,
-        "ForegroundNeutral": NEUTRAL,
-        "ForegroundPositive": POSITIVE,
+        "ForegroundNegative": tone(variant, "negative"),
+        "ForegroundNeutral": tone(variant, "neutral"),
+        "ForegroundPositive": tone(variant, "success"),
         "DecorationFocus": accent,
         "DecorationHover": mix(accent, canvas, 0.28),
     }
@@ -219,12 +228,12 @@ def palette(accent, variant):
     for group, (surface, alt_surface) in BACKGROUNDS.items():
         groups[group] = dict(shared,
                              BackgroundNormal=v[surface],
-                             BackgroundAlternate=over(v[alt_surface], ALT_ALPHA))
+                             BackgroundAlternate=over(v[alt_surface], ALT_ALPHA, top))
 
     # Inactive window titlebars and headers: same scheme, quieter text. Without
     # this the stale Breeze default (blue) shows through on an unfocused header.
     groups["Colors:Header][Inactive"] = dict(groups["Colors:Header"],
-                                             ForegroundNormal=mix(TEXT, canvas, 0.60))
+                                             ForegroundNormal=mix(text, canvas, 0.60))
 
     groups["Colors:Selection"] = dict(
         shared,
@@ -238,7 +247,7 @@ def palette(accent, variant):
     groups["General"] = {"AccentColor": accent}
     groups["WM"] = {
         "activeBackground": canvas,
-        "activeForeground": TEXT,
+        "activeForeground": text,
         "inactiveBackground": bg,
         "inactiveForeground": dim,
     }
@@ -355,11 +364,11 @@ def hyprlock_palette(accent, variant):
     colour rather than an error anybody sees.
     """
     sources = {
-        "text": TEXT,
+        "text": tone(variant, "text"),
         "glass": VARIANTS[variant]["glassBase"],
         "accent": accent,
         "accentSoft": lighten(accent),
-        "success": POSITIVE,
+        "success": tone(variant, "success"),
     }
     width = max(len(n) for n, _, _ in HYPRLOCK_VARS)
     lines = [
@@ -398,7 +407,7 @@ def imv_options(variant):
     v = VARIANTS[variant]
     return {
         "background": hex6(v["canvas"]),
-        "overlay_text_color": hex6(TEXT),
+        "overlay_text_color": hex6(tone(variant, "text")),
         "overlay_text_alpha": "e6",
         "overlay_background_color": hex6(v["glassBase"]),
         "overlay_background_alpha": "b3",
@@ -491,6 +500,13 @@ def read_appearance():
 
 def selftest():
     """Anchored on the hand-tuned scheme this replaces (default accent, dark)."""
+    def parse_kde(v):
+        return tuple(int(x) for x in v.split(","))
+
+    def contrast(a, b):
+        hi, lo = sorted((luminance(parse_kde(a)), luminance(parse_kde(b))), reverse=True)
+        return (hi + 0.05) / (lo + 0.05)
+
     g = palette(DEFAULT_ACCENT, "dark")
     exact = {
         ("Colors:Button", "BackgroundNormal"): "32,31,33",
@@ -567,6 +583,28 @@ def selftest():
     assert imv_options("oled")["background"] == "050506"
     assert imv_options("oled")["overlay_background_color"] == "000000"
 
+    # light is a whole palette, not dark with the grounds swapped: near-white
+    # surfaces the overlay sinks rather than lifts, dark ink on every one, and
+    # status colours and links that still hold WCAG AA (4.5:1) there.
+    lg = palette(DEFAULT_ACCENT, "light")
+    for group in ("Colors:Window", "Colors:View", "Colors:Button", "Colors:Tooltip"):
+        ground = lg[group]["BackgroundNormal"]
+        assert ink_on(parse_kde(ground)) == (0, 0, 0), f"{group} is not light: {ground}"
+        for key in ("ForegroundNormal", "ForegroundPositive", "ForegroundNegative",
+                    "ForegroundNeutral", "ForegroundLink"):
+            ratio = contrast(lg[group][key], ground)
+            assert ratio >= 4.5, f"{group}/{key} {lg[group][key]} is {ratio:.2f}:1 on {ground}"
+    assert lg["Colors:Window"]["BackgroundNormal"] == "239,237,234"
+    assert lg["Colors:Window"]["BackgroundAlternate"] == "229,228,225"  # sank, not lifted
+    assert lg["Colors:Button"]["BackgroundNormal"] == "222,220,218"     # black surface07
+    assert lg["Colors:Window"]["ForegroundNormal"] == "24,23,26"
+    assert lg["Colors:Selection"]["ForegroundNormal"] == "255,255,255"
+    assert "$ink      = rgba(18171ae6)" in hyprlock_palette(DEFAULT_ACCENT, "light")
+    assert "$glass    = rgba(f2f1eeb3)" in hyprlock_palette(DEFAULT_ACCENT, "light")
+    assert imv_options("light")["overlay_text_color"] == "18171a"
+    # dark and oled override no ink, so neither moved.
+    assert tone("dark", "text") == tone("oled", "text") == PALETTE["text"]
+
     # Junk in appearance.json must not reach a colour, or a gsettings argv.
     accent, variant, scheme = read_appearance()
     assert re.fullmatch(r"#[0-9a-f]{6}", accent)
@@ -577,6 +615,19 @@ def selftest():
     # and picking light must not quietly turn the shell's own palette light.
     assert SCHEMES["dark"] == ("prefer-dark", "1")
     assert SCHEMES["light"] == ("prefer-light", "0")
+    # The light variant is `theme`, the preference is `colorScheme`, and
+    # neither drags the other along.
+    global APPEARANCE
+    saved = APPEARANCE
+    with tempfile.TemporaryDirectory() as d:
+        APPEARANCE = os.path.join(d, "appearance.json")
+        for data, want in (({"colorScheme": "light"}, ("dark", "light")),
+                           ({"theme": "light"}, ("light", DEFAULT_SCHEME)),
+                           ({"theme": "sepia"}, ("dark", DEFAULT_SCHEME))):
+            with open(APPEARANCE, "w", encoding="utf-8") as fh:
+                json.dump(data, fh)
+            assert read_appearance()[1:] == want, (data, read_appearance())
+    APPEARANCE = saved
     # sections in kcminputrc are the ones that would hurt to lose, and their
     # A hand-edited cursor name reaches a directory lookup, two config files and
     # an argv element, so it is the one appearance.json value worth fuzzing.
