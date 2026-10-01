@@ -228,8 +228,9 @@ SettingsPage {
       width: parent.width
       wrapMode: Text.WordWrap
       text: root.rearranging
-        ? "drag a screen to move it. edges snap to the neighbouring screen so "
-          + "they butt up; the move is staged when you let go — nothing changes "
+        ? "drag a screen to move it. it lands touching the nearest screen, never "
+          + "overlapping one, and pulls flush with its edges when close; the move "
+          + "is staged when you let go — nothing changes "
           + "on screen until you press apply. \"done\" locks the plan."
         : "press \"rearrange\" to drag the screens around. the page scroll pauses "
           + "while you do, so a drag does not turn into a scroll."

@@ -61,12 +61,18 @@ Singleton {
   function persist(output, fields) {
     const mon = Hyprland.monitors.values.find(m => m.name === output)
     const keep = root.persistable(fields)
+    // "auto" is not saved, but it must still clear a saved position: left in
+    // place, the next reload put the screen straight back where "auto" moved
+    // it from.
+    const unpin = fields.position === "auto"
     // An empty signature means hyprland's monitor list has not been read yet;
     // saving under it would key a layout to no desk at all.
-    if (!root.ready || !mon || root.signature === "" || Object.keys(keep).length === 0) return
+    if (!root.ready || !mon || root.signature === "") return
+    if (Object.keys(keep).length === 0 && !unpin) return
     const layouts = Object.assign({}, root.layouts)
     const desk = Object.assign({}, layouts[root.signature])
     desk[mon.description] = Object.assign({}, desk[mon.description], keep)
+    if (unpin) delete desk[mon.description].position
     layouts[root.signature] = desk
     adapter.layouts = layouts
   }
