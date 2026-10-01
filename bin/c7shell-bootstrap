@@ -18,6 +18,7 @@ want_greeter=1
 want_greeter_theme=1
 want_extras=1
 want_upgrade=1
+want_fingerprint=1
 
 usage() {
   cat <<USAGE
@@ -40,6 +41,9 @@ system services, and the optional programs the keybinds expect.
                    theme the machine already uses)
       --no-aur       don't install paru or any AUR package
       --no-extras    skip kitty, dolphin, ddcutil, brightnessctl, playerctl
+      --no-fingerprint
+                   leave /etc/pam.d/polkit-1 alone (by default, with fprintd
+                   installed, the shell's password prompt also takes a finger)
   -h, --help       this text
 
 Nothing is installed, enabled or written until you confirm the plan.
@@ -59,6 +63,7 @@ while (($#)); do
     --no-greeter-theme) want_greeter_theme=0 ;;
     --no-aur) want_aur=0 ;;
     --no-extras) want_extras=0 ;;
+    --no-fingerprint) want_fingerprint=0 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'c7shell-bootstrap: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -125,6 +130,10 @@ write_root() {
 # it at a fake tree, the same hook c7shell-doctor takes as C7SHELL_ROOT.
 etc_root=${C7SHELL_ROOT:-}
 SDDM_DROPIN=$etc_root/etc/sddm.conf.d/10-c7shell.conf
+POLKIT_PAM=$etc_root/etc/pam.d/polkit-1
+# polkit 127 ships its service in the vendor directory; a file in /etc replaces
+# it outright, which is why the change below is a copy of it plus one line.
+POLKIT_PAM_VENDOR=$etc_root/usr/lib/pam.d/polkit-1
 
 step() { printf '\n== %s\n' "$1"; }
 info() { printf '   %s\n' "$1"; }
@@ -301,6 +310,21 @@ fi
 # rather than the extras.
 add pacman-contrib
 
+# The shell's password prompt (bin/c7-authd) already draws a fingerprint state;
+# what it lacks is a PAM stack that offers one. polkit's service includes
+# system-auth and nothing else, so pam_fprintd goes in front of it. Only with
+# fprintd installed -- the module is part of that package -- and the timeout is
+# what "use password" waits out, since PAM cannot be told to skip a factor.
+# The lock screen needs none of this: hyprlock talks to fprintd itself.
+FPRINT_PAM_LINE='auth		sufficient	pam_fprintd.so timeout=10'
+fingerprint_todo=0
+polkit_pam_src=$POLKIT_PAM
+[[ -f $polkit_pam_src ]] || polkit_pam_src=$POLKIT_PAM_VENDOR
+if ((want_fingerprint)) && installed fprintd && [[ -f $polkit_pam_src ]] \
+   && ! grep -q pam_fprintd "$polkit_pam_src"; then
+  fingerprint_todo=1
+fi
+
 # --- AUR -------------------------------------------------------------------
 # A helper that is installed but does not run is worse than none: pacman keeps
 # it (the AUR packages only ask for `libalpm.so>=14`) while a pacman soname
@@ -397,7 +421,8 @@ if ((greeter_theme_todo)); then
   [[ -n $greeter_theme_replaces ]] \
     && warn "the sddm theme is currently \"$greeter_theme_replaces\"; this replaces it (--no-greeter-theme keeps it)"
 fi
-((nvidia_conf || want_extras || greeter_theme_todo)) || info 'none'
+((fingerprint_todo)) && info "$POLKIT_PAM  (pam_fprintd before the password, for the shell's prompt)"
+((nvidia_conf || want_extras || greeter_theme_todo || fingerprint_todo)) || info 'none'
 
 if ((${#notes[@]})); then
   step 'notes'
@@ -457,6 +482,13 @@ if ((want_extras)); then
     run_root gpasswd -a "$USER" i2c
     add_note 'you were added to the i2c group; log out and back in for ddcutil to work'
   fi
+fi
+
+if ((fingerprint_todo)); then
+  step 'offering the fingerprint reader to the password prompt'
+  # Before the first auth line, so the stack's own header stays on top.
+  write_root "$POLKIT_PAM" "$(sed "0,/^auth/s//$FPRINT_PAM_LINE\\n&/" "$polkit_pam_src")"
+  add_note 'polkit prompts take a finger now; enroll one in settings -> fingerprints'
 fi
 
 step 'enabling airplane mode'

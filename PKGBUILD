@@ -118,6 +118,9 @@ optdepends=(
   # promises, but nothing needs it specifically.
   'meld: three-pane merge for the update wizard'"'"'s pacnew review'
   'kwallet: secret storage unlocked at login by conf/autostart.lua'
+  # Settings -> fingerprints enrolls through its CLI, the lock screen unlocks
+  # through its D-Bus API, and c7shell-bootstrap adds its PAM module to polkit.
+  'fprintd: fingerprint unlock on the lock screen and the password prompt'
 )
 # lua: tests/test-monitors.lua loads conf/monitors.lua against a stubbed hl.
 makedepends=('git' 'lua')

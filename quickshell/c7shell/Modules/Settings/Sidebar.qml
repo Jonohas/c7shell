@@ -32,6 +32,7 @@ Item {
         { page: "displays", label: "displays" },
         { page: "audio", label: "audio" },
         { page: "power", label: "power" },
+        { page: "fingerprints", label: "fingerprints" },
         { page: "notifications", label: "notifications" }
       ]
     },

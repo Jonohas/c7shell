@@ -270,4 +270,27 @@ out=$(plan "$AMD")
 grep -q "$dropin" <<<"$out" && fail "the drop-in was rewritten when it was already correct:\n$out"
 rm -rf "$tmp/root"
 
+# Fingerprint: with fprintd installed, the vendor polkit service is copied to
+# /etc with pam_fprintd in front of its first auth line -- and nothing happens
+# without fprintd, with --no-fingerprint, or once the line is already there.
+pam=/etc/pam.d/polkit-1
+mkdir -p "$tmp/root/usr/lib/pam.d"
+printf '#%%PAM-1.0\n\nauth       include      system-auth\naccount    include      system-auth\n' \
+  > "$tmp/root/usr/lib/pam.d/polkit-1"
+out=$(plan "$AMD")
+grep -q "$pam" <<<"$out" && fail "polkit's PAM stack was planned without fprintd installed:\n$out"
+out=$(STUB_INSTALLED='linux fprintd' plan "$AMD")
+grep -q "$pam" <<<"$out" || fail "fprintd is installed but polkit's PAM stack is not planned:\n$out"
+grep -A3 "would write .*$pam" <<<"$out" | grep -q 'sufficient.*pam_fprintd.so' \
+  || fail "the planned polkit-1 does not offer pam_fprintd:\n$out"
+grep -A4 "would write .*$pam" <<<"$out" | grep -q 'include.*system-auth' \
+  || fail "the planned polkit-1 lost the password stack:\n$out"
+out=$(STUB_INSTALLED='linux fprintd' plan "$AMD" --no-fingerprint)
+grep -q "$pam" <<<"$out" && fail "--no-fingerprint still planned polkit's PAM stack:\n$out"
+mkdir -p "$tmp/root/etc/pam.d"
+printf 'auth sufficient pam_fprintd.so\n' > "$tmp/root$pam"
+out=$(STUB_INSTALLED='linux fprintd' plan "$AMD")
+grep -q "$pam" <<<"$out" && fail "polkit-1 was rewritten when it already offers pam_fprintd:\n$out"
+rm -rf "$tmp/root"
+
 echo 'PASS: c7shell-bootstrap'
