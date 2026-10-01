@@ -69,60 +69,36 @@ assert(d.encode({ 1, 2 }) == "[1,2]")
 -- and a watcher does not see a change that is not one
 assert(d.encode({ b = 1, a = 2 }) == '{"a":2,"b":1}')
 local round = json.decode(d.encode({
-  active = "office", forced = true,
-  profiles = { { name = "office", source = "lua", available = true,
-                 displays = { ["LG x"] = { position = "0x0", scale = 1 } } } },
+  setup = "BOE x|LG x", screens = { "BOE x", "LG x" }, parked = {},
 }))
-assert(round.active == "office" and round.forced == true)
-assert(round.profiles[1].displays["LG x"].position == "0x0")
-assert(round.profiles[1].displays["LG x"].scale == 1)
+assert(round.setup == "BOE x|LG x" and round.screens[2] == "LG x")
 
 -- write_state round-trips through a real file and reports failure rather than
 -- raising: a settings page that cannot show its picker beats a config reload
 -- that errors out.
 local tmp = os.tmpname()
-assert(d.write_state({ active = "x" }, tmp) == true)
-assert(json.decode(json.read_file(tmp)).active == "x")
+assert(d.write_state({ setup = "x", parked = { "Dell y" } }, tmp) == true)
+assert(json.decode(json.read_file(tmp)).setup == "x")
+assert(d.parked(tmp)[1] == "Dell y")
 os.remove(tmp)
-assert(d.write_state({ active = "x" }, "/proc/nonexistent/nope.json") == false)
+assert(d.write_state({ setup = "x" }, "/proc/nonexistent/nope.json") == false)
+assert(#d.parked("/proc/nonexistent/nope.json") == 0)
+local tmp2 = os.tmpname()
+assert(d.write_state({ panel = "eDP-1" }, tmp2))
+assert(d.panel(tmp2) == "eDP-1")
+assert(d.write_state({ panel = 'eDP-1",x' }, tmp2))
+assert(d.panel(tmp2) == nil, "a connector name is only ever [%w-]")
+os.remove(tmp2)
+assert(d.panel("/proc/nonexistent/nope.json") == nil)
 
--- -- profiles ---------------------------------------------------------------
--- A profile decides which monitors are ON, so a half-understood one is worse
--- than none: anything unrecognised drops the profile whole, and monitors.lua
--- falls through to the next candidate.
-local function profile(t) return d.profile(t) end
-
-local ok = profile({ name = "office",
-                     displays = { ["LG x"] = { position = "0x0", mode = "2560x1440@60.00", scale = 1 } } })
-assert(ok.name == "office")
-assert(ok.displays["LG x"].position == "0x0")
-assert(ok.displays["LG x"].mode == "2560x1440@60.00")   -- checked later, against available_modes
-assert(ok.displays["LG x"].scale == 1)
-
--- a bad mode or scale is dropped to nil; the catalog value then stands
-local soft = profile({ name = "o", displays = { ["LG x"] = { position = "0x0", mode = 7, scale = 99 } } })
-assert(soft.displays["LG x"].mode == nil)
-assert(soft.displays["LG x"].scale == nil)
-assert(soft.displays["LG x"].position == "0x0")
-
--- a bad position kills the profile: it can put a screen where nothing reaches it
-for _, bad in ipairs({
-  { name = "o", displays = { ["LG x"] = { position = "auto" } } },
-  { name = "o", displays = { ["LG x"] = { position = "999999x0" } } },
-  { name = "o", displays = { ["LG x"] = {} } },
-  { name = "o", displays = { ["LG x"] = "0x0" } },
-  { name = "o", displays = { [""] = { position = "0x0" } } },
-  { name = "o", displays = {} },
-  { name = "o" },
-  { name = "", displays = { ["LG x"] = { position = "0x0" } } },
-  { displays = { ["LG x"] = { position = "0x0" } } },
-  "office",
-}) do
-  assert(profile(bad) == nil, "profile should reject: " .. tostring(bad))
+assert(d.bitdepth(10) == 10 and d.bitdepth(8) == 8)
+for _, bad in ipairs({ 12, "10", 0, true }) do
+    assert(d.bitdepth(bad) == nil, "bitdepth should reject: " .. tostring(bad))
 end
 
--- profiles()/active() read the same file M.layout does, and survive it being
--- missing, corrupt, or the wrong shape
+-- -- saved setups -----------------------------------------------------------
+-- saved() reads the hand-editable file, so it must survive it being missing,
+-- corrupt, or the wrong shape -- an empty table is "never arranged".
 local tmp = os.tmpname()
 local realpath = d.PATH
 d.PATH = tmp
@@ -131,29 +107,23 @@ local function write(text)
   local f = assert(io.open(tmp, "w")); f:write(text); f:close()
 end
 
-write('{"profiles":[{"name":"a","displays":{"X":{"position":"0x0"}}},'
-   .. '{"name":"bad","displays":{"X":{"position":"nope"}}},'
-   .. '{"name":"b","displays":{"Y":{"position":"10x0"}}}],"active":"b"}')
-local ps = d.profiles()
-assert(#ps == 2, "the invalid profile is dropped, the valid ones keep their order")
-assert(ps[1].name == "a" and ps[2].name == "b")
-assert(d.active() == "b")
+write('{"layouts":{"A|B":{"A":{"position":"0x0","disabled":true},"B":"junk"}},'
+   .. '"outputs":{"A":{"scale":2},"C":7}}')
+local setup, outputs = d.saved({ "B", "A" })   -- order independent
+assert(setup.A.position == "0x0" and setup.A.disabled == true)
+assert(setup.B == nil, "a non-table entry is dropped")
+assert(outputs.A.scale == 2 and outputs.C == nil)
+assert(next((d.saved({ "A" }))) == nil, "another set of screens is another setup")
 
-write('{"layouts":{}}')
-assert(#d.profiles() == 0)
-assert(d.active() == nil)
-
-write('{"profiles":"nope","active":42}')
-assert(#d.profiles() == 0)
-assert(d.active() == nil)
-
-write('{ not json')
-assert(#d.profiles() == 0)
-assert(d.active() == nil)
+for _, bad in ipairs({ '{ not json', '{"layouts":"nope","outputs":[]}', '[]' }) do
+  write(bad)
+  local s, o = d.saved({ "A", "B" })
+  assert(next(s) == nil and next(o) == nil, "should read as empty: " .. bad)
+end
 
 os.remove(tmp)
-assert(#d.profiles() == 0)
-assert(d.active() == nil)
+local s, o = d.saved({ "A" })
+assert(next(s) == nil and next(o) == nil)
 d.PATH = realpath
 
 print("conf selftest ok")

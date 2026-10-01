@@ -7,20 +7,22 @@
 -- both sides read, hand-editable, therefore untrusted on this side.
 --
 -- Schema:
---   { "layouts": { "<signature>": { "<monitor description>": {
---       "position": "1000x1440", "mode": "2880x1920@120.00", "scale": 2 } } } }
+--   { "layouts": { "<setup>": { "<monitor description>": {
+--       "position": "1000x1440", "mode": "2880x1920@120.00", "scale": 2,
+--       "transform": 0, "disabled": true } } },
+--     "outputs": { "<monitor description>": {
+--       "mode": "2880x1920@120.00", "scale": 2, "transform": 0, "bitdepth": 10 } } }
 --
--- The signature is the sorted, "|"-joined descriptions of the monitors that
--- are ENABLED in the layout. Description, never connector name: DP-4 and DP-3
--- are the same panel on a different dock enumeration, and CATALOG in
--- monitors.lua already matches on description for that reason. So the office
--- desk, the home desk and laptop-only each get their own entry, and a shut lid
--- -- which removes the built-in panel from the enabled set -- correctly reads
--- as a different desk rather than corrupting the open-lid one.
+-- The same implicit model KDE (kwinoutputconfig.json) and GNOME (monitors.xml)
+-- use: no names, no picker. A SETUP is the set of screens that are connected,
+-- keyed on their sorted, "|"-joined descriptions; arranging the desk saves that
+-- set's layout, and plugging the same set back in restores it. Description,
+-- never connector name: DP-4 and DP-3 are the same panel on a different dock
+-- enumeration. A shut lid takes the built-in panel out of the set, so lid-shut
+-- reads as its own desk rather than corrupting the open-lid one.
 --
--- Nothing here overrides which monitors are ON: PROFILES in monitors.lua keeps
--- that job, and so keeps the lid logic. A saved layout only overrides the
--- position PROFILES chose and the mode/scale CATALOG chose, per monitor.
+-- `outputs` is the per-screen memory: a panel seen before brings its mode,
+-- scale and rotation into a setup that has never been arranged.
 
 local json = require("conf/json")
 
@@ -39,9 +41,9 @@ end
 
 -- -- validation ------------------------------------------------------------
 -- Everything below returns nil for anything it does not fully recognise, and
--- the caller then keeps the CATALOG/PROFILES value. A stray number here would
--- reach hl.monitor() and can leave the user with no visible screen, so this is
--- a whitelist, not a sanity check.
+-- the caller then falls back to the per-screen memory or Hyprland's own
+-- preferred/auto. A stray number here would reach hl.monitor() and can leave
+-- the user with no visible screen, so this is a whitelist, not a sanity check.
 
 --- "<x>x<y>", both integers, within the same +-20000 the drag canvas clamps to.
 function M.position(v)
@@ -61,7 +63,7 @@ end
 
 --- A rotation the settings app writes: 0/90/180/270 as Hyprland's 0..3. The
 --- flipped variants (4..7) are never offered there, so anything outside 0..3 is
---- refused and monitors.lua keeps the CATALOG/PROFILES transform.
+--- refused and monitors.lua falls back to the next source.
 function M.transform(v)
     if type(v) ~= "number" or v % 1 ~= 0 then return nil end
     if v < 0 or v > 3 then return nil end
@@ -89,11 +91,16 @@ function M.mode(v, modes)
     return nil
 end
 
+--- 8 or 10. Only ever hand-written into the per-screen memory.
+function M.bitdepth(v)
+    if v == 8 or v == 10 then return v end
+    return nil
+end
+
 -- -- encode ----------------------------------------------------------------
--- The write side of the pair. conf/json.lua decodes only, because until now
--- nothing in the hyprland config had anything to say back; displays-state.json
--- is the first thing it does. Deliberately minimal: the state document is the
--- only value ever passed here.
+-- The write side of the pair. conf/json.lua decodes only; displays-state.json
+-- is the one thing the hyprland config writes back. Deliberately minimal: the
+-- state document is the only value ever passed here.
 
 local ESCAPE = { ['"'] = '\\"', ["\\"] = "\\\\", ["\n"] = "\\n",
                  ["\r"] = "\\r", ["\t"] = "\\t" }
@@ -105,8 +112,8 @@ local function esc(s)
 end
 
 --- A table with only 1..n integer keys encodes as an array. An empty table is
---- ambiguous and encodes as `[]`; the state document contains no empty objects,
---- and a profile with no displays is rejected before it gets here.
+--- ambiguous and encodes as `[]`; the state document has no empty objects, and
+--- an empty `parked` list is meant to be one.
 local function is_array(t)
     local n = 0
     for k in pairs(t) do
@@ -150,9 +157,10 @@ function M.encode(v)
 end
 
 -- -- state -----------------------------------------------------------------
--- Machine-written, read-only to the user: the list of profiles conf/monitors.lua
--- knows about and which one won. It is the only way the settings app can see a
--- profile that lives in lua, since it never reads that file.
+-- Machine-written, read-only to the user: which setup monitors.lua matched, and
+-- the screens a saved setup switched off. The settings app saves under that
+-- setup rather than computing its own key, because only this side can see the
+-- lid and the screens Hyprland hides once they are disabled.
 
 M.STATE_PATH = os.getenv("HOME") .. "/.config/hypr/displays-state.json"
 
@@ -166,75 +174,48 @@ function M.write_state(doc, path)
     return ok
 end
 
--- -- load ------------------------------------------------------------------
-
---- The saved layout for this set of enabled descriptions, as
---- description -> { position=, mode=, scale= }. Always a table: a missing,
---- unreadable or corrupt file, or a signature never saved, is an empty one and
---- monitors.lua then behaves exactly as it did before this file existed.
-function M.layout(descriptions)
-    local doc = json.decode(json.read_file(M.PATH))
-    if type(doc) ~= "table" or type(doc.layouts) ~= "table" then return {} end
-    local saved = doc.layouts[M.signature(descriptions)]
-    return type(saved) == "table" and saved or {}
-end
-
---- One profile, or nil. Unlike M.layout -- which overrides a position the
---- profile already chose -- a profile decides which monitors are ON at all, so
---- a partly-understood one is more dangerous than no profile: an unusable
---- entry drops the whole thing and monitors.lua takes the next candidate.
---- `mode` is the exception, passed through unchecked, because deciding whether
---- a mode exists needs the monitor's available_modes and this module has no
---- monitors. monitors.lua runs it through M.mode at apply time.
-function M.profile(p)
-    if type(p) ~= "table" then return nil end
-    if type(p.name) ~= "string" or p.name == "" then return nil end
-    if type(p.displays) ~= "table" then return nil end
-
-    local displays, n = {}, 0
-    for desc, fields in pairs(p.displays) do
-        if type(desc) ~= "string" or desc == "" then return nil end
-        if type(fields) ~= "table" then return nil end
-        local position = M.position(fields.position)
-        if not position then return nil end
-        displays[desc] = {
-            position = position,
-            mode     = type(fields.mode) == "string" and fields.mode or nil,
-            scale    = M.scale(fields.scale),
-            -- A rotated screen saved into a profile stays rotated. Refused
-            -- rather than fatal: an unreadable transform is worth losing, the
-            -- rest of the profile is not.
-            transform = M.transform(fields.transform),
-        }
-        n = n + 1
-    end
-    -- A profile that names nothing would match every desk and enable nothing.
-    if n == 0 then return nil end
-
-    return { name = p.name, displays = displays }
-end
-
---- Every valid profile the settings app has written, in file order. File order
---- is match precedence, the same way the order of PROFILES is in monitors.lua.
-function M.profiles()
-    local doc = json.decode(json.read_file(M.PATH))
-    if type(doc) ~= "table" or type(doc.profiles) ~= "table" then return {} end
+--- The descriptions the last run switched off, so a reload can switch them back
+--- on and look again: a disabled screen is invisible to hl.get_monitors(). Always
+--- a list; anything that is not a non-empty string is dropped.
+function M.parked(path)
+    local doc = json.decode(json.read_file(path or M.STATE_PATH))
+    if type(doc) ~= "table" or type(doc.parked) ~= "table" then return {} end
     local out = {}
-    for _, p in ipairs(doc.profiles) do
-        local clean = M.profile(p)
-        if clean then out[#out + 1] = clean end
+    for _, d in ipairs(doc.parked) do
+        if type(d) == "string" and d ~= "" then out[#out + 1] = d end
     end
     return out
 end
 
---- The profile the user has pinned from the settings app, or nil for
---- auto-match. A name that matches nothing available is not an error here;
---- monitors.lua simply falls back to auto-match.
-function M.active()
+--- The built-in panel's connector name as the last run saw it, or nil.
+function M.panel(path)
+    local doc = json.decode(json.read_file(path or M.STATE_PATH))
+    local v = type(doc) == "table" and doc.panel
+    if type(v) == "string" and v:match("^[%w-]+$") then return v end
+    return nil
+end
+
+-- -- load ------------------------------------------------------------------
+
+local function tables(doc, key)
+    if type(doc) ~= "table" or type(doc[key]) ~= "table" then return {} end
+    local out = {}
+    for desc, f in pairs(doc[key]) do
+        if type(desc) == "string" and type(f) == "table" then out[desc] = f end
+    end
+    return out
+end
+
+--- The saved layout for this setup, and the per-screen memory, both as
+--- description -> fields. Always tables: a missing, unreadable or corrupt file,
+--- or a setup never arranged, is an empty one and monitors.lua then falls back
+--- to the per-screen memory and Hyprland's own preferred/auto. Fields are NOT validated here;
+--- monitors.lua runs each one through the validators above at apply time.
+function M.saved(descriptions)
     local doc = json.decode(json.read_file(M.PATH))
-    if type(doc) ~= "table" then return nil end
-    if type(doc.active) ~= "string" or doc.active == "" then return nil end
-    return doc.active
+    local layouts = type(doc) == "table" and doc.layouts
+    local setup = type(layouts) == "table" and layouts[M.signature(descriptions)]
+    return tables({ s = setup }, "s"), tables(doc, "outputs")
 end
 
 return M
