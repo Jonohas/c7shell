@@ -313,10 +313,11 @@ add pacman-contrib
 # The shell's password prompt (bin/c7-authd) already draws a fingerprint state;
 # what it lacks is a PAM stack that offers one. polkit's service includes
 # system-auth and nothing else, so pam_fprintd goes in front of it. Only with
-# fprintd installed -- the module is part of that package -- and the timeout is
-# what "use password" waits out, since PAM cannot be told to skip a factor.
+# fprintd installed -- the module is part of that package. Its own defaults
+# (30s, 3 tries) only decide how long the reader listens: c7-authd runs a
+# second session for the password beside it, so typing never waits on it.
 # The lock screen needs none of this: hyprlock talks to fprintd itself.
-FPRINT_PAM_LINE='auth		sufficient	pam_fprintd.so timeout=10'
+FPRINT_PAM_LINE='auth		sufficient	pam_fprintd.so'
 fingerprint_todo=0
 polkit_pam_src=$POLKIT_PAM
 [[ -f $polkit_pam_src ]] || polkit_pam_src=$POLKIT_PAM_VENDOR

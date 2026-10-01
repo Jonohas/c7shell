@@ -97,7 +97,7 @@ PanelWindow {
         maxTries: AuthService.maxTries
         promptReady: AuthService.promptReady
         promptText: AuthService.promptText
-        factorText: AuthService.factorText
+        fingerprint: AuthService.onFactor
         noticeText: AuthService.noticeText
         pamError: AuthService.pamError
         factorMisses: AuthService.factorMisses
@@ -105,7 +105,6 @@ PanelWindow {
 
         onSubmitted: secret => AuthService.submit(secret)
         onCancelled: AuthService.cancel()
-        onUsePasswordRequested: AuthService.usePassword()
 
         // One shake, then the field is cleared and keeps focus -- the greeter's
         // rule, and the reason retyping needs no click.
@@ -136,7 +135,7 @@ PanelWindow {
   // back when it cannot, so Esc always lands somewhere.
   function refocus() {
     if (!win.visible) return
-    if (AuthService.promptReady && !AuthService.verifying && !AuthService.onFactor)
+    if (AuthService.promptReady && !AuthService.verifying)
       prompt.focusInput()
     else
       scope.forceActiveFocus()

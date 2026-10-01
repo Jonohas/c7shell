@@ -217,4 +217,91 @@ kill -0 "$daemon_pid" 2>/dev/null && fail 'the daemon outlived the shell that st
 daemon_pid=''
 [[ ! -e $sock ]] || fail 'the daemon left its socket behind on the way out'
 
+# --- the polkit race between a finger and a password ----------------------
+# polkitd cannot run here, so the PAM sessions are fakes with the same signals
+# PolkitAgent.Session has. What is under test is the bookkeeping: which session
+# owns the reader, which one the typed password goes to, and that the loser of
+# the race is cancelled instead of being counted as a wrong password.
+python3 - "$authd" <<'PY' || fail 'the finger / password session race went wrong (see above)'
+import importlib.machinery, importlib.util, sys
+loader = importlib.machinery.SourceFileLoader("authd", sys.argv[1])
+spec = importlib.util.spec_from_loader("authd", loader)
+authd = importlib.util.module_from_spec(spec)
+loader.exec_module(authd)
+
+class Session:
+    made = []
+    def __init__(self):
+        self.handlers, self.cancelled, self.answers = {}, False, []
+        Session.made.append(self)
+    def connect(self, sig, fn, req): self.handlers[sig] = (fn, req)
+    def initiate(self): pass
+    def response(self, secret): self.answers.append(secret)
+    def cancel(self):
+        self.cancelled = True
+        self.fire("completed", False)
+    def fire(self, sig, *args):
+        fn, req = self.handlers[sig]
+        fn(self, *args, req)
+
+authd.PolkitAgent.Session.new = staticmethod(lambda identity, cookie: Session())
+events = []
+d = object.__new__(authd.Daemon)
+d.queue, d.by_cookie = [], {}
+d.emit = lambda **e: events.append(e)
+d._finish_polkit = lambda req: None
+
+def fresh():
+    Session.made.clear(); events.clear()
+    req = authd.Request("polkit")
+    req.cookie = "c"
+    d.push(req)
+    return req
+
+def evs(name): return [e for e in events if e["ev"] == name]
+def check(ok, msg):
+    if not ok:
+        print("FAIL:", msg, events); sys.exit(1)
+
+# 1. The reader answers first: a second session starts for the password, the
+#    typed secret goes to it, and only it.
+req = fresh()
+reader = Session.made[0]
+reader.fire("show-info", "Place your finger on the fingerprint reader")
+check(len(Session.made) == 2, "claiming the reader did not start a password session")
+check(evs("factor"), "the shell was not told the reader is live")
+pw = Session.made[1]
+pw.fire("request", "Password: ", False)
+check(evs("prompt"), "the password session's prompt never reached the shell")
+d.respond(req, "hunter2")
+check(pw.answers == ["hunter2"] and reader.answers == [], "the password went to the wrong session")
+
+# 2. A wrong password is counted and retried; the reader keeps listening.
+pw.fire("completed", False)
+check(evs("failed") and evs("failed")[0]["tries"] == 1, "a wrong password was not counted")
+check(not reader.cancelled and len(Session.made) == 3, "a wrong password stopped the reader")
+
+# 3. The finger wins: the password session is cancelled, and not counted.
+reader.fire("completed", True)
+check(Session.made[2].cancelled, "the losing password session was left running")
+check(len(evs("failed")) == 1, "cancelling the loser was counted as a wrong password")
+check(evs("close") and evs("close")[0]["ok"], "the request did not close as authorized")
+
+# 4. The reader gives up and its stack falls through to a password prompt:
+#    it is retired, not drawn as a second field.
+req = fresh()
+reader = Session.made[0]
+reader.fire("show-info", "Place your finger on the fingerprint reader")
+Session.made[1].fire("request", "Password: ", False)
+before = len(evs("prompt"))
+reader.fire("request", "Password: ", False)
+check(reader.cancelled and evs("factorend"), "a timed-out reader was not retired")
+check(len(evs("prompt")) == before and not evs("failed"), "the retired reader drew a prompt or counted a try")
+
+# 5. Cancel stops both.
+d.deny(req)
+check(all(s.cancelled for s in Session.made), "cancel left a session running")
+print("race ok")
+PY
+
 echo 'PASS: c7-authd / c7-askpass'

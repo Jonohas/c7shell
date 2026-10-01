@@ -20,12 +20,21 @@ commands on stdin. Services/AuthService.qml is the only reader.
   out {"ev":"active","id":ID}                               it is now the head
   out {"ev":"prompt","id":ID,"text":T,"echo":BOOL}          PAM wants an answer
   out {"ev":"factor","id":ID,"kind":"fingerprint","text":T} PAM offered another
+  out {"ev":"factorend","id":ID}                            the reader gave up
   out {"ev":"info","id":ID,"text":T}                        PAM_TEXT_INFO
   out {"ev":"pamerror","id":ID,"text":T}                    PAM_ERROR_MSG
   out {"ev":"failed","id":ID,"tries":N,"max":N}             wrong, try again
   out {"ev":"close","id":ID,"ok":BOOL}                      gone from the queue
   in  {"cmd":"respond","id":ID,"secret":S}
   in  {"cmd":"cancel","id":ID}
+
+A polkit request can run two PAM sessions on its one cookie, so a finger and
+a typed password are both live at once. pam_fprintd waits on the reader and
+the stack only reaches the password after it gives up, so one session cannot
+offer both. The first session claims the reader; the moment it says so, a
+second session starts, finds the reader claimed, and pam_fprintd steps aside
+for the password in the same instant. Whichever succeeds first answers polkitd
+and the other is cancelled.
 
 Only the head of the queue is ever authenticating: a second request sits
 un-initiated until the first closes, so there is never more than one live PAM
@@ -142,7 +151,8 @@ class Request:
         self.kind = kind
         self.fields = fields
         self.tries = 0
-        self.session = None       # PolkitAgent.Session, polkit only
+        self.session = None       # PolkitAgent.Session asking for the password
+        self.reader = None        # the session holding the fingerprint reader
         self.invocation = None    # held DBus reply, polkit only
         self.identity = None
         self.cookie = None
@@ -282,9 +292,7 @@ class Daemon:
         if req.kind == "sudo":
             self._askpass_reply(req, False, "")
         else:
-            if req.session is not None:
-                req.session.cancel()
-                req.session = None
+            self._cancel_sessions(req)
             # Cancelling the PAM session is only half of it: BeginAuthentication
             # is still waiting for a reply, and a caller whose call is never
             # answered does not fail -- it hangs until D-Bus times the call out.
@@ -339,8 +347,7 @@ class Daemon:
                 # rather than never answering it at all -- an unanswered call
                 # sits there until D-Bus times it out.
                 req.cancelled = True
-                if req.session is not None:
-                    req.session.cancel()
+                self._cancel_sessions(req)
                 if req.invocation is not None:
                     req.invocation.return_dbus_error(
                         "org.freedesktop.PolicyKit1.Error.Cancelled",
@@ -418,7 +425,33 @@ class Daemon:
         req.pending_prompt = False
         session.initiate()
 
+    def _cancel_sessions(self, req, keep=None):
+        """Cancel every session but `keep`.
+
+        The references are dropped BEFORE cancel(), which emits "completed"
+        synchronously: a session that is neither req.session nor req.reader
+        by then is one the completed handler knows to ignore, rather than a
+        wrong password to count and retry.
+        """
+        doomed = [s for s in (req.session, req.reader) if s is not None and s is not keep]
+        if req.session is not keep:
+            req.session = None
+        if req.reader is not keep:
+            req.reader = None
+        for s in doomed:
+            s.cancel()
+
     def _on_request(self, session, text, echo, req):
+        if session is req.reader:
+            # The reader timed out or ran out of tries, and its stack fell
+            # through to the password -- which the other session is already
+            # asking for. Retire it rather than draw a second field.
+            req.reader = None
+            session.cancel()
+            self.emit(ev="factorend", id=req.id)
+            return
+        if session is not req.session:
+            return
         req.pending_prompt = True
         self.emit(ev="prompt", id=req.id, text=text.strip(), echo=bool(echo))
 
@@ -426,24 +459,48 @@ class Daemon:
         # pam_fprintd speaks only through PAM_TEXT_INFO, so this is the one
         # signal that tells us an alternate factor is live. The shell needs to
         # know which state to draw, not just what to print.
-        kind = "fingerprint" if _looks_like_fingerprint(text) else ""
-        if kind:
-            self.emit(ev="factor", id=req.id, kind=kind, text=text)
-        else:
+        if not _looks_like_fingerprint(text):
             self.emit(ev="info", id=req.id, text=text)
+            return
+        if session is req.session and req.reader is None:
+            # This session has the reader. Let it keep listening, and start a
+            # fresh one for the password: pam_fprintd finds the reader claimed
+            # and goes straight to the prompt.
+            req.reader = session
+            req.session = None
+            req.pending_prompt = False
+            self.emit(ev="factor", id=req.id, kind="fingerprint", text=text)
+            self.begin_session(req)
+            return
+        self.emit(ev="factor", id=req.id, kind="fingerprint", text=text)
 
     def _on_error(self, session, text, req):
         self.emit(ev="pamerror", id=req.id, text=text)
 
     def _on_completed(self, session, authorized, req):
-        req.session = None
-        req.pending_prompt = False
         if authorized:
+            if req.closed:
+                return
+            # A finger and a password can race; the loser is cancelled here.
+            self._cancel_sessions(req, keep=session)
+            req.session = req.reader = None
+            req.pending_prompt = False
             self._finish_polkit(req)
             self.close(req, True)
             return
         if req.closed or req.cancelled:
             return
+        if session is req.reader:
+            # The reader failed outright (unplugged, an fprintd error) without
+            # falling through to a prompt. The password session carries on.
+            req.reader = None
+            self.emit(ev="factorend", id=req.id)
+            return
+        if session is not req.session:
+            # Cancelled on purpose: a retired reader, or the race's loser.
+            return
+        req.session = None
+        req.pending_prompt = False
         req.tries += 1
         if req.tries >= MAX_TRIES:
             # Hand back to the caller rather than asking a fourth time. pkexec
