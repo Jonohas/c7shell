@@ -183,4 +183,17 @@ grep -q 'onCountdownElapsed' "$overlay" \
   || fail "CaptureOverlay does not handle CaptureService.countdownElapsed, so nothing
 takes the delayed screenshot when the count runs out."
 
+# --------------------------------------------------------------------------
+# The overlay reads the output it captures from its own screen, never from the
+# latched Hyprland monitor. After an undock that monitor kept its docked
+# origin, so every region was offset off-screen and grim failed with
+# "supplied geometry did not intersect with any outputs". Only the `screen:`
+# binding may read it -- that one falls back to a live screen.
+# --------------------------------------------------------------------------
+stale=$(sed 's|//.*||' "$overlay" | grep -nE '\bmon\??\.(x|y|id|name)\b' | grep -v 'screen:' || true)
+[[ -z $stale ]] || fail "CaptureOverlay derives capture geometry or output from \`mon\`:
+$stale
+Use win.screen. Quickshell's Hyprland monitor can be stale after a hotplug,
+and every capture then misses every output."
+
 echo 'test-capture.sh: all checks passed'

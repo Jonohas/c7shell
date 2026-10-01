@@ -74,7 +74,20 @@ Window {
     root.check(CaptureService.frozen === "", "cropping nothing invented a frame")
   }
 
+  // The region's origin is the screen the overlay is mapped on. The undock
+  // that broke this left Hyprland's latched monitor at its docked origin while
+  // the laptop panel sat at 0,0, so every region missed every output.
+  function regionGeometry() {
+    const panel = { name: "eDP-1", x: 0, y: 0 }
+    root.check(CaptureService.regionGeometry(panel, 10.4, 20.6, 300.5, 200) === "10,21 301x200",
+      `a region on a 0,0 panel became "${CaptureService.regionGeometry(panel, 10.4, 20.6, 300.5, 200)}"`)
+    const right = { name: "DP-3", x: 2560, y: -160 }
+    root.check(CaptureService.regionGeometry(right, 5, 5, 50, 50) === "2565,-155 50x50",
+      `a region on an offset output became "${CaptureService.regionGeometry(right, 5, 5, 50, 50)}"`)
+  }
+
   Component.onCompleted: root.step(() => {
+    root.regionGeometry()
     root.check(CaptureService.countdown === 0,
       "the countdown was already running before anything armed a capture")
     // The toolbar chip is labelled "3s". If these two ever disagree the chip

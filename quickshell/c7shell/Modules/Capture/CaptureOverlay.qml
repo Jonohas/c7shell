@@ -75,14 +75,13 @@ PanelWindow {
   property real selH: 0
   readonly property bool hasSelection: selW >= 2 && selH >= 2
 
-  // Compositor-global geometry is what grim and wf-recorder take, and both work
-  // in the same logical coordinates Hyprland reports for monitors and clients.
+  // Compositor-global geometry is what grim and wf-recorder take. The origin
+  // is the screen this surface is really on, never `mon`: see
+  // CaptureService.regionGeometry.
   readonly property string geometryArg: {
     if (win.target === "screen" || win.target === "all") return ""
-    if (!win.hasSelection) return ""
-    const x = Math.round(win.selX + (win.mon?.x ?? 0))
-    const y = Math.round(win.selY + (win.mon?.y ?? 0))
-    return `${x},${y} ${Math.round(win.selW)}x${Math.round(win.selH)}`
+    if (!win.hasSelection || !win.screen) return ""
+    return CaptureService.regionGeometry(win.screen, win.selX, win.selY, win.selW, win.selH)
   }
 
   // -- the still, once a delayed capture's shutter has already gone --------
@@ -143,7 +142,9 @@ PanelWindow {
   function toplevelsHere() {
     return Hyprland.toplevels.values.filter(t => {
       const o = t.lastIpcObject
-      return o && o.mapped && !o.hidden && o.monitor === win.mon?.id
+      // No monitor-id filter: `mon` can be stale (see regionGeometry), and
+      // snapToWindowAt's containment test already keeps it to this output.
+      return o && o.mapped && !o.hidden
         && o.size && o.size[0] > 0 && o.size[1] > 0
     })
   }
@@ -151,7 +152,8 @@ PanelWindow {
   // Topmost = most recently focused. hyprctl's client order is not z-order, but
   // focusHistoryID is: 0 is the active window.
   function snapToWindowAt(x, y) {
-    const gx = x + (win.mon?.x ?? 0), gy = y + (win.mon?.y ?? 0)
+    const ox = win.screen?.x ?? 0, oy = win.screen?.y ?? 0
+    const gx = x + ox, gy = y + oy
     let best = null
     for (const t of win.toplevelsHere()) {
       const o = t.lastIpcObject
@@ -160,8 +162,8 @@ PanelWindow {
       if (!best || o.focusHistoryID < best.focusHistoryID) best = o
     }
     if (!best) return
-    win.selX = best.at[0] - (win.mon?.x ?? 0)
-    win.selY = best.at[1] - (win.mon?.y ?? 0)
+    win.selX = best.at[0] - ox
+    win.selY = best.at[1] - oy
     win.selW = best.size[0]
     win.selH = best.size[1]
   }
@@ -204,7 +206,7 @@ PanelWindow {
       CaptureService.close()
       // A visible countdown, not a longer sleep: the pill draws the seconds
       // while the overlay is down, so you can see when to be hovering.
-      CaptureService.startCountdown(win.mon?.name ?? win.screen?.name ?? "")
+      CaptureService.startCountdown(win.screen?.name ?? "")
       return
     }
 
@@ -240,7 +242,7 @@ PanelWindow {
     // focused one. Screenshots really can span every output, with no -o at all.
     fire.output = action === "freeze" || win.target === "screen"
         || (win.mode === "rec" && win.target === "all")
-      ? (win.mon?.name ?? "")
+      ? (win.screen?.name ?? "")
       : ""
   }
 
