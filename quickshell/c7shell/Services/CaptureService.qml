@@ -78,6 +78,18 @@ Singleton {
       `wl-copy --type image/png < ${root.shq(file)}`])
   }
 
+  // grim -g / wf-recorder -g for a selection in surface-local logical pixels.
+  // The origin is the screen the overlay surface is mapped on -- Qt's, fed by
+  // the compositor's own output events -- and not Hyprland.focusedMonitor.
+  // After an undock Quickshell's Hyprland monitor list goes stale ("Got removal
+  // for monitor DP-9 which was not previously tracked"), so a latched monitor
+  // kept its docked origin (eDP-1 at 4888,1440) while the laptop panel sat at
+  // 0,0: every region landed off-screen and grim said "supplied geometry did
+  // not intersect with any outputs".
+  function regionGeometry(screen, x, y, w, h) {
+    return `${Math.round(x + screen.x)},${Math.round(y + screen.y)} ${Math.round(w)}x${Math.round(h)}`
+  }
+
   // geometry "x,y wxh" for region and window targets · output = a monitor name
   // for one screen · both empty = every screen.
   function shoot(geometry, output, copy) {
