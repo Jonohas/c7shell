@@ -154,6 +154,10 @@ Window {
                 text: "Place your finger on the reader" })
     check(AuthService.stage === "factor", "a fingerprint offer did not switch state")
     check(AuthService.onFactor, "onFactor did not follow the factor state")
+    // pam_fprintd words every miss the same, so the count is what shakes the print.
+    root.feed({ ev: "pamerror", id: "r1", text: "Failed to match fingerprint" })
+    root.feed({ ev: "pamerror", id: "r1", text: "Failed to match fingerprint" })
+    check(AuthService.factorMisses === 2, "a repeated fingerprint miss was not counted twice")
     AuthService.usePassword()
     check(AuthService.stage === "ask", "use password did not leave the fingerprint state")
     root.feed({ ev: "close", id: "r1", ok: false })

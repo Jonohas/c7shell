@@ -92,38 +92,29 @@ SettingsPage {
     SettingsListRow {
       width: parent.width
       divider: false
-      title: FingerprintService.enrolling !== ""
-        ? `enrolling ${FingerprintService.label(FingerprintService.enrolling)}`
-        : "add a finger"
-      subtitle: FingerprintService.error !== "" ? FingerprintService.error
-              : FingerprintService.hint !== "" ? FingerprintService.hint
-              : FingerprintService.enrolling !== ""
-                ? `touch the sensor, lift, repeat · ${FingerprintService.scans} scans recorded`
-              : "pick a finger, then touch the sensor until it is recorded"
+      title: "add a finger"
+      subtitle: "pick one, then touch the sensor until the print fills in"
 
       Dropdown {
         id: pick
         anchors.verticalCenter: parent.verticalCenter
         implicitWidth: 140
-        visible: FingerprintService.enrolling === ""
         options: FingerprintService.unenrolled.map(f => FingerprintService.label(f))
-        current: options.includes(root.chosen) ? root.chosen
-               : options.length > 0 ? options[0] : ""
+        current: {
+          const free = FingerprintService.unenrolled.map(f => FingerprintService.label(f))
+          return free.includes(root.chosen) ? root.chosen : (free[0] ?? "")
+        }
         onPicked: v => root.chosen = v
       }
 
       Chip {
         anchors.verticalCenter: parent.verticalCenter
-        text: FingerprintService.enrolling !== "" ? "cancel" : "enroll"
-        accented: FingerprintService.enrolling === ""
-        enabled: FingerprintService.enrolling !== "" || !FingerprintService.busy
+        text: "enroll"
+        accented: true
+        enabled: !FingerprintService.busy
         onTriggered: {
-          if (FingerprintService.enrolling !== "") {
-            FingerprintService.cancelEnroll()
-            return
-          }
           const i = pick.options.indexOf(pick.current)
-          if (i >= 0) FingerprintService.enroll(FingerprintService.unenrolled[i])
+          if (i >= 0) sheet.open(FingerprintService.unenrolled[i])
         }
       }
     }
@@ -159,4 +150,6 @@ SettingsPage {
         : "off · run c7shell-bootstrap to add pam_fprintd to polkit"
     }
   }
+
+  FingerprintEnrollSheet { id: sheet }
 }

@@ -21,7 +21,7 @@ mkdir -p "$tmp/qs/Common" "$tmp/qs/Services" "$tmp/qs/Theme" \
          "$tmp/qs/Modules/Auth" "$tmp/Quickshell" "$tmp/Quickshell/Io"
 
 # The real components, not stand-ins.
-parts=(SecretField Icon GlassPanel Spinner)
+parts=(SecretField Icon GlassPanel Spinner FingerprintGlyph)
 printf 'module qs.Common\n' > "$tmp/qs/Common/qmldir"
 for f in "${parts[@]}"; do
   cp "$src/Common/$f.qml" "$tmp/qs/Common/"

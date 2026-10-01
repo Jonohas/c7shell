@@ -43,9 +43,20 @@ Singleton {
   // -- enrolment -------------------------------------------------------------
   property string enrolling: ""
   property int scans: 0
+  // How many touches a full print takes on this reader -- fprintd's
+  // num-enroll-stages, 13 on a Goodix MOC. 0 until it has been read, and the
+  // sheet falls back to counting without a total.
+  property int stages: 0
+  // The finger the last enrolment finished, for the sheet's success state.
+  property string completed: ""
   property string hint: ""
   property string error: ""
   readonly property bool busy: enrollProc.running || deleteProc.running
+
+  // One per touch, so the glyph can animate the moment the reader reports
+  // rather than when a counter happens to change.
+  signal scanned
+  signal retried
 
   function refresh() {
     listProc.running = true
@@ -55,6 +66,7 @@ Singleton {
   function enroll(finger) {
     if (root.busy || !root.fingers.includes(finger)) return
     root.enrolling = finger
+    root.completed = ""
     root.scans = 0
     root.hint = ""
     root.error = ""
@@ -103,11 +115,16 @@ Singleton {
     if (status === "enroll-stage-passed") {
       root.scans += 1
       root.hint = ""
+      root.scanned()
     } else if (status === "enroll-completed") {
       root.hint = ""
+      root.completed = root.enrolling
+      root.scanned()
     } else if (root.retryHints[status] !== undefined) {
       root.hint = root.retryHints[status]
+      root.retried()
     } else if (root.failures[status] !== undefined) {
+      root.retried()
       root.error = root.failures[status]
     }
   }
@@ -125,6 +142,12 @@ Singleton {
     for (let m = row.exec(text); m !== null; m = row.exec(text)) found.push(m[1])
     root.enrolled = found
     root.loaded = true
+    const path = text.match(/^Device at (\S+)/m)
+    if (path && root.stages === 0) {
+      stagesProc.command = ["busctl", "--system", "get-property", "net.reactivated.Fprint",
+                            path[1], "net.reactivated.Fprint.Device", "num-enroll-stages"]
+      stagesProc.running = true
+    }
   }
 
   Component.onCompleted: root.refresh()
@@ -134,6 +157,17 @@ Singleton {
     command: ["fprintd-list", root.user]
     stdout: StdioCollector { id: listOut; onStreamFinished: root.parseList(listOut.text) }
     onExited: code => { if (code !== 0) root.parseList("") }
+  }
+
+  Process {
+    id: stagesProc
+    // busctl prints "i 13".
+    stdout: SplitParser {
+      onRead: line => {
+        const n = parseInt(line.replace(/^i\s+/, ""), 10)
+        if (n > 0) root.stages = n
+      }
+    }
   }
 
   Process {

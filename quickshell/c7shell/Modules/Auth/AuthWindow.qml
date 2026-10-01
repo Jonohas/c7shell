@@ -100,6 +100,7 @@ PanelWindow {
         factorText: AuthService.factorText
         noticeText: AuthService.noticeText
         pamError: AuthService.pamError
+        factorMisses: AuthService.factorMisses
         waiting: AuthService.waiting
 
         onSubmitted: secret => AuthService.submit(secret)

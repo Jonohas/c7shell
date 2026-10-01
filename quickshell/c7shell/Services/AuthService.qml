@@ -52,6 +52,9 @@ Singleton {
   // swallows that just looks like a password that has stopped working.
   property string noticeText: ""
   property string pamError: ""
+  // A count, not a flag: pam_fprintd says "Failed to match fingerprint" in the
+  // same words every time, so a changed string cannot signal a second miss.
+  property int factorMisses: 0
 
   readonly property bool verifying: root.stage === "verifying"
   readonly property bool failed: root.stage === "wrong"
@@ -117,6 +120,7 @@ Singleton {
       root.factorText = ""
       root.noticeText = ""
       root.pamError = ""
+      root.factorMisses = 0
       break
 
     case "prompt":
@@ -140,6 +144,7 @@ Singleton {
 
     case "pamerror":
       root.pamError = ev.text ?? ""
+      if (root.stage === "factor") root.factorMisses += 1
       break
 
     case "failed":

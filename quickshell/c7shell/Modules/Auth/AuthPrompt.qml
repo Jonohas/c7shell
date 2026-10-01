@@ -28,6 +28,7 @@ Item {
   property string factorText: ""
   property string noticeText: ""
   property string pamError: ""
+  property int factorMisses: 0
   property int waiting: 0
 
   signal submitted(string secret)
@@ -101,6 +102,10 @@ Item {
     return pid ? `asked by ${proc || "an unknown process"} · pid ${pid}` : `asked by ${proc}`
   }
 
+  // A finger the reader did not match: the print shakes, the way a wrong
+  // password shakes the panel.
+  onFactorMissesChanged: if (root.factorMisses > 0) glyph.reject()
+
   function focusInput() { field.focusInput() }
   function clearInput() { field.clear() }
 
@@ -131,9 +136,32 @@ Item {
       }
       spacing: 0
 
+      // -- the print ---------------------------------------------------------
+      // Fingerprint first: while the reader is listening, the print replaces
+      // the tile and the field, and "use password" is the way to the field.
+      FingerprintGlyph {
+        id: glyph
+        anchors.horizontalCenter: parent.horizontalCenter
+        visible: root.onFactor
+        size: 64
+        // The whole print, coloured, pulsing while the reader listens -- not
+        // the sheet's empty one, which is a print still being recorded.
+        fill: 1
+        litColor: root.privileged ? Theme.accent : Theme.alpha(Theme.text, 0.8)
+
+        SequentialAnimation on opacity {
+          running: root.onFactor
+          loops: Animation.Infinite
+          NumberAnimation { to: 0.55; duration: 900; easing.type: Easing.InOutSine }
+          NumberAnimation { to: 1; duration: 900; easing.type: Easing.InOutSine }
+          onStopped: glyph.opacity = 1
+        }
+      }
+
       // -- icon tile ---------------------------------------------------------
       Rectangle {
         id: tile
+        visible: !root.onFactor
         anchors.horizontalCenter: parent.horizontalCenter
         width: root.compact ? 38 : 44
         height: width
@@ -286,11 +314,12 @@ Item {
       }
 
       // -- the field ----------------------------------------------------------
-      Item { width: 1; height: 8 }
+      Item { width: 1; height: 8; visible: field.visible }
 
       SecretField {
         id: field
         width: parent.width
+        visible: !root.onFactor
         compact: root.compact
         locked: root.verifying
         waiting: root.onFactor
