@@ -115,4 +115,29 @@ assert.equal(Hex.format(0, 0, 0), "#000000", "empty channels stay empty");
 assert.equal(Hex.format(0.5, 0.5, 0.5), "#808080", "half rounds up to 0x80");
 assert.equal(Hex.format(2, -2, 0.5), "#ff0080", "channels clamp before rounding");
 
+// -- Arrange.js: where a dropped screen lands -----------------------------
+// Every failure here is a desk the cursor cannot cross, or two screens
+// stacked on one another, and Hyprland applies either without complaint.
+const Arrange = load("./Arrange.js", ["place", "normalise"]);
+const A = { x: 0, y: 0, w: 2560, h: 1440 };
+
+assert.deepEqual(Arrange.place({ w: 1440, h: 960 }, [A], 3000, 900, 50),
+  { x: 2560, y: 900 }, "a gap to the right closes; the drop height is kept");
+assert.deepEqual(Arrange.place({ w: 1440, h: 960 }, [A], 2600, 20, 50),
+  { x: 2560, y: 0 }, "near the top it pulls flush");
+assert.deepEqual(Arrange.place({ w: 1440, h: 960 }, [A], 500, 300, 50),
+  { x: 500, y: 1440 }, "a drop on top of a screen is pushed off it, to the nearest side");
+assert.deepEqual(Arrange.place({ w: 1440, h: 960 }, [A], 3000, 5000, 50),
+  { x: 2200, y: 1440 }, "dragged far off it comes back with a quarter of an edge shared");
+assert.deepEqual(Arrange.place({ w: 1440, h: 960 }, [], 777, 777, 50),
+  { x: 0, y: 0 }, "a lone screen sits at the origin");
+const B = { x: 2560, y: 0, w: 2560, h: 1440 };
+const p = Arrange.place({ w: 1440, h: 960 }, [A, B], 2000, 100, 50);
+assert.ok(![A, B].some(o => p.x < o.x + o.w && o.x < p.x + 1440 && p.y < o.y + o.h && o.y < p.y + 960),
+  "between two screens it lands on neither");
+assert.deepEqual(Arrange.place({ w: 1365.33, h: 768 }, [A], -1300, 0, 50),
+  { x: -1365, y: 0 }, "a fractional width still butts on the left");
+assert.deepEqual(Arrange.normalise([{ x: 2560, y: -200 }, { x: 4000, y: 0 }]),
+  [{ x: 0, y: 0 }, { x: 1440, y: 200 }], "the desk starts at 0,0");
+
 console.log("settings selfcheck: ok");
