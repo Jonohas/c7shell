@@ -17,17 +17,23 @@
 
   "palette": {
     "_comment": [
-      "The two variants Theme can render. `bg` is the deepest layer (item views),",
+      "The variants Theme can render. `bg` is the deepest layer (item views),",
       "`canvas` the window behind them, `glassBase` the popover base -- used with",
-      "glassAlpha per surface. `light` is deliberately absent: it needs a whole",
-      "second palette, and until it has one the settings card is shown disabled."
+      "glassAlpha per surface. A variant may override any top-level ink."
     ],
     "variants": {
       "dark": { "bg": "#0a0a0c", "canvas": "#0f0e10", "glassBase": "#0f0f13" },
-      "oled": { "bg": "#000000", "canvas": "#050506", "glassBase": "#000000" }
+      "oled": { "bg": "#000000", "canvas": "#050506", "glassBase": "#000000" },
+      "light": {
+        "bg": "#f7f6f4", "canvas": "#efedea", "glassBase": "#f2f1ee",
+        "text": "#18171a", "overlay": "#000000",
+        "success": "#106a2f", "warning": "#855500", "negative": "#b71c1c", "neutral": "#9a4505"
+      }
     },
 
     "text": "#f0eff1",
+    "_overlay": "What Theme's surfaceNN, hairlines and hover pills are a translucent layer OF: white lifts a dark ground, black sinks a light one.",
+    "overlay": "#ffffff",
     "_textOnAccent": "Ink ON an accent or otherwise selected surface. Pure white, not `text`: #f0eff1 on crimson reads grey, which is why five files had this literal.",
     "textOnAccent": "#ffffff",
     "success": "#4ade80",
@@ -54,13 +60,12 @@
     "_previews": [
       "The settings app's miniature variant swatches (2b). They describe what a",
       "variant looks like rather than being it, so they are their own values and",
-      "not the `variants` grounds above -- `light` is here precisely because",
-      "nothing can render it yet."
+      "not the `variants` grounds above."
     ],
     "previews": [
-      { "key": "dark", "label": "dark · default", "bg": "#0d0d10", "ink": "#ffffff", "bar": 0.12, "block": 0.07, "ready": true },
-      { "key": "oled", "label": "oled black", "bg": "#050506", "ink": "#ffffff", "bar": 0.09, "block": 0.05, "ready": true },
-      { "key": "light", "label": "light · later", "bg": "#e9e6e2", "ink": "#000000", "bar": 0.12, "block": 0.07, "ready": false }
+      { "key": "dark", "label": "dark · default", "bg": "#0d0d10", "ink": "#ffffff", "bar": 0.12, "block": 0.07 },
+      { "key": "oled", "label": "oled black", "bg": "#050506", "ink": "#ffffff", "bar": 0.09, "block": 0.05 },
+      { "key": "light", "label": "light", "bg": "#e9e6e2", "ink": "#000000", "bar": 0.12, "block": 0.07 }
     ]
   },
 

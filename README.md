@@ -213,8 +213,7 @@ python3 ~/.config/quickshell/c7shell/scripts/c7shell-filechooser.py \
 ```
 
 The shell's own palette does not follow this setting: picking `light` here makes
-apps light, not the bar. The light *variant* is the card marked "later" on the
-same page.
+apps light, not the bar. The light *variant* is the "light" card on the same page.
 
 To export by hand at any time — kdeglobals, the lock screen palette and the
 preference, all three:

@@ -26,7 +26,7 @@ Item {
   Rectangle {   // the indent wash: a hint of depth, not a second surface
     anchors.fill: parent
     visible: root.indent
-    color: Qt.rgba(1, 1, 1, 0.015)
+    color: Theme.alpha(Theme.overlay, 0.015)
   }
 
   Rectangle {
