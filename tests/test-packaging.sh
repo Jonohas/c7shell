@@ -68,4 +68,91 @@ while read -r dir; do
 package() installs nothing there."
 done < <(grep -hoE '_c7lib=/usr/lib/[A-Za-z0-9._-]+' "$root"/bin/* | sed 's/.*=//' | sort -u)
 
+# --------------------------------------------------------------------------
+# The C7 plugin. The shell imports C7, so a package without the module is a
+# shell that fails to load, and a check() that lets a plugin test fail ships
+# a module nobody tested. build(), check() and package() run here as makepkg
+# runs them (sourced, under errexit), against stub cmake, ctest and lua that
+# record each call -- arguments and DESTDIR -- and fail the one call that
+# carries the word in STUB_FAIL.
+# --------------------------------------------------------------------------
+mktmp
+fake=$tmp/fake
+mkdir -p "$fake/bin" "$fake/src/c7shell/tests" "$fake/src/c7shell/hypr"
+for tool in cmake ctest lua; do
+  cat >"$fake/bin/$tool" <<STUB
+#!/bin/sh
+echo "$tool DESTDIR=\$DESTDIR \$* " >>"$fake/calls"
+[ -n "\${STUB_FAIL:-}" ] && case " \$* " in *" \$STUB_FAIL "*) exit 1 ;; esac
+exit 0
+STUB
+  chmod +x "$fake/bin/$tool"
+done
+printf '#!/bin/sh\nexit 0\n' >"$fake/src/c7shell/tests/ok.sh"
+chmod +x "$fake/src/c7shell/tests/ok.sh"
+
+# run_fn FN TREE [VAR=VALUE...] -- run PKGBUILD's FN with TREE as the cloned
+# source; sets `rc`, and keeps the output in $fake/log.
+run_fn() {
+  local fn=$1 tree=$2
+  shift 2
+  : >"$fake/calls"
+  rm -rf "$fake/pkg" "$fake/srcdir" && mkdir -p "$fake/srcdir"
+  ln -s "$tree" "$fake/srcdir/c7shell"
+  rc=0
+  env -u DESTDIR -u STUB_FAIL "$@" PATH="$fake/bin:$PATH" srcdir="$fake/srcdir" pkgdir="$fake/pkg" \
+    bash -ec '. "$1"; "$2"' _ "$pkgbuild" "$fn" >"$fake/log" 2>&1 || rc=$?
+}
+# expect_ok WHAT -- the last run_fn succeeded, or show its output and fail.
+expect_ok() { ((rc == 0)) || { cat "$fake/log" >&2; fail "$1 failed against stub tools (exit $rc)"; }; }
+# called TOOL WORD... -- one recorded TOOL call carries every WORD, in any order.
+called() {
+  local tool=$1 line w
+  shift
+  while read -r line; do
+    line=" $line "
+    for w in "$@"; do [[ $line == *" $w "* ]] || continue 2; done
+    return 0
+  done < <(grep "^$tool " "$fake/calls")
+  return 1
+}
+calls() { cat "$fake/calls"; }
+
+(. "$pkgbuild"; ((${#arch[@]})) && [[ " ${arch[*]} " != *' any '* ]]) \
+  || fail "PKGBUILD must name an arch other than any: the package carries a compiled C7 plugin"
+# One entry for each tool build() runs: cmake, and ninja behind -G Ninja.
+for dep in cmake ninja; do
+  (. "$pkgbuild"; [[ " ${makedepends[*]} " == *" $dep "* ]]) \
+    || fail "makedepends lacks $dep, which build() needs for the C7 plugin"
+done
+
+run_fn build "$fake/src/c7shell"
+expect_ok 'build()'
+# The prefix decides where package() puts the module; anything but /usr is a
+# directory Qt never searches.
+called cmake -S plugin -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr \
+  || fail "build() does not configure plugin/ into build/ with Ninja and prefix /usr:\n$(calls)"
+called cmake --build build || fail "build() does not build the plugin:\n$(calls)"
+for step in -S --build; do
+  run_fn build "$fake/src/c7shell" STUB_FAIL=$step
+  ((rc != 0)) || fail "build() passed while its cmake $step step failed"
+done
+
+run_fn check "$fake/src/c7shell"
+expect_ok 'check()'
+# --no-tests=error: a build directory with no tests registered is not a pass.
+called ctest --test-dir build --no-tests=error \
+  || fail "check() does not run the plugin's ctest suite with --no-tests=error:\n$(calls)"
+run_fn check "$fake/src/c7shell" STUB_FAIL=--test-dir
+((rc != 0)) || fail "check() passed while a plugin test failed"
+
+# package() against the real tree: it installs the real files, and only cmake
+# is a stub. The install has to land in the package, so DESTDIR is $pkgdir.
+run_fn package "$root"
+expect_ok 'package()'
+called cmake "DESTDIR=$fake/pkg" --install build \
+  || fail "package() never installs the C7 plugin into \$pkgdir:\n$(calls)"
+run_fn package "$root" STUB_FAIL=--install
+((rc != 0)) || fail "package() passed while the plugin install failed"
+
 printf 'PASS: packaging (%s programs in bin/)\n' "$(find "$root/bin" -maxdepth 1 -type f | wc -l)"
