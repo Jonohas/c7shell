@@ -71,7 +71,6 @@
       "adapter's shape is the contract: add a key there and add it here."
     ],
     "theme": "dark",
-    "colorScheme": "dark",
     "accent": "#e53a44",
     "rounding": 19,
     "gapsIn": 3,

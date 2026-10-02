@@ -490,7 +490,7 @@ if command -v gsettings >/dev/null; then
     '') warn 'gsettings cannot read org.gnome.desktop.interface (package: gsettings-desktop-schemas)' ;;
     *)
       warn 'no color-scheme preference set, so apps that detect one pick light'
-      note 'set it in the settings app (Appearance -> app color scheme), or export it:'
+      note 'it follows the theme in the settings app (Appearance); export it:'
       note 'python3 ~/.config/quickshell/c7shell/scripts/c7shell-theme-export.py'
       ;;
   esac

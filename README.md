@@ -152,16 +152,16 @@ checks all three:
 
 ## The theme apps detect
 
-Separate from all of the above, and from the shell's own variant: **Appearance →
-app color scheme** in the settings app is what this desktop *tells other apps*
-it prefers. GTK, Electron, Chromium and libadwaita apps do not read kdeglobals —
-they ask `xdg-desktop-portal` for `org.freedesktop.appearance color-scheme`, and
-a desktop that never answers is read as "no preference", which every one of them
-renders as light. That is why a dark shell used to sit next to a light browser.
+Separate from all of the above: GTK, Electron, Chromium and libadwaita apps do
+not read kdeglobals — they ask `xdg-desktop-portal` for
+`org.freedesktop.appearance color-scheme`, and a desktop that never answers is
+read as "no preference", which every one of them renders as light. That is why a
+dark shell used to sit next to a light browser.
 
-The setting writes `colorScheme` into `~/.config/hypr/appearance.json`
-(`dark` by default), and the same export script publishes it where the answer is
-looked up:
+There is no separate setting for it: the **Appearance** theme implies it. A
+light theme tells apps to prefer light; dark and oled tell them to prefer dark.
+The export script derives it from `theme` in `~/.config/hypr/appearance.json`
+and publishes it where the answer is looked up:
 
 - the GSettings key `org.gnome.desktop.interface color-scheme`
   (`prefer-dark` / `prefer-light`), which the portal reports over the bus;
