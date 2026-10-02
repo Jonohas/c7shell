@@ -68,4 +68,54 @@ while read -r dir; do
 package() installs nothing there."
 done < <(grep -hoE '_c7lib=/usr/lib/[A-Za-z0-9._-]+' "$root"/bin/* | sed 's/.*=//' | sort -u)
 
+# --------------------------------------------------------------------------
+# The C7 plugin. The shell imports C7, so a package without the module is a
+# shell that fails to load, and a check() that lets a plugin test fail ships
+# a module nobody tested. build() and check() run here as makepkg runs them
+# (sourced, under errexit), against stub cmake, ctest and lua that record
+# their arguments.
+# --------------------------------------------------------------------------
+mktmp
+fake=$tmp/fake
+mkdir -p "$fake/bin" "$fake/src/c7shell/tests" "$fake/src/c7shell/hypr"
+for tool in cmake ctest lua; do
+  printf '#!/bin/sh\necho "%s $*" >>"%s/calls"\nexit "${STUB_RC_%s:-0}"\n' \
+    "$tool" "$fake" "$tool" >"$fake/bin/$tool"
+  chmod +x "$fake/bin/$tool"
+done
+printf '#!/bin/sh\nexit 0\n' >"$fake/src/c7shell/tests/ok.sh"
+chmod +x "$fake/src/c7shell/tests/ok.sh"
+
+# run_fn FN [VAR=VALUE...] -- run PKGBUILD's FN in the fake tree; sets `rc`.
+run_fn() {
+  local fn=$1
+  shift
+  : >"$fake/calls"
+  rc=0
+  env "$@" PATH="$fake/bin:$PATH" srcdir="$fake/src" pkgdir="$fake/pkg" \
+    bash -ec '. "$1"; "$2"' _ "$pkgbuild" "$fn" >/dev/null 2>&1 || rc=$?
+}
+
+(. "$pkgbuild"; [[ " ${arch[*]} " != *' any '* ]]) \
+  || fail "PKGBUILD says arch=any, but the package carries a compiled C7 plugin"
+(. "$pkgbuild"; [[ " ${makedepends[*]} " == *' cmake '* ]]) \
+  || fail "makedepends lacks cmake, which build() needs for the C7 plugin"
+
+run_fn build
+((rc == 0)) || fail "build() failed against stub tools (exit $rc)"
+grep -qE '^cmake .*-S plugin -B build( |$)' "$fake/calls" \
+  || fail "build() does not configure plugin/ into build/:\n$(cat "$fake/calls")"
+grep -qE '^cmake --build build( |$)' "$fake/calls" \
+  || fail "build() does not build the plugin:\n$(cat "$fake/calls")"
+
+run_fn check
+((rc == 0)) || fail "check() failed with every stub passing (exit $rc)"
+grep -qE '^ctest .*--test-dir build( |$)' "$fake/calls" \
+  || fail "check() does not run the plugin's ctest suite:\n$(cat "$fake/calls")"
+run_fn check STUB_RC_ctest=1
+((rc != 0)) || fail "check() passed while a plugin test failed"
+
+grep -qF 'DESTDIR="$pkgdir" cmake --install build' "$pkgbuild" \
+  || fail "package() never installs the C7 plugin (DESTDIR=\"\$pkgdir\" cmake --install build)"
+
 printf 'PASS: packaging (%s programs in bin/)\n' "$(find "$root/bin" -maxdepth 1 -type f | wc -l)"

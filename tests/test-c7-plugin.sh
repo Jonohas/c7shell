@@ -10,8 +10,11 @@
 #      are plain Qt clients
 #   3. a clean configure, build and ctest of plugin/ passes, and ctest runs
 #      every test this script names
-#   4. tst_module fails, for the missing module, once the built C7 module is gone
-# Checks 3 and 4 skip without cmake or qt6-declarative; 1 and 2 always run.
+#   4. `cmake --install` puts the whole module, and nothing else, in
+#      usr/lib/qt6/qml/C7, and tst_module loads it from there with the build
+#      tree's copy gone -- what PKGBUILD's package() ships
+#   5. tst_module fails, for the missing module, once the built C7 module is gone
+# Checks 3 to 5 skip without cmake or qt6-declarative; 1 and 2 always run.
 set -euo pipefail
 shopt -s inherit_errexit
 
@@ -109,12 +112,30 @@ done
 run_logged ctest ctest --test-dir "$build" --output-on-failure --no-tests=error
 echo "PASS: plugin builds and ctest passes"
 
-# 4. the module test needs the module -----------------------------------------
-# Run the binary itself: through ctest, "no such test" and "test failed" share
-# an exit code.
+# 4. the installed module ------------------------------------------------------
 [[ -f $build/qml/C7/qmldir ]] || fail "the build left no C7 module at qml/C7"
 [[ -x $build/tests/tst_module ]] || fail "the build left no tst_module binary"
+dest=$tmp/dest
+qmldest=$dest/usr/lib/qt6/qml
+DESTDIR=$dest run_logged install cmake --install "$build" --prefix /usr
+for f in qmldir c7.qmltypes; do
+  [[ -f $qmldest/C7/$f ]] || fail "cmake --install left no usr/lib/qt6/qml/C7/$f"
+done
+# One plugin library carrying the whole module: a second shared library would
+# need its own place on the loader path, which the package does not give it.
+libs=$(find "$qmldest/C7" -name '*.so*')
+[[ $(wc -l <<<"$libs") -eq 1 && -n $libs ]] || fail "expected one plugin library in C7/, got:\n$libs"
+stray=$(find "$dest" -type f ! -path "$qmldest/C7/*")
+[[ -z $stray ]] || fail "cmake --install puts files outside usr/lib/qt6/qml/C7:\n$stray"
+# The build tree's copy goes first, so only the installed one can satisfy this.
 rm -rf "$build/qml/C7"
+C7_QML_IMPORT_PATH=$qmldest run_logged 'tst_module against the installed module' \
+  "$build/tests/tst_module"
+echo "PASS: cmake --install ships the whole module to usr/lib/qt6/qml/C7"
+
+# 5. the module test needs the module -----------------------------------------
+# Run the binary itself: through ctest, "no such test" and "test failed" share
+# an exit code.
 rc=0
 "$build/tests/tst_module" >"$log" 2>&1 || rc=$?
 if ((rc != 1)) || ! grep -q 'module C7 is not installed' "$log"; then
