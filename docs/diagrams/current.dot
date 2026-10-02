@@ -1,0 +1,112 @@
+// c7shell today: who does the integration work.
+// Lanes are ownership. Yellow fill = not ours (Quickshell upstream, CLIs we spawn, system services).
+digraph current {
+  graph [splines=ortho, rankdir=TB, nodesep=0.30, ranksep=0.55, fontname="Helvetica", fontsize=11, bgcolor="white", newrank=true];
+  node  [shape=box, style="filled,rounded", fillcolor="#ffffff", color="#607d8b", fontcolor="#263238",
+         fontname="Helvetica", fontsize=10, margin="0.14,0.08", width=2.05];
+  edge  [color="#546e7a", fontname="Helvetica", fontsize=9, penwidth=1.1, arrowhead=vee];
+
+  // ---- lane 1: UI ---------------------------------------------------------
+  subgraph cluster_ui {
+    style="rounded,filled"; fillcolor="#fafafa"; color="#cfd8dc";
+    { rank=same;
+      t_ui [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="UI\n(QML, ours)"];
+      UI [group=c5, width=4.5, label="UI surfaces: bar, popovers, settings, launcher,\nOSD, capture overlay, auth prompt, toasts"]; }
+  }
+
+  // fan-out comb under the UI, one junction per column
+  node [shape=point, style=filled, width=0.01, label="", color="#546e7a"];
+  j1 [group=c1]; j2 [group=c2]; j3 [group=c3]; j4 [group=c4]; j5 [group=c5];
+  j6 [group=c6]; j7 [group=c7]; j8 [group=c8]; j9 [group=c9];
+  { rank=same; j1; j2; j3; j4; j5; j6; j7; j8; j9; }
+  node [shape=box, style="filled,rounded", fillcolor="#ffffff", color="#607d8b", width=2.05, label="\N"];
+
+  // ---- lane 2: our QML services -------------------------------------------
+  subgraph cluster_svc {
+    style="rounded,filled"; fillcolor="#f3f6f9"; color="#cfd8dc";
+    { rank=same;
+      t_svc [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="Services\n(QML, ours)"];
+      S1 [group=c1, label="AudioService\n(+ StatusPill, OSD\nimport it directly)"];
+      S2 [group=c2, label="BatteryService\nMprisService"];
+      S3 [group=c3, label="NetworkService\nBluetoothService\nAirplaneService"];
+      S4 [group=c4, label="NotifServer\nTrayPill"];
+      S5 [group=c5, label="Bar, Workspaces,\nDisplayService,\nOSD, popups"];
+      S6 [group=c6, label="Tuned, Fingerprint,\nBrightness, Power,\nScreenshare, EyeSaver,\nnetwork gaps"];
+      S7 [group=c7, label="Capture, Recording,\nUpdates, Terminal,\nAppearance"];
+      S8 [group=c8, label="AppearanceStore\nCaptureService"];
+      S9 [group=c9, label="AuthService\nAppMenuService"]; }
+  }
+
+  // ---- lane 3: processes we spawn -----------------------------------------
+  subgraph cluster_proc {
+    style="rounded,filled"; fillcolor="#fafafa"; color="#cfd8dc";
+    { rank=same;
+      t_proc [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="processes\nwe spawn"];
+      P6 [group=c6, fillcolor="#fff8e1", color="#f9a825", label="«CLI, polled»\ngdbus, busctl, systemctl,\nnmcli, ip, rfkill, hyprctl,\nddcutil, fprintd-*, sh -c"];
+      P7 [group=c7, fillcolor="#fff8e1", color="#f9a825", label="«programs»\ngrim, wf-recorder,\nc7up, kitty,\nhyprsunset, hyprpaper"];
+      P8 [group=c8, label="«python, ours»\ntheme-export.py\ncrop.py\nfilechooser.py"];
+      P9 [group=c9, label="«python daemons, ours»\nc7-authd\nc7shell-appmenud"]; }
+  }
+
+  // ---- lane 4: Quickshell -------------------------------------------------
+  subgraph cluster_qs {
+    style="rounded,filled"; fillcolor="#f3f6f9"; color="#cfd8dc";
+    { rank=same;
+      t_qs [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="Quickshell\n(C++, upstream)"];
+      Q0 [group=c0, fillcolor="#fff8e1", color="#f9a825", label="«framework»\nwindows, layer shell,\nsession lock, screencopy,\nProcess, FileView,\nIPC + qs CLI, hot reload"];
+      Q1 [group=c1, fillcolor="#fff8e1", color="#f9a825", label="Services.Pipewire"];
+      Q2 [group=c2, fillcolor="#fff8e1", color="#f9a825", label="Services.UPower\nServices.Mpris"];
+      Q3 [group=c3, fillcolor="#fff8e1", color="#f9a825", label="Networking\nBluetooth"];
+      Q4 [group=c4, fillcolor="#fff8e1", color="#f9a825", label="Services.Notifications\nServices.SystemTray"];
+      Q5 [group=c5, fillcolor="#fff8e1", color="#f9a825", label="Hyprland"]; }
+  }
+
+  // ---- lane 5: the system -------------------------------------------------
+  subgraph cluster_sys {
+    style="rounded,filled"; fillcolor="#fafafa"; color="#cfd8dc";
+    { rank=same;
+      t_sys [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="system\n(not ours)"];
+      X0 [group=c0, fillcolor="#fff8e1", color="#f9a825", label="Hyprland\nWayland protocols"];
+      X1 [group=c1, fillcolor="#fff8e1", color="#f9a825", label="PipeWire"];
+      X2 [group=c2, fillcolor="#fff8e1", color="#f9a825", label="UPower\nMPRIS players"];
+      X3 [group=c3, fillcolor="#fff8e1", color="#f9a825", label="NetworkManager\nBlueZ"];
+      X4 [group=c4, fillcolor="#fff8e1", color="#f9a825", label="apps on the\nsession bus"];
+      X5 [group=c5, fillcolor="#fff8e1", color="#f9a825", label="Hyprland\nIPC sockets"];
+      X6 [group=c6, fillcolor="#fff8e1", color="#f9a825", label="tuned, fprintd,\nlogind, systemd, NM,\nrfkill, sysfs, i2c"];
+      X7 [group=c7, fillcolor="#fff8e1", color="#f9a825", label="screen, encoder,\npacman / AUR / flatpak,\ngamma, wallpaper"];
+      X8 [group=c8, fillcolor="#fff8e1", color="#f9a825", label="GTK, kitty, hyprlock\nconfig files, portal"];
+      X9 [group=c9, fillcolor="#fff8e1", color="#f9a825", label="polkitd, sudo,\nAppMenu apps"]; }
+  }
+
+  // lane titles stack in one left column
+  t_ui -> t_svc -> t_proc -> t_qs -> t_sys [style=invis, weight=100];
+  // column order, left to right (layout only)
+  t_qs -> Q0 [style=invis];
+  t_ui -> UI [style=invis];
+  t_svc -> S1 [style=invis];
+  t_proc -> P6 [style=invis];
+  Q0 -> Q1 -> Q2 -> Q3 -> Q4 -> Q5 [style=invis];
+  t_sys -> X0 [style=invis];
+  X0 -> X1 -> X2 -> X3 -> X4 -> X5 -> X6 -> X7 -> X8 -> X9 [style=invis];
+  S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> S8 -> S9 [style=invis];
+  P6 -> P7 -> P8 -> P9 [style=invis];
+
+  // UI fans out through the comb
+  UI -> j5 [arrowhead=none, weight=100];
+  j1 -> j2 -> j3 -> j4 -> j5 -> j6 -> j7 -> j8 -> j9 [arrowhead=none];
+  j1 -> S1 [weight=100]; j2 -> S2 [weight=100]; j3 -> S3 [weight=100]; j4 -> S4 [weight=100];
+  j5 -> S5 [weight=100]; j6 -> S6 [weight=100]; j7 -> S7 [weight=100]; j8 -> S8 [weight=100];
+  j9 -> S9 [weight=100];
+
+  // the integration paths, one column each
+  Q0 -> X0 [weight=100];
+  S1 -> Q1 [weight=100]; Q1 -> X1 [weight=100];
+  S2 -> Q2 [weight=100]; Q2 -> X2 [weight=100];
+  S3 -> Q3 [weight=100]; Q3 -> X3 [weight=100];
+  S4 -> Q4 [weight=100]; Q4 -> X4 [weight=100];
+  S5 -> Q5 [weight=100]; Q5 -> X5 [weight=100];
+  S6 -> P6 [weight=100]; P6 -> X6 [weight=100];
+  S7 -> P7 [weight=100]; P7 -> X7 [weight=100];
+  S8 -> P8 [weight=100]; P8 -> X8 [weight=100];
+  S9 -> P9 [weight=100]; P9 -> X9 [weight=100];
+}

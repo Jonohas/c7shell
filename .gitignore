@@ -9,7 +9,8 @@ pkg/
 hypr/appearance.json
 
 # local agent/tooling state, never part of a release
-.claude/
+.claude/*
+!.claude/skills/
 .superpowers/
 graphify-out/
 docs/plans/
