@@ -135,6 +135,23 @@ if ! grep -qs '^[[:space:]]*PrivilegeElevationCommand=' "$au"; then
   fi
 fi
 
+# paru the same way: its [bin] Sudo is what `paru -Syu` runs pacman through.
+# paru reads ~/.config/paru/paru.conf INSTEAD of /etc/paru.conf, not on top of
+# it, so a new user file starts as a copy of the system one -- otherwise the
+# options there (Devel, BottomUp, ...) would silently stop applying.
+pc=$conf/paru/paru.conf
+if command -v paru >/dev/null && ! grep -qs '^[[:space:]]*Sudo[[:space:]]*=' "$pc"; then
+  printf 'setting Sudo = run0 in %s   (paru prompts through polkit)\n' "$pc"
+  run mkdir -p -- "$(dirname -- "$pc")"
+  if ((dry)); then
+    printf '  would: append [bin] Sudo = run0 to %s\n' "$pc"
+  else
+    [[ -e $pc || ! -r ${C7SHELL_PARU_SYSCONF:-/etc/paru.conf} ]] \
+      || cp -- "${C7SHELL_PARU_SYSCONF:-/etc/paru.conf}" "$pc"
+    printf '\n[bin]\nSudo = run0\n' >> "$pc"
+  fi
+fi
+
 # Record the hash of every file as installed. c7shell-upgrade compares against
 # this to tell "you edited it" from "it is just an old copy" -- without it, a
 # later upgrade has to assume every difference is a local edit and can only

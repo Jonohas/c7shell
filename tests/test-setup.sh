@@ -58,6 +58,24 @@ grep -qx 'PrivilegeElevationCommand=doas' "$au" && ! grep -q run0 "$au" \
 printf '#PrivilegeElevationCommand=sudo\n' > "$au"
 "$setup" >/dev/null 2>&1 || true
 grep -qx 'PrivilegeElevationCommand=run0' "$au" || fail "a commented-out default was taken as a choice:\n$(cat "$au")"
+
+# paru: its Sudo goes through run0 too, and a new user paru.conf keeps the
+# system file's options, since paru reads one or the other, never both
+pc=$XDG_CONFIG_HOME/paru/paru.conf
+# The runs above may have found a real paru on this machine's PATH.
+rm -rf -- "$XDG_CONFIG_HOME/paru"
+sysconf=$tmp/etc-paru.conf
+printf '[options]\nC7TestMarker\n' > "$sysconf"
+paru_bin=$tmp/paru-bin
+mkdir -p "$paru_bin"; printf '#!/bin/sh\n' > "$paru_bin/paru"; chmod +x "$paru_bin/paru"
+PATH=$paru_bin:$PATH C7SHELL_PARU_SYSCONF=$sysconf "$setup" >/dev/null 2>&1 || true
+grep -qx 'Sudo = run0' "$pc" || fail "paru was not pointed at run0:\n$(cat "$pc" 2>&1)"
+grep -qx 'C7TestMarker' "$pc" || fail "the new paru.conf dropped the system file's options:\n$(cat "$pc")"
+PATH=$paru_bin:$PATH C7SHELL_PARU_SYSCONF=$sysconf "$setup" >/dev/null 2>&1 || true
+(($(grep -c '^Sudo' "$pc") == 1)) || fail "a rerun added a second paru Sudo line:\n$(cat "$pc")"
+printf '[bin]\nSudo = doas\n' > "$pc"
+PATH=$paru_bin:$PATH C7SHELL_PARU_SYSCONF=$sysconf "$setup" >/dev/null 2>&1 || true
+grep -q run0 "$pc" && fail "a paru Sudo the user chose was overwritten:\n$(cat "$pc")"
 [[ $(cat "$XDG_CONFIG_HOME/hypr/hyprland.lua") == v1 ]] || fail 'hypr not installed'
 [[ $(cat "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml") == v1 ]] || fail 'quickshell not installed'
 [[ $(cat "$XDG_CONFIG_HOME/xdg-desktop-portal/hyprland-portals.conf") == v1 ]] || fail 'portal config not installed'
