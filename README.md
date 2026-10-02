@@ -405,8 +405,8 @@ eat local edits by accident.
 | `hypr/hyprlock.conf` | the lock screen; mandatory, hyprlock will not start without it |
 | `hypr/xdph.conf` | points xdph's screencopy picker at the shell's own picker |
 | `quickshell/c7shell/shell.qml` | shell entry point |
-| `plugin/` | the `C7` QML module in C++; installed to `/usr/lib/qt6/qml/C7` |
 | `quickshell/c7shell/preview.qml` | preview harness; must sit here to resolve `qs.*`, not shipped |
+| `plugin/` | the `C7` QML module in C++; installed to `/usr/lib/qt6/qml/C7` |
 | `tools/qml-imports` | builds the module tree editors resolve `qs.*` against |
 | `tools/qml-preview` | runs one component in a window of its own |
 | `quickshell/c7shell/Services/` | brightness, network, bluetooth, audio, notifications, capture |

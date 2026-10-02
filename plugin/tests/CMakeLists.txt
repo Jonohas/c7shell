@@ -4,3 +4,7 @@ target_compile_definitions(tst_module PRIVATE C7_QML_IMPORT_PATH="${QT_QML_OUTPU
 # The test loads the plugin at run time, so it has to be built first.
 add_dependencies(tst_module c7)
 add_test(NAME tst_module COMMAND tst_module)
+# Pinned, so an import path in the caller's environment (makepkg passes its
+# own through) cannot choose which copy of C7 this test loads.
+set_tests_properties(tst_module PROPERTIES
+    ENVIRONMENT "C7_QML_IMPORT_PATH=${QT_QML_OUTPUT_DIRECTORY}")
