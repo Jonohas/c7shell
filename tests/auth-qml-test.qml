@@ -143,19 +143,25 @@ Window {
     check(!AuthService.active, "the queue emptied but the window would have stayed up")
 
     // ------------------------------------------------------------------ 5 --
-    // The alternate factor is never a dead end, and "use password" is only
-    // reachable from it.
+    // The reader runs beside the password: a fingerprint offer lights the
+    // print without taking the field away, and the reader giving up puts out
+    // only the print.
     root.feed(root.polkitReq)
     root.feed({ ev: "active", id: "r1" })
-    AuthService.usePassword()
-    check(AuthService.stage === "ask", "use password fired outside the factor state")
-
     root.feed({ ev: "factor", id: "r1", kind: "fingerprint",
                 text: "Place your finger on the reader" })
-    check(AuthService.stage === "factor", "a fingerprint offer did not switch state")
-    check(AuthService.onFactor, "onFactor did not follow the factor state")
-    AuthService.usePassword()
-    check(AuthService.stage === "ask", "use password did not leave the fingerprint state")
+    check(AuthService.onFactor, "a fingerprint offer did not light the print")
+    root.feed({ ev: "prompt", id: "r1", text: "Password: ", echo: false })
+    check(AuthService.onFactor && AuthService.promptReady,
+          "the password prompt and the reader were not live together")
+    check(AuthService.stage === "ask", "the reader moved the field out of its own stage")
+    // pam_fprintd words every miss the same, so the count is what shakes the print.
+    root.feed({ ev: "pamerror", id: "r1", text: "Failed to match fingerprint" })
+    root.feed({ ev: "pamerror", id: "r1", text: "Failed to match fingerprint" })
+    check(AuthService.factorMisses === 2, "a repeated fingerprint miss was not counted twice")
+    root.feed({ ev: "factorend", id: "r1" })
+    check(!AuthService.onFactor && AuthService.promptReady,
+          "the reader giving up took the password field with it")
     root.feed({ ev: "close", id: "r1", ok: false })
 
     // ------------------------------------------------------------------ 6 --
@@ -172,10 +178,10 @@ Window {
       { req: root.polkitReq, stage: "verifying",
         headline: "Checking…", icon: "lock",
         primary: "authenticate", cancel: "cancel", placeholder: "password" },
-      { req: root.polkitReq, stage: "factor",
-        headline: "Touch the sensor", icon: "fingerprint",
-        primary: "use password", cancel: "cancel",
-        placeholder: "waiting for fingerprint" },
+      { req: root.polkitReq, stage: "ask", fingerprint: true,
+        headline: "Authentication required", icon: "fingerprint",
+        primary: "authenticate", cancel: "cancel",
+        placeholder: "password, or touch the sensor" },
       // the per-caller variants of 14b
       { req: root.sudoReq, stage: "ask",
         headline: "Run as root", icon: "terminal",
@@ -196,6 +202,7 @@ Window {
       prompt.promptText = ""
       prompt.request = c.req
       prompt.stage = c.stage
+      prompt.fingerprint = c.fingerprint ?? false
       const where = `${c.req.kind}/${c.stage}`
       check(prompt.headline === c.headline,
             `${where} headline is "${prompt.headline}", expected "${c.headline}"`)

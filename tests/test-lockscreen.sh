@@ -439,6 +439,28 @@ def alpha(x, y): return raw[y*stride + 1 + x*4 + 3]
 sys.exit(0 if alpha(67, 40) > 0 and alpha(66, 40) == 0 and alpha(68, 40) == 0 else 1)
 PYCHK
 
+# Fingerprint unlock follows enrolment: on with a finger in fprintd-list, and
+# off with none or with no fprintd at all -- switched on with nothing enrolled,
+# every lock opens with a prompt for a reader that will never answer.
+grep -q 'FPRINTPROMPT' "$gen" && fail 'fingerprint unlock is on with no fprintd-list on the PATH'
+printf '#!/bin/sh\necho "Fingerprints for user $1 on Goodix (press):"\necho " - #0: right-index-finger"\n' \
+  > "$lockdir/bin/fprintd-list"
+chmod +x "$lockdir/bin/fprintd-list"
+USER=tester runlock >/dev/null || fail "an enrolled finger broke c7shell-lock:\n$(cat "$lockdir/err")"
+grep -qE '^\s*enabled = true$' "$gen" || fail "an enrolled finger did not turn fingerprint unlock on:\n$(tail -24 "$gen")"
+grep -q 'FPRINTPROMPT' "$gen" || fail 'fingerprint unlock is on but nothing draws its prompt'
+# Lid shut with external screens (logind LidClosed and Docked): the sensor is
+# under the lid, so the lock screen stays password-only.
+printf '#!/bin/sh\necho "b true"\n' > "$lockdir/bin/busctl"
+chmod +x "$lockdir/bin/busctl"
+USER=tester runlock >/dev/null || fail "a docked, shut lid broke c7shell-lock:\n$(cat "$lockdir/err")"
+grep -q 'FPRINTPROMPT' "$gen" && fail 'fingerprint unlock is on with the lid shut on a dock'
+rm -f "$lockdir/bin/busctl"
+printf '#!/bin/sh\necho "User $1 has no fingers enrolled for Goodix."\n' > "$lockdir/bin/fprintd-list"
+USER=tester runlock >/dev/null || fail "no enrolled finger broke c7shell-lock:\n$(cat "$lockdir/err")"
+grep -q 'FPRINTPROMPT' "$gen" && fail 'fingerprint unlock is on with no finger enrolled'
+rm -f "$lockdir/bin/fprintd-list"
+
 # Two monitors of different sizes get one image block each -- the whole reason
 # this runs at lock time instead of shipping one asset.
 printf '#!/bin/sh\ncat <<JSON\n[{"name":"DP-1","width":1920,"height":1080,"scale":1.0},{"name":"HDMI-A-1","width":2560,"height":1440,"scale":1.0}]\nJSON\n' \

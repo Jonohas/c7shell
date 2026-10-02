@@ -20,19 +20,20 @@ Item {
   // The daemon's request object: kind, title, detail, actionId, command,
   // proc, pid, user, group, root.
   required property var request
-  property string stage: "ask"          // ask · verifying · wrong · factor
+  property string stage: "ask"          // ask · verifying · wrong
+  // The reader is listening. Not a stage: the field stays live beside it.
+  property bool fingerprint: false
   property int tries: 0
   property int maxTries: 3
   property bool promptReady: true
   property string promptText: ""
-  property string factorText: ""
   property string noticeText: ""
   property string pamError: ""
+  property int factorMisses: 0
   property int waiting: 0
 
   signal submitted(string secret)
   signal cancelled
-  signal usePasswordRequested
 
   readonly property string kind: root.request?.kind ?? "polkit"
   // Colour carries the privilege level and nothing else: crimson tile means
@@ -44,7 +45,7 @@ Item {
 
   readonly property bool verifying: root.stage === "verifying"
   readonly property bool failed: root.stage === "wrong"
-  readonly property bool onFactor: root.stage === "factor"
+  readonly property bool onFactor: root.fingerprint
 
   // -- the replaceable surface ----------------------------------------------
   // The design lets a caller replace the icon, the two text lines and the
@@ -53,7 +54,6 @@ Item {
   // a test can check every state without reaching into a nested Text.
 
   readonly property string headline: root.verifying ? "Checking…"
-      : root.onFactor ? "Touch the sensor"
       : root.failed && root.kind === "polkit" ? "Authentication failed"
       : (root.request?.title ?? "Authentication required")
 
@@ -62,7 +62,6 @@ Item {
   // outranks the caller's own description, because it is the only line that
   // explains why the password that works is not working.
   readonly property string description: root.pamError !== "" ? root.pamError
-      : root.onFactor && root.factorText !== "" ? root.factorText
       : root.noticeText !== "" ? root.noticeText
       : root.kind === "sudo" ? root.askedBy
       : (root.request?.detail ?? "")
@@ -76,20 +75,19 @@ Item {
 
   readonly property string cancelLabel: root.kind === "keyring" ? "deny" : "cancel"
 
-  readonly property string primaryLabel: root.onFactor ? "use password"
-      : root.failed ? "try again"
+  readonly property string primaryLabel: root.failed ? "try again"
       : root.kind === "sudo" ? "run"
       : root.kind === "wifi" ? "connect"
       : root.kind === "keyring" ? "unlock"
       : "authenticate"
 
-  readonly property string fieldPlaceholder: root.onFactor ? "waiting for fingerprint"
-      : root.kind === "wifi" ? "network key"
+  readonly property string fieldPlaceholder: root.kind === "wifi" ? "network key"
       : root.kind === "keyring" ? "keyring password"
       // PAM's own wording, when it asked for something that is not the
       // password: at that point the only honest label is the one it wrote.
       : root.promptText !== "" && root.promptText.toLowerCase() !== "password:"
         ? root.promptText.replace(/:$/, "")
+        : root.onFactor ? "password, or touch the sensor"
         : "password"
 
   // "asked by foot · pid 41207": the terminal, not the shell it was typed
@@ -100,6 +98,10 @@ Item {
     if (proc === "" && !pid) return ""
     return pid ? `asked by ${proc || "an unknown process"} · pid ${pid}` : `asked by ${proc}`
   }
+
+  // A finger the reader did not match: the print shakes, the way a wrong
+  // password shakes the panel.
+  onFactorMissesChanged: if (root.factorMisses > 0) glyph.reject()
 
   function focusInput() { field.focusInput() }
   function clearInput() { field.clear() }
@@ -131,9 +133,27 @@ Item {
       }
       spacing: 0
 
+      // -- the print ---------------------------------------------------------
+      // While the reader is listening the print replaces the tile. The field
+      // stays below it, live: c7-authd runs the password beside the reader,
+      // so typing never waits for the finger to time out.
+      FingerprintGlyph {
+        id: glyph
+        anchors.horizontalCenter: parent.horizontalCenter
+        visible: root.onFactor
+        size: 64
+        // The whole print, coloured, with the beam sweeping it while the
+        // reader listens -- not the sheet's empty one, which is a print still
+        // being recorded.
+        fill: 1
+        litColor: root.privileged ? Theme.accent : Theme.alpha(Theme.text, 0.8)
+        scanning: root.onFactor
+      }
+
       // -- icon tile ---------------------------------------------------------
       Rectangle {
         id: tile
+        visible: !root.onFactor
         anchors.horizontalCenter: parent.horizontalCenter
         width: root.compact ? 38 : 44
         height: width
@@ -293,7 +313,6 @@ Item {
         width: parent.width
         compact: root.compact
         locked: root.verifying
-        waiting: root.onFactor
         revealable: root.kind === "wifi"
         placeholder: root.fieldPlaceholder
         error: root.failed ? "wrong password" : ""
@@ -322,15 +341,10 @@ Item {
         PromptButton {
           width: (parent.width - 7) / 2
           compact: root.compact
-          // The alternate factor's second button is never a submit: it is the
-          // way back to the password, which is why it is not accented.
-          primary: !root.onFactor
+          primary: true
           label: root.primaryLabel
           dimmed: root.verifying
-          onClicked: {
-            if (root.onFactor) root.usePasswordRequested()
-            else if (!root.verifying) root.submitted(field.text)
-          }
+          onClicked: if (!root.verifying) root.submitted(field.text)
         }
       }
     }

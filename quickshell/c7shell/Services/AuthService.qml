@@ -33,7 +33,9 @@ Singleton {
   readonly property bool active: root.current !== null
 
   // -- the head's conversation -----------------------------------------------
-  // ask · verifying · wrong · factor. There is no "idle": `active` is that.
+  // ask · verifying · wrong. There is no "idle": `active` is that. The
+  // fingerprint reader is not a stage: c7-authd keeps it listening beside the
+  // password, so `onFactor` runs alongside whichever stage the field is in.
   property string stage: "ask"
   property int tries: 0
   property int maxTries: 3
@@ -52,12 +54,15 @@ Singleton {
   // swallows that just looks like a password that has stopped working.
   property string noticeText: ""
   property string pamError: ""
+  // A count, not a flag: pam_fprintd says "Failed to match fingerprint" in the
+  // same words every time, so a changed string cannot signal a second miss.
+  property int factorMisses: 0
 
   readonly property bool verifying: root.stage === "verifying"
   readonly property bool failed: root.stage === "wrong"
-  // The design's rule: "use password" is always present on an alternate
-  // factor, so it is never a dead end.
-  readonly property bool onFactor: root.stage === "factor" && root.factorKind !== ""
+  // The reader is listening. The design's rule was that an alternate factor
+  // is never a dead end; here the password field is simply never taken away.
+  property bool onFactor: false
 
   signal shake
 
@@ -72,17 +77,6 @@ Singleton {
   function cancel() {
     if (!root.current) return
     root.send({ cmd: "cancel", id: root.current.id })
-  }
-
-  // Leaves the fingerprint state for the password field. It does not tell PAM
-  // anything -- there is no way to un-offer a factor mid-conversation -- it
-  // reveals the field so the password prompt sitting behind the fingerprint in
-  // the PAM stack can be answered. Where there is no such prompt the field
-  // stays locked, which is the honest picture: the reader is still the only
-  // way in until it gives up on its own.
-  function usePassword() {
-    if (root.stage !== "factor") return
-    root.stage = "ask"
   }
 
   function send(obj) {
@@ -117,6 +111,8 @@ Singleton {
       root.factorText = ""
       root.noticeText = ""
       root.pamError = ""
+      root.factorMisses = 0
+      root.onFactor = false
       break
 
     case "prompt":
@@ -131,7 +127,11 @@ Singleton {
     case "factor":
       root.factorKind = ev.kind ?? ""
       root.factorText = ev.text ?? ""
-      root.stage = "factor"
+      root.onFactor = root.factorKind !== ""
+      break
+
+    case "factorend":
+      root.onFactor = false
       break
 
     case "info":
@@ -140,6 +140,7 @@ Singleton {
 
     case "pamerror":
       root.pamError = ev.text ?? ""
+      if (root.onFactor) root.factorMisses += 1
       break
 
     case "failed":

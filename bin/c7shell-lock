@@ -155,6 +155,67 @@ def monitors():
     return found
 
 
+# hyprlock's fingerprint auth talks to fprintd itself, but switched on with no
+# finger enrolled it puts a "scan fingerprint" line under every lock for a
+# reader that will never match. hyprlang has no conditionals, so the block is
+# appended here, at lock time, only once fprintd-list shows an enrolled finger.
+FINGERPRINT_BLOCK = """
+# ---- fingerprint (fprintd-list shows an enrolled finger) ----
+auth {
+    fingerprint {
+        enabled = true
+        ready_message = or touch the sensor
+        present_message = scanning...
+    }
+}
+label {
+    monitor =
+    zindex = 1
+    text = $FPRINTPROMPT
+    font_family = $mono
+    font_size = 11
+    color = $ink4
+    position = 0, -72
+    halign = center
+    valign = center
+}
+"""
+
+
+def fingerprint_enrolled():
+    """True only when fprintd answers, quickly, with at least one finger.
+
+    No fprintd, no reader, a slow D-Bus activation: all of them are "no", and
+    the lock screen is password-only exactly as before.
+    """
+    try:
+        out = subprocess.run(
+            ["fprintd-list", os.environ.get("USER") or os.getlogin()],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return out.returncode == 0 and re.search(r"^\s*- #\d+:", out.stdout, re.M) is not None
+
+
+def reader_out_of_reach():
+    """Lid shut on a dock (logind's LidClosed and Docked): the sensor is under
+    the lid, so the lock screen stays password-only. A shut lid without a dock
+    is the lock before suspend, and the lid opens again on the print.
+    """
+    def prop(name):
+        out = subprocess.run(
+            ["busctl", "get-property", "org.freedesktop.login1", "/org/freedesktop/login1",
+             "org.freedesktop.login1.Manager", name],
+            capture_output=True, text=True, timeout=2,
+        )
+        return out.returncode == 0 and out.stdout.strip() == "b true"
+    try:
+        return prop("LidClosed") and prop("Docked")
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def main():
     argv = sys.argv[1:]
     conf = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
@@ -233,6 +294,8 @@ def main():
             f.write(base)
             f.write("\n# ---- backdrop decoration (design doc turn 11) ----\n")
             f.write("".join(blocks))
+            if fingerprint_enrolled() and not reader_out_of_reach():
+                f.write(FINGERPRINT_BLOCK)
         os.replace(tmp, merged)
 
         os.execvp("hyprlock", ["hyprlock", "--config", merged, *argv])
