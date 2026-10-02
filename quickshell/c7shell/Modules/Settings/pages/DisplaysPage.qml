@@ -13,31 +13,15 @@ import qs.Modules.Settings.pages.displays
 // BrightnessService discovered for that connector; mode, scale and position go
 // out as hl.monitor() through DisplayService.
 //
-// Everything applied here is also SAVED, per desk, to ~/.config/hypr/displays.json
-// via DisplayService -- never into conf/monitors.lua, whose hand-written
-// CATALOG/PROFILES no dialog could rebuild. That file keeps deciding which
-// monitors are on (and the whole lid story); the saved layout only overrides
-// the position, mode and scale it would otherwise have chosen. "use profile"
-// throws the saved one away again.
+// Everything applied here is also SAVED for the set of screens connected right
+// now, to ~/.config/hypr/displays.json via DisplayService -- the implicit model
+// KDE and GNOME use, with no named profiles. Plug the same screens back in and
+// conf/monitors.lua restores it; "reset" throws it away again.
 SettingsPage {
   id: root
 
   title: "Displays"
   subtitle: "arrangement · scale · brightness"
-
-  // The name field under the profile header is grown, not a dialog.
-  property bool naming: false
-
-  // Saves the live layout under the typed name and closes the field. Refuses an
-  // empty name; DisplayService refuses one that would write a profile lua could
-  // not use, so a bad capture never lands in the file.
-  function saveNamed() {
-    const name = nameField.text.trim()
-    if (name === "") return
-    DisplayService.saveProfile(name)
-    nameField.text = ""
-    root.naming = false
-  }
 
   // While rearranging, the tiles drag and the page must not flick under them.
   property bool rearranging: false
@@ -58,124 +42,6 @@ SettingsPage {
       onTriggered: DisplayService.commit()
     }
   ]
-
-  // -- profile ------------------------------------------------------------
-  // Pick which arrangement wins. "auto" lets monitors.lua choose by what is
-  // plugged in; picking one pins it. Profiles whose monitors are not all
-  // connected are shown greyed rather than hidden, so the list is a map of
-  // what this machine knows. Empty until displays-state.json exists.
-  SettingsCard {
-    width: parent.width
-    spacing: 9
-
-    Item {
-      width: parent.width
-      implicitHeight: 18
-
-      SectionLabel {
-        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
-        text: "profile"
-      }
-
-      Chip {
-        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-        text: root.naming ? "cancel" : "save as profile"
-        accented: root.naming
-        // A profile is a snapshot of what is LIVE, so anything staged has to be
-        // applied (or cancelled) first -- otherwise the name would be saved
-        // against the layout the user just moved away from.
-        enabled: !DisplayService.hasStaged
-        onTriggered: {
-          root.naming = !root.naming
-          if (root.naming) nameField.forceActiveFocus()
-        }
-      }
-    }
-
-    Text {
-      width: parent.width
-      visible: DisplayService.hasStaged
-      wrapMode: Text.WordWrap
-      text: "press apply first — a profile saves the arrangement that is on screen now."
-      font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-      color: Theme.alpha(Theme.text, 0.4)
-    }
-
-    // -- name field, grown under the header rather than opened as a dialog:
-    // the settings window's own focus is already here.
-    Rectangle {
-      width: parent.width
-      visible: root.naming
-      implicitHeight: 28
-      radius: Theme.radiusTile
-      color: Theme.surface04
-
-      TextInput {
-        id: nameField
-
-        anchors {
-          left: parent.left; leftMargin: 10
-          right: saveName.left; rightMargin: 8
-          verticalCenter: parent.verticalCenter
-        }
-        font { family: Theme.fontMono; pixelSize: 11; weight: 500 }
-        color: Theme.text
-        clip: true
-        onAccepted: root.saveNamed()
-
-        Text {
-          anchors.fill: parent
-          verticalAlignment: Text.AlignVCenter
-          visible: nameField.text === ""
-          text: "desk name, e.g. \"docked\""
-          font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
-          color: Theme.alpha(Theme.text, 0.35)
-        }
-      }
-
-      Text {
-        id: saveName
-        anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
-        text: DisplayService.isSaved(nameField.text.trim()) ? "replace" : "save"
-        font { family: Theme.fontMono; pixelSize: 10; weight: 500 }
-        color: nameField.text.trim() === ""
-          ? Theme.alpha(Theme.text, 0.3) : Theme.accentSoft
-
-        MouseArea {
-          anchors.fill: parent
-          anchors.margins: -4
-          onClicked: root.saveNamed()
-        }
-      }
-    }
-
-    ProfileRow {
-      profName: "auto"
-      sub: DisplayService.activeForced || DisplayService.activeProfile === ""
-        ? "match by what's connected"
-        : `match by what's connected · ${DisplayService.activeProfile} now`
-      available: true
-      current: !DisplayService.activeForced
-      onUse: DisplayService.selectProfile("")
-    }
-
-    Repeater {
-      model: DisplayService.profiles
-
-      ProfileRow {
-        required property var modelData
-        profName: modelData.name
-        displays: modelData.displays
-        sub: (modelData.source === "json" ? "saved" : "built-in")
-          + (modelData.shadows ? " · overrides built-in" : "")
-          + (!modelData.available ? " · not all screens connected" : "")
-        available: modelData.available === true
-        current: DisplayService.activeForced
-          && modelData.name === DisplayService.activeProfile
-        onUse: DisplayService.selectProfile(modelData.name)
-      }
-    }
-  }
 
   SettingsCard {
     width: parent.width
@@ -213,10 +79,10 @@ SettingsPage {
         }
 
         Chip {
-          text: "use profile"
+          text: "reset"
           enabled: DisplayService.hasSaved
-          // Drops this desk's saved layout and reloads, so hyprland comes back
-          // up on conf/monitors.lua's own profile.
+          // Drops this set of screens' saved layout and reloads, so hyprland
+          // comes back up with every screen on and auto placement.
           onTriggered: DisplayService.forget()
         }
       }
@@ -351,14 +217,13 @@ SettingsPage {
       width: parent.width
       wrapMode: Text.WordWrap
       text: DisplayService.hasSaved
-        ? "position, resolution and scale are saved for this set of screens in "
-          + "~/.config/hypr/displays.json and re-applied on replug, reload and "
-          + "login. plug in a different screen and that desk remembers its own "
-          + "arrangement. \"use profile\" forgets this one and falls back to "
-          + "~/.config/hypr/conf/monitors.lua, which this page never writes to."
-        : "nothing saved for this set of screens yet — the layout comes from "
-          + "~/.config/hypr/conf/monitors.lua. move a screen or change a mode "
-          + "and it is remembered here from then on, per set of screens."
+        ? "this arrangement is saved for this set of screens in "
+          + "~/.config/hypr/displays.json and comes back on replug, reload and "
+          + "login. plug in a different set and it remembers its own. \"reset\" "
+          + "forgets this one."
+        : "nothing saved for this set of screens yet — every screen is on and "
+          + "hyprland places them. press apply after any change and it is "
+          + "remembered for this set of screens from then on."
       font { family: Theme.fontMono; pixelSize: 10; weight: 400 }
       color: Theme.alpha(Theme.text, 0.4)
     }

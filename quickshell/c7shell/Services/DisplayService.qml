@@ -11,12 +11,13 @@ import QtQuick
 // Hyprland answers keyword with "can't work with non-legacy parsers, use eval".
 // So this speaks the same hl.monitor() dialect conf/monitors.lua does.
 //
-// Nothing here writes to conf/monitors.lua. That file carries a CATALOG and a
-// set of PROFILES the user authored by hand, keyed on monitor description so
-// they survive DP-N renumbering; a settings app rewriting it would clobber
-// work no dialog can reconstruct. Persistence goes to a SEPARATE file,
-// ~/.config/hypr/displays.json, which conf/displays.lua reads and lets
-// override the profile -- same two-sided-JSON pattern as appearance.json.
+// Layout is implicit, the way KDE and GNOME do it: whatever set of screens is
+// connected is a SETUP, and apply saves the whole arrangement under it in
+// ~/.config/hypr/displays.json. conf/monitors.lua does the matching -- it alone
+// sees the lid and the screens Hyprland hides once they are off -- and writes
+// the setup it matched to displays-state.json, which is the key saved under
+// here. Nothing here writes to conf/monitors.lua. Same two-sided-JSON pattern
+// as appearance.json.
 Singleton {
   id: root
 
@@ -26,13 +27,13 @@ Singleton {
   // instead of one per frame.
   property var queued: ({})
 
-  // -- saved layouts --------------------------------------------------------
-  // Keyed on the sorted descriptions of the monitors that are currently
-  // ENABLED. Description, never connector name: the same panel has been DP-4
-  // and DP-3 inside one session. conf/displays.lua computes the identical key
-  // from Hyprland's own monitor list, minus anything its profile disables.
-  readonly property string signature:
-    Hyprland.monitors.values.map(m => m.description).sort().join("|")
+  // -- saved setups ---------------------------------------------------------
+  // The setup conf/monitors.lua matched, and the screens in it -- including
+  // ones switched off, which Hyprland.monitors no longer lists. Empty until a
+  // conf/monitors.lua that writes the state file has applied once; nothing is
+  // saved until then, because a guessed key would never be looked up again.
+  readonly property string signature: stateAdapter.setup ?? ""
+  readonly property var screens: stateAdapter.screens ?? []
 
   readonly property var layouts: adapter.layouts ?? ({})
   // Until the file has been read, `layouts` is still the adapter's empty
@@ -56,30 +57,54 @@ Singleton {
     return out
   }
 
+  // Save the WHOLE setup as it will be once the staged edits land, not just the
+  // fields that changed: there is no hand-written layout underneath any more,
+  // so a screen with no saved position would come back wherever auto put it.
+  // Also refreshes the per-screen memory, so a panel carries its mode, scale
+  // and rotation into a set of screens it has never been arranged in.
   // JsonAdapter only notices whole-property assignment, so rebuild rather than
   // mutate in place.
-  function persist(output, fields) {
-    const mon = Hyprland.monitors.values.find(m => m.name === output)
-    const keep = root.persistable(fields)
-    // "auto" is not saved, but it must still clear a saved position: left in
-    // place, the next reload put the screen straight back where "auto" moved
-    // it from.
-    const unpin = fields.position === "auto"
-    // An empty signature means hyprland's monitor list has not been read yet;
-    // saving under it would key a layout to no desk at all.
-    if (!root.ready || !mon || root.signature === "") return
-    if (Object.keys(keep).length === 0 && !unpin) return
+  function persist() {
+    if (!root.ready || root.signature === "") return
     const layouts = Object.assign({}, root.layouts)
     const desk = Object.assign({}, layouts[root.signature])
-    desk[mon.description] = Object.assign({}, desk[mon.description], keep)
-    if (unpin) delete desk[mon.description].position
+    const outputs = Object.assign({}, adapter.outputs)
+
+    for (const m of Hyprland.monitors.values) {
+      const s = root.stagedFor(m.name)
+      const f = root.persistable(Object.assign({
+        position: `${m.x}x${m.y}`,
+        mode: `${m.width}x${m.height}@${(m.lastIpcObject?.refreshRate ?? 0).toFixed(2)}`,
+        scale: m.scale,
+        transform: m.lastIpcObject?.transform ?? 0,
+      }, s))
+      // "auto" is not saved, and must not leave the old position behind either:
+      // the next replug would put the screen straight back.
+      if (s.position === "auto") delete f.position
+      const panel = Object.assign({}, f)
+      delete panel.position
+      // Merged, not replaced: a hand-written bitdepth lives here too, and the
+      // page has no control that would write it back.
+      outputs[m.description] = Object.assign({}, outputs[m.description], panel)
+      desk[m.description] = s.disabled === true ? Object.assign(f, { disabled: true }) : f
+    }
+    // Screens already off: in the setup, gone from Hyprland.monitors. Only the
+    // on/off flag can change here; the rest is what was saved when it was on.
+    for (const o of root.allOutputs) {
+      if (!o.disabled || root.screens.indexOf(o.description) < 0) continue
+      const entry = Object.assign({}, desk[o.description], { disabled: true })
+      if (root.stagedFor(o.name).disabled === false) delete entry.disabled
+      desk[o.description] = entry
+    }
+
     layouts[root.signature] = desk
     adapter.layouts = layouts
+    adapter.outputs = outputs
   }
 
-  // Forget this desk, so the next reload comes back up on conf/monitors.lua's
-  // own profile. A saved arrangement the user cannot clear would be worse than
-  // no persistence at all.
+  // Forget this setup, so the next reload comes back up with every screen on
+  // and Hyprland's auto placement. A saved arrangement the user cannot clear
+  // would be worse than no persistence at all.
   function forget() {
     if (!root.ready) return
     const layouts = Object.assign({}, root.layouts)
@@ -87,109 +112,28 @@ Singleton {
     adapter.layouts = layouts
     // Forgetting is only half the answer -- the live layout is still whatever
     // was dragged. A reload re-runs conf/monitors.lua, which now finds nothing
-    // saved and puts the profile back, so the button does what it says.
+    // saved and lays the desk out fresh, so the button does what it says.
     reload.restart()
   }
 
-  // -- profiles -------------------------------------------------------------
-  // conf/monitors.lua writes this after every apply. Read-only on this side, and
-  // the only way this app can see a profile that lives in lua: it does not parse
-  // conf/monitors.lua, and it never will -- that file is hand-written.
-  readonly property var profiles: stateAdapter.profiles ?? []
-  readonly property string activeProfile: stateAdapter.active ?? ""
-  readonly property bool activeForced: stateAdapter.forced ?? false
-
-  // True for a profile the settings app owns. A lua profile can be selected and
-  // shadowed, never renamed or deleted from here.
-  function isSaved(name) {
-    return (adapter.profiles ?? []).some(p => p.name === name)
-  }
-
+  // Written by conf/monitors.lua after every apply. Read-only on this side:
+  // writing it back would fight the compositor for ownership of it.
   FileView {
     id: stateFile
 
     path: `${Quickshell.env("HOME")}/.config/hypr/displays-state.json`
     watchChanges: true
-    // Absent until hyprland's first apply with a version of conf/monitors.lua
-    // that writes it. An empty picker is the honest answer, not a warning.
+    // Absent until hyprland's first apply. Nothing is saved until it exists.
     printErrors: false
 
     onFileChanged: stateFile.reload()
-    // Deliberately no onAdapterUpdated: writing this file back would fight the
-    // compositor for ownership of it.
 
     JsonAdapter {
       id: stateAdapter
 
-      property var profiles: []
-      property string active: ""
-      property bool forced: false
+      property string setup: ""
+      property var screens: []
     }
-  }
-
-  // -- profile mutators -----------------------------------------------------
-  // All four write displays.json and then reload: conf/monitors.lua is what
-  // turns a profile into a layout, so the compositor has to re-read it. The
-  // same reload timer `forget()` uses, for the same reason.
-
-  //! Pin a profile, or pass "" to go back to auto-match.
-  function selectProfile(name) {
-    if (!root.ready) return
-    adapter.active = name
-    reload.restart()
-  }
-
-  //! Capture the live layout under `name`, replacing a saved profile of that
-  //! name. Hyprland.monitors lists only the monitors that are ON, so membership
-  //! records which displays this profile enables -- which is what a profile
-  //! means on the lua side too.
-  function saveProfile(name) {
-    if (!root.ready || name === "") return
-    const displays = {}
-    for (const m of Hyprland.monitors.values) {
-      displays[m.description] = root.persistable({
-        position: `${m.x}x${m.y}`,
-        mode: `${m.width}x${m.height}@${(m.lastIpcObject?.refreshRate ?? 0).toFixed(2)}`,
-        scale: m.scale,
-        // A rotated screen is part of the arrangement, not a property of the
-        // panel: without this a profile captured in portrait came back landscape.
-        transform: m.lastIpcObject?.transform ?? 0,
-      })
-    }
-    // conf/displays.lua rejects a profile WHOLE if any one display lacks a
-    // valid position, so a profile that is missing one anywhere would land in
-    // the file and silently do nothing. Refuse to write it instead.
-    if (Object.keys(displays).length === 0
-        || Object.values(displays).some(d => !d.position)) return
-    adapter.profiles = (adapter.profiles ?? [])
-      .filter(p => p.name !== name)
-      .concat([{ name: name, displays: displays }])
-    adapter.active = name
-    reload.restart()
-  }
-
-  //! Rename a saved profile. One write rather than a save plus a delete, so a
-  //! reload cannot land between the two and find the profile under neither name.
-  function renameProfile(from, to) {
-    if (!root.ready || to === "" || from === to) return
-    const list = adapter.profiles ?? []
-    const src = list.find(p => p.name === from)
-    if (!src) return
-    adapter.profiles = list
-      .filter(p => p.name !== from && p.name !== to)
-      .concat([{ name: to, displays: src.displays }])
-    if (adapter.active === from) adapter.active = to
-    reload.restart()
-  }
-
-  //! Forget a saved profile. When it shadowed a hand-written one of the same
-  //! name, this is the revert: conf/monitors.lua stops finding the JSON copy and
-  //! the lua profile is a candidate again.
-  function deleteProfile(name) {
-    if (!root.ready) return
-    adapter.profiles = (adapter.profiles ?? []).filter(p => p.name !== name)
-    if (adapter.active === name) adapter.active = ""
-    reload.restart()
   }
 
   Timer {
@@ -224,13 +168,10 @@ Singleton {
     JsonAdapter {
       id: adapter
 
-      // { "<desc>|<desc>": { "<desc>": { position, mode, scale } } }
+      // { "<desc>|<desc>": { "<desc>": { position, mode, scale, transform, disabled } } }
       property var layouts: ({})
-      // [ { name, displays: { "<desc>": { position, mode, scale } } } ]
-      // Written here, read by conf/displays.lua. Order is match precedence.
-      property var profiles: []
-      // The profile the user pinned, "" for auto-match.
-      property string active: ""
+      // { "<desc>": { mode, scale, transform, bitdepth? } } -- per-screen memory.
+      property var outputs: ({})
     }
   }
 
@@ -244,7 +185,6 @@ Singleton {
     // Connector names come from Hyprland and contain no quotes; refuse anything
     // else rather than build lua out of it.
     if (!/^[A-Za-z0-9-]+$/.test(output)) return
-    root.persist(output, fields)
     root.queued[output] = fields
     debounce.restart()
   }
@@ -281,10 +221,9 @@ Singleton {
   // full output list, disabled ones included, only exists in `hyprctl monitors
   // all -j`; this reads it so the page can offer them back.
   //
-  // Disabling is LIVE only: persistable() drops `disabled`, and PROFILES in
-  // conf/monitors.lua keeps deciding which monitors are on across a reload. So
-  // an accidental blackout survives no longer than the next reload, and there
-  // is nothing here to un-say.
+  // Disabling is saved with the setup, like every other edit. A setup that
+  // would leave every screen off is refused twice: here, and by
+  // conf/monitors.lua, which ignores one rather than black the desk out.
   property var allOutputs: []
 
   function probeAll() {
@@ -308,8 +247,8 @@ Singleton {
   // Every change on the displays page is held here, per output, until the user
   // presses apply -- so scale, mode, position and on/off all land in one go and
   // can be abandoned wholesale. The page reads stagedFor() to show the pending
-  // value; commit() replays each through apply(), which is where the real
-  // hyprctl and the persistence live.
+  // value; commit() saves the setup and replays each through apply(), which is
+  // where the real hyprctl lives.
   //   { "<output>": { scale?, mode?, position?, disabled? } }
   property var staged: ({})
   readonly property bool hasStaged: Object.keys(root.staged).length > 0
@@ -325,6 +264,7 @@ Singleton {
   }
 
   function commit() {
+    root.persist()
     for (const o of Object.keys(root.staged)) root.apply(o, root.staged[o])
     // Hold the staged values over the ~550ms it takes apply() to eval and
     // re-read, so the tiles and sliders do not rubber-band to the old live

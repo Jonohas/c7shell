@@ -4,79 +4,26 @@
 
 -- See https://wiki.hypr.land/Configuring/Basics/Monitors/
 --
--- A layout the user arranged in the settings app is remembered in
--- ~/.config/hypr/displays.json and overrides the positions and modes chosen
--- here; conf/displays.lua reads it. Nothing writes to THIS file.
+-- Layout is implicit, the way KDE and GNOME do it: no named profiles. Whatever
+-- set of screens is connected is a SETUP, and the arrangement made for it in
+-- the settings app is saved under that set in ~/.config/hypr/displays.json
+-- (conf/displays.lua reads it). Plug the same set back in and it comes back; a
+-- set never arranged comes up with every screen on, placed by Hyprland's auto.
+-- Nothing writes to THIS file, and nothing in it names a monitor.
 --
--- Layout is chosen by which monitors are actually connected. Edit CATALOG to
--- describe a monitor's intrinsic properties (mode/scale/rotation -- things that
--- travel with the panel), and PROFILES to describe where those panels sit on
--- the desk in a given setup.
+-- A panel's own settings are implicit too: the mode, scale and rotation last
+-- applied to it are remembered per panel and carried into any setup it joins.
+-- A panel never set up gets Hyprland's preferred mode and auto scale.
 
 local displays = require("conf/displays")
 
--- Fallback for anything not in CATALOG (projector, meeting-room TV, headless).
--- Rules applied later override this.
+-- Fallback until apply() below has run. Rules applied later override this.
 hl.monitor({
     output   = "",
     mode     = "preferred",
     position = "auto",
     scale    = "auto",
 })
-
--- Intrinsic per-panel settings. `desc` is matched as a prefix against the
--- monitor description from `hyprctl monitors`, so it survives the DP-N
--- renumbering that happens whenever the dock re-enumerates. The built-in
--- panel is matched by connector name instead; eDP-1 is stable.
-local CATALOG = {
-    ultrawide = {
-        desc  = "LG Electronics LG ULTRAWIDE",
-        mode  = "3440x1440@100",     -- native/preferred per EDID; drop to @60 on a low-bandwidth cable
-        scale = 1,
-        size  = { 3440, 1440 },      -- logical, for the layout comments below
-        bitdepth = 10,
-    },
-    ultrawideHome = {
-        desc  = "Iiyama North America PL3466WQ",
-        mode  = "3440x1440@99.99",     -- native/preferred per EDID; drop to @60 on a low-bandwidth cable
-        scale = 1,
-        size  = { 3440, 1440 },      -- logical, for the layout comments below
-    },
-    ultragearLeft = {
-        desc  = "LG Electronics LG ULTRAGEAR 311NTTQ9M049",  -- DP-4
-        mode  = "2560x1440@143.93",
-        scale = 1,
-        size  = { 2560, 1440 },
-    },
-    ultragearCenter = {
-        desc  = "LG Electronics LG ULTRAGEAR 311NTRL9L950",  -- DP-10
-        mode  = "2560x1440@143.93",
-        scale = 1,
-        size  = { 2560, 1440 },
-    },
-    ultragearRight = {
-        desc  = "LG Electronics LG ULTRAGEAR 311NTCZ9M979",  -- DP-9
-        mode  = "2560x1440@143.93",
-        scale = 1,
-        size  = { 2560, 1440 },
-    },
-    -- The second screen at the office desk, right of the ultrawide.
-    dell = {
-        desc  = "Dell Inc. DELL P2417H",
-        mode  = "1920x1080@60",
-        scale = 1,
-        size  = { 1920, 1080 },
-    },
-    laptop = {
-        name  = "eDP-1",
-        -- Belt and braces: eDP-1 is stable for a built-in panel, but detect()
-        -- accepts either, so a renamed connector still finds the panel.
-        desc  = "BOE NE135A1M-NY1",
-        mode  = "2880x1920@120",
-        scale = 2,
-        size  = { 1440, 960 },
-    },
-}
 
 -- Hyprland leaves the built-in panel enabled when the lid shuts, so the lid has
 -- to be read out of band. ACPI gives the state at load (a reload with the lid
@@ -106,383 +53,202 @@ local function lid_closed()
     -- ACPI is authoritative wherever it exists. The override used to outrank
     -- it, and a switch event that never arrived then stranded the desk: the lid
     -- was open, `lid_override` still said shut, and the layout stayed in the
-    -- lid-closed profile until a reload. The override now only covers the
+    -- lid-closed layout until a reload. The override now only covers the
     -- machine that has no lid file to read.
     local acpi = lid_is_closed()
     if acpi ~= nil then return acpi end
     return lid_override == true
 end
 
--- First profile whose monitors are ALL connected wins, so order these most
--- specific first. Positions are top-left corners in the shared logical-pixel
--- plane; keep edges flush or the cursor crosses dead space.
-local PROFILES = {
-    -- Three UltraGears in a row, laptop centred underneath the middle one.
-    -- 2560 each at scale 1: 0 | 2560 | 5120. Laptop is 1440 logical wide, so
-    -- 2560 + (2560 - 1440) / 2 = 3120 centres it.
-    {
-        name = "triple-ultragear",
-        need = { "ultragearLeft", "ultragearCenter", "ultragearRight", "laptop" },
-        at   = {
-            ultragearLeft   = "0x0",
-            ultragearCenter = "2560x0",
-            ultragearRight  = "5120x0",
-            laptop          = "3120x1440",
-        },
-    },
-    {
-        name = "triple-ultragear-lid-closed",
-        need = { "ultragearLeft", "ultragearCenter", "ultragearRight" },
-        at   = {
-            ultragearLeft   = "0x0",
-            ultragearCenter = "2560x0",
-            ultragearRight  = "5120x0",
-        },
-    },
-    -- Ultrawide only, laptop tucked underneath.
-    {
-        name = "ultrawide",
-        need = { "ultrawide", "laptop" },
-        at   = { ultrawide = "0x0", laptop = "1000x1440" },
-    },
-    {
-        name = "ultrawideHome",
-        need = { "ultrawideHome", "laptop" },
-        at   = { ultrawideHome = "0x0", laptop = "1000x1440" },
-    },
-    -- Office desk, lid shut: the laptop panel drops out, the Dell does not.
-    -- Ahead of ultrawide-lid-closed, which names the ultrawide alone and would
-    -- otherwise match first and switch the Dell off.
-    {
-        name = "office-lid-closed",
-        need = { "ultrawide", "dell" },
-        at   = { ultrawide = "0x0", dell = "3440x180" },
-    },
-    -- Same desk, lid shut: the laptop panel drops out of the layout entirely.
-    {
-        name = "ultrawide-lid-closed",
-        need = { "ultrawide" },
-        at   = { ultrawide = "0x0" },
-    },
-    {
-        name = "ultrawideHome-lid-closed",
-        need = { "ultrawideHome" },
-        at   = { ultrawideHome = "0x0" },
-    },
-    -- On the road.
-    {
-        name = "mobile",
-        need = { "laptop" },
-        at   = { laptop = "0x0" },
-    },
-}
-
--- -- candidates ---------------------------------------------------------------
--- A candidate is a profile flattened into descriptions:
---   { name, source = "lua"|"json", shadows, unresolved,
---     need = { "<desc>", ... },
---     at   = { ["<desc>"] = { output, position, mode, scale, ... } } }
--- lua PROFILES and the settings app's JSON profiles become the same shape here,
--- which is the only reason they can be ordered against each other at all.
-
---- The lua PROFILES, resolved through CATALOG onto the descriptions of the
---- monitors that are actually plugged in. `by_key` is detect()'s output, so a
---- CATALOG entry matched by prefix resolves to the panel's FULL description,
---- serial and all -- which is what displays.json is keyed on.
-local function lua_candidates(by_key)
-    local out = {}
-    for _, p in ipairs(PROFILES) do
-        local need, at, unresolved = {}, {}, false
-
-        for _, key in ipairs(p.need) do
-            local mon = by_key[key]
-            -- A key with no live monitor leaves `need` silently short an entry;
-            -- that is only safe because matches() checks `unresolved` before it
-            -- ever reads `need`. Keep both in step if this candidate shape moves.
-            if mon then need[#need + 1] = mon.description else unresolved = true end
-        end
-
-        for key, position in pairs(p.at) do
-            local def = CATALOG[key]
-            local mon = by_key[key]
-            if mon and def then
-                at[mon.description] = {
-                    -- The output name this profile has always used. Keeping it
-                    -- rather than the live connector name means a CATALOG entry
-                    -- can still be desc-matched, which is the whole point of it.
-                    output        = def.name or ("desc:" .. def.desc),
-                    position      = position,
-                    mode          = def.mode,
-                    scale         = def.scale,
-                    transform     = def.transform,
-                    bitdepth      = def.bitdepth,
-                    cm            = def.cm,
-                    sdrbrightness = def.sdrbrightness,
-                    -- CATALOG modes are hand-written for a panel that is known
-                    -- to offer them, so they are not checked against
-                    -- available_modes. A JSON mode is.
-                    checked       = false,
-                }
-            else
-                unresolved = true
-            end
-        end
-
-        out[#out + 1] = { name = p.name, source = "lua", shadows = false,
-                          need = need, at = at, unresolved = unresolved }
-    end
-    return out
+-- The built-in panel, by connector type: eDP on anything recent, LVDS and DSI
+-- on older and ARM machines. The only screen this file treats differently,
+-- because it is the only one with a lid.
+local function is_panel(m)
+    return m.name:match("^eDP") or m.name:match("^LVDS") or m.name:match("^DSI")
 end
 
---- The settings app's profiles, already description-keyed. Membership IS the
---- requirement: a profile names every display it wants on, and nothing else.
-local function json_candidates()
-    local out = {}
-    for _, p in ipairs(displays.profiles()) do
-        local need, at = {}, {}
-        for desc, f in pairs(p.displays) do
-            need[#need + 1] = desc
-            at[desc] = { output = "desc:" .. desc, position = f.position,
-                         mode = f.mode, scale = f.scale, transform = f.transform,
-                         checked = true }
-        end
-        -- Deterministic, so the state file does not reshuffle between applies.
-        table.sort(need)
-        out[#out + 1] = { name = p.name, source = "json", shadows = false,
-                          need = need, at = at, unresolved = false }
-    end
-    return out
-end
-
---- JSON first, then the lua profiles that no JSON profile has taken the name of.
---- Same name means the settings app has edited a hand-written profile; the lua
---- file is never rewritten, so the JSON one shadows it and deleting the JSON one
---- brings it back.
-local function candidates(by_key)
-    local out, taken = json_candidates(), {}
-    for _, c in ipairs(out) do taken[c.name] = c end
-    for _, c in ipairs(lua_candidates(by_key)) do
-        if taken[c.name] then taken[c.name].shadows = true else out[#out + 1] = c end
-    end
-    return out
-end
-
---- Every display the candidate needs is present and usable. A candidate with an
---- unresolved requirement -- a CATALOG entry matched by connector name that is
---- not plugged in -- can never match, which is what PROFILES did before this.
-local function matches(c, usable)
-    if c.unresolved then return false end
-    for _, desc in ipairs(c.need) do
-        if not usable[desc] then return false end
-    end
-    return true
-end
-
---- The pinned profile if it fits, otherwise the first candidate that does.
---- Returns the candidate and whether it was pinned. A pin naming something
---- unavailable is not an error: falling back to auto-match beats leaving the
---- desk with no layout at all.
-local function choose(cands, usable, active)
-    if active then
-        for _, c in ipairs(cands) do
-            if c.name == active and matches(c, usable) then return c, true end
-        end
-    end
-    for _, c in ipairs(cands) do
-        if matches(c, usable) then return c, false end
-    end
-    return nil, false
-end
-
--- Map connected monitors onto CATALOG keys, keeping the live HL.Monitor rather
--- than just a flag: a saved layout is keyed on the monitor's own full
--- description (serial and all), and mode validation needs available_modes.
-local function detect()
-    local out = {}
+local function find_panel()
     for _, m in ipairs(hl.get_monitors()) do
-        for key, def in pairs(CATALOG) do
-            local hit = (def.name and m.name == def.name)
-                or (def.desc and m.description:sub(1, #def.desc) == def.desc)
-            if hit then out[key] = m end
-        end
+        if is_panel(m) then return m end
     end
-    return out
 end
 
---- The read-only half of the settings app's view. Written after every apply,
---- listing every profile this file knows about -- hand-written and settings-app
---- alike -- and which one won. Nothing reads it back; it exists because the
---- settings app deliberately does not parse lua.
-local function write_state(cands, usable, profile, forced)
-    local list = {}
-    for _, c in ipairs(cands) do
-        local at = {}
-        for desc, f in pairs(c.at) do
-            at[desc] = { position = f.position, mode = f.mode, scale = f.scale }
-        end
-        list[#list + 1] = {
-            name      = c.name,
-            source    = c.source,
-            shadows   = c.shadows == true,
-            -- What the page greys out. Computed here rather than in QML because
-            -- "available" includes the lid, and the lid is only legible here.
-            available = matches(c, usable),
-            displays  = at,
-        }
-    end
-
-    displays.write_state({
-        active   = profile and profile.name or nil,
-        forced   = forced == true,
-        profiles = list,
-    })
-end
+-- The panel's connector, from the last time it was seen. Once the lid shut has
+-- switched it off, Hyprland lists it nowhere, so this is the only way to name
+-- it to switch it back on. A reload reads it back from the state file; eDP-1
+-- is a guess only for the very first load, with the lid already shut.
+local panel_name = displays.panel() or "eDP-1"
 
 --- Hyprland drops a disabled monitor from hl.get_monitors() entirely, so a
 --- panel this file switched off is invisible to the next run -- nothing can see
 --- it to switch it back on. That is why reopening the lid left the built-in
 --- panel dark: the switch bind fired, apply() ran, and the laptop was simply
 --- not in the list any more. Enable it blind and look again.
-local function wake_panel(by_key)
-    local def = CATALOG.laptop
-    if lid_closed() or by_key.laptop or not def then return by_key end
+local function wake_panel()
+    local m = find_panel()
+    if m then return m end
+    -- A shut lid keeps the panel off -- unless nothing else is on, when a
+    -- panel under a shut lid beats a desk with no output at all.
+    if lid_closed() and #hl.get_monitors() > 0 then return nil end
     -- Only on a machine that has a lid. A desktop cannot have a panel hidden
-    -- this way, and a CATALOG laptop entry there would otherwise have a rule
-    -- written for it on every hotplug.
-    if lid_is_closed() == nil then return by_key end
+    -- this way, and would otherwise have a rule written for it on every hotplug.
+    if lid_is_closed() == nil then return nil end
     hl.monitor({
-        output   = def.name or ("desc:" .. def.desc),
+        output   = panel_name,
         mode     = "preferred",
         position = "auto",
         scale    = "auto",
         disabled = false,
     })
     -- A panel that is genuinely absent stays absent; this is a rule, not a
-    -- promise. detect() again either way -- Hyprland may only add the output
-    -- once this call returns, and the retry in apply() covers that case.
-    return detect()
+    -- promise. Look again either way -- Hyprland may only add the output once
+    -- this call returns, and the hotplug it fires re-runs apply().
+    return find_panel()
 end
 
---- Nothing known fits: hand every connected output back to hyprland's own
---- preferred/auto. The catch-all rule at the top of the file only runs at load,
---- so without this a monitor an earlier profile disabled stayed off forever.
-local function auto(by_desc)
-    for _, m in pairs(by_desc) do
-        hl.monitor({ output = m.name, mode = "preferred", position = "auto",
-                     scale = "auto", disabled = false })
-    end
-end
-
---- Every panel CATALOG knows, enabled, whatever an earlier run did to it.
---- Only at load: a disabled monitor is invisible to hl.get_monitors(), so
---- without this the ONLY way back for a screen some profile switched off was to
---- name it by hand in hyprctl. Not on hotplug -- re-enabling a screen the
---- winning profile then disables again is the output churn that moves
---- workspaces and kills Chromium windows.
+--- The built-in panel and every screen the last run switched off, enabled
+--- again. Only at load: a disabled monitor is invisible to hl.get_monitors(),
+--- so without this the ONLY way back for a screen a saved setup switched off
+--- was to name it by hand in hyprctl. apply() then switches off again whatever
+--- the setup still wants off. Not on hotplug -- re-enabling a screen that is
+--- then disabled again is the output churn that moves workspaces and kills
+--- Chromium windows.
 local function wake_all()
-    for _, def in pairs(CATALOG) do
-        hl.monitor({ output = def.name or ("desc:" .. def.desc), disabled = false })
+    hl.monitor({ output = panel_name, disabled = false })
+    for _, desc in ipairs(displays.parked()) do
+        hl.monitor({ output = "desc:" .. desc, disabled = false })
     end
+end
+
+-- Screens a saved setup switched off, by description, with the setup that did
+-- it. Hyprland hides a disabled screen from hl.get_monitors(), so this is the
+-- only record that it is still connected -- and the setup key has to include
+-- it, or switching a screen off would turn the desk into a different setup.
+local parked = { desk = nil, descs = {} }
+
+--- The signature of a set of descriptions without the built-in panel, which
+--- the lid moves in and out on its own. Parking is about the external desk.
+local function desk_of(descs, panel)
+    local out = {}
+    for _, desc in ipairs(descs) do
+        if desc ~= panel then out[#out + 1] = desc end
+    end
+    return displays.signature(out)
+end
+
+--- The connected set: every visible screen, plus the parked ones while the
+--- visible part of the desk is still the one that parked them -- the built-in
+--- panel aside, so opening or shutting the lid does not count as a new desk. Once it is not
+--- -- the dock came off -- a parked screen may be gone too, and there is no way
+--- to tell from here, so it is woken blind: if it is still there, Hyprland adds
+--- it back and the hotplug that fires re-runs apply() with it visible.
+local function connected(visible, panel)
+    local set = {}
+    for desc in pairs(visible) do set[desc] = true end
+    local rest = {}
+    for desc in pairs(parked.descs) do rest[#rest + 1] = desc end
+    if #rest == 0 then return set end
+
+    local seen = {}
+    for desc in pairs(visible) do seen[#seen + 1] = desc end
+    local same = true
+    for _, desc in ipairs(rest) do
+        seen[#seen + 1] = desc
+        if visible[desc] then same = false end
+    end
+    if same and desk_of(seen, panel) == parked.desk then
+        for _, desc in ipairs(rest) do set[desc] = true end
+        return set
+    end
+    for _, desc in ipairs(rest) do
+        hl.monitor({ output = "desc:" .. desc, disabled = false })
+    end
+    parked = { desk = nil, descs = {} }
+    return set
+end
+
+--- The rule for one visible screen. Each field falls through, one at a time:
+--- this setup's saved value, then the per-screen memory, then Hyprland's own
+--- preferred/auto. A saved value that fails validation is
+--- skipped, never passed on.
+local function configure(m, s, o)
+    local modes = m.available_modes
+    -- The saved value, else the remembered one. Not ipairs over varargs: that
+    -- stops at the first nil, and an unsaved setup value IS nil.
+    local pick = function(check, saved, remembered)
+        local v = check(saved, modes)
+        if v == nil then v = check(remembered, modes) end
+        return v
+    end
+    hl.monitor({
+        output        = "desc:" .. m.description,
+        mode          = pick(displays.mode, s.mode, o.mode) or "preferred",
+        position      = displays.position(s.position) or "auto",
+        scale         = pick(displays.scale, s.scale, o.scale) or "auto",
+        transform     = pick(displays.transform, s.transform, o.transform),
+        -- Nothing in the settings app sets this; it is there for a panel that
+        -- needs 10-bit, written into the per-screen memory by hand.
+        bitdepth      = displays.bitdepth(o.bitdepth),
+        disabled      = false, -- clears an earlier disable when the lid reopens
+    })
 end
 
 local function apply_inner()
-    local by_key = wake_panel(detect())
+    local builtin = wake_panel()
+    if builtin then panel_name = builtin.name end
 
-    local by_desc = {}
-    for _, m in ipairs(hl.get_monitors()) do by_desc[m.description] = m end
+    local visible = {}
+    for _, m in ipairs(hl.get_monitors()) do visible[m.description] = m end
 
-    -- A shut lid means the panel is there but unusable, so it drops out of the
-    -- set profiles are matched against. Every profile that names it -- by
-    -- CATALOG key or by description -- then falls through to a lid-closed
-    -- sibling, which is exactly what happened before profiles were described in
-    -- two places.
-    local usable = {}
-    for desc in pairs(by_desc) do usable[desc] = true end
-    if lid_closed() and by_key.laptop then usable[by_key.laptop.description] = nil end
-
-    local cands = candidates(by_key)
-    local profile, forced = choose(cands, usable, displays.active())
-
-    write_state(cands, usable, profile, forced)
-
-    -- No profile fits: go auto rather than leave the desk on whatever the last
-    -- profile decided. That also covers a shut lid with no external panel --
-    -- better an enabled screen than the only output there is going dark.
-    if not profile then return auto(by_desc) end
-
-    -- Only a description something claims to understand is ever turned OFF: one
-    -- CATALOG matched, or one some profile names. A meeting-room projector is
-    -- known to nobody and keeps the catch-all rule, rather than going dark
-    -- because the laptop-only profile does not mention it.
-    local known = {}
-    for _, m in pairs(by_key) do known[m.description] = true end
-    for _, c in ipairs(cands) do
-        for desc in pairs(c.at) do known[desc] = true end
+    -- A shut lid means the panel is there but unusable, so it is not part of
+    -- the setup -- unless it is the only screen there is: better an enabled
+    -- panel under a shut lid than no output at all.
+    local lid = lid_closed() and builtin or nil
+    local panel = builtin and builtin.description
+    local set = connected(visible, panel)
+    if lid then
+        set[lid.description] = nil
+        if next(set) == nil then set[lid.description] = true; lid = nil end
     end
 
-    -- displays.json's layouts are keyed on the set of monitors this layout
-    -- leaves ENABLED, which is the list the settings app sees in Hyprland's
-    -- monitor list, so both sides compute the same key.
-    local enabled = {}
-    for desc in pairs(by_desc) do
-        if profile.at[desc] or not known[desc] then enabled[#enabled + 1] = desc end
-    end
-    local saved = displays.layout(enabled)
+    local descs = {}
+    for desc in pairs(set) do descs[#descs + 1] = desc end
+    table.sort(descs)
+    local key = displays.signature(descs)
+    local setup, outputs = displays.saved(descs)
 
-    for desc, f in pairs(profile.at) do
-        local mon = by_desc[desc]
-        -- Saved values OVERRIDE the profile's position and the catalog's
-        -- mode/scale, one field at a time; anything the user never changed, or
-        -- that fails validation, falls through to the profile's own value.
-        local s = saved[desc] or {}
-        local modes = mon and mon.available_modes
-        -- A JSON mode is whitelisted against available_modes; a CATALOG mode is
-        -- hand-written for a panel known to offer it and is passed through. Not
-        -- an `and/or` ternary: a rejected JSON mode must become nil and fall
-        -- through to "preferred", and `cond and nil or f.mode` would hand back
-        -- the unvalidated string instead.
-        local want = f.mode
-        if f.checked then want = displays.mode(f.mode, modes) end
-        hl.monitor({
-            output        = f.output,
-            mode          = displays.mode(s.mode, modes) or want or "preferred",
-            position      = displays.position(s.position) or f.position,
-            scale         = displays.scale(s.scale) or f.scale,
-            transform     = displays.transform(s.transform) or f.transform,
-            bitdepth      = f.bitdepth,
-            cm            = f.cm,
-            sdrbrightness = f.sdrbrightness,
-            disabled      = false, -- clears an earlier disable when the lid reopens
-        })
+    -- A setup that would switch every screen off is not honoured: the desk
+    -- must keep at least one.
+    local off, n = {}, 0
+    for _, desc in ipairs(descs) do
+        if (setup[desc] or {}).disabled == true then off[desc] = true; n = n + 1 end
     end
+    if n == #descs then off = {} end
 
-    -- A monitor no profile mentions keeps the catch-all rule, but a layout the
-    -- user dragged it into is still saved against this desk -- and applying
-    -- only profile.at dropped it, so that panel snapped back to auto on every
-    -- reload. displays.json is the source of truth for everything staying on.
-    for desc, s in pairs(saved) do
-        local mon = by_desc[desc]
-        if mon and not known[desc] then
-            hl.monitor({
-                output    = "desc:" .. desc,
-                mode      = displays.mode(s.mode, mon.available_modes) or "preferred",
-                position  = displays.position(s.position) or "auto",
-                scale     = displays.scale(s.scale) or "auto",
-                transform = displays.transform(s.transform),
-                disabled  = false,
-            })
+    local still = {}
+    for _, desc in ipairs(descs) do
+        local m = visible[desc]
+        if off[desc] then
+            if m then hl.monitor({ output = "desc:" .. desc, disabled = true }) end
+            still[desc] = true
+        elseif m then
+            configure(m, setup[desc] or {}, outputs[desc] or {})
+        else
+            -- Parked by an earlier run, and this setup wants it on again.
+            hl.monitor({ output = "desc:" .. desc, disabled = false })
         end
     end
+    parked = { desk = next(still) and desk_of(descs, panel) or nil, descs = still }
 
-    -- Connected, known, and left out of the winning profile: drop it from the
-    -- layout so its workspaces move to a monitor that is actually visible.
-    for desc, m in pairs(by_desc) do
-        if known[desc] and not profile.at[desc] then
-            hl.monitor({ output = m.name, disabled = true })
-        end
-    end
+    -- Drop the shut panel from the layout so its workspaces move to a screen
+    -- that is actually visible.
+    if lid then hl.monitor({ output = "desc:" .. lid.description, disabled = true }) end
 
-    return profile.name
+    local list = {}
+    for desc in pairs(still) do list[#list + 1] = desc end
+    table.sort(list)
+    displays.write_state({ setup = key, screens = descs, parked = list, panel = panel_name })
+    return key
 end
 
 -- hl.monitor() below fires monitor.added/monitor.removed, which are hooked back
@@ -500,8 +266,8 @@ end
 
 -- A dock's ports don't come back atomically: one connector's monitor.added
 -- can fire while its siblings are still down, so apply() run straight off
--- that event sees a partial set, locks in the wrong profile (usually
--- mobile), and nothing re-triggers it once the rest of the dock catches up --
+-- that event sees a partial set, locks in the wrong setup (usually
+-- laptop-only), and nothing re-triggers it once the rest of the dock catches up --
 -- a connector that stayed "connected" throughout never fires its own event
 -- to prompt another look. Debounce: restart a short timer on every event,
 -- run apply() only once the burst goes quiet.
