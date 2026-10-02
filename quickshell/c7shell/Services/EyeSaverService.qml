@@ -11,10 +11,10 @@ import QtQuick
 // there is nothing to restore on logout or on a shell crash. It is an
 // optdepends: without it the page says so and everything else carries on.
 //
-// A temperature change goes over hyprsunset's OWN ipc socket rather than by
-// restarting it. Restarting drops the gamma to identity until the new process
-// has mapped its ctm, which over a slider drag is a screen that flashes cold
-// on every step -- the one thing the slider exists to let you judge.
+// A temperature change goes over hyprsunset's OWN ipc (via hyprctl) rather
+// than by restarting it. Restarting drops the gamma to identity until the new
+// process has mapped its ctm, which over a slider drag is a screen that
+// flashes cold on every step -- the one thing the slider exists to let you judge.
 Singleton {
   id: root
 
@@ -51,8 +51,8 @@ Singleton {
   }
 
   // -- the filter ------------------------------------------------------------
-  // `running` stays a binding: the live temperature is pushed through the
-  // socket below, so nothing here ever has to stop and start the process.
+  // `running` stays a binding: the live temperature is pushed through
+  // hyprctl below, so nothing here ever has to stop and start the process.
   Process {
     id: sunset
 
@@ -72,65 +72,33 @@ Singleton {
   }
 
   // -- live temperature ------------------------------------------------------
-  readonly property string socketPath: {
-    const dir = Quickshell.env("XDG_RUNTIME_DIR") ?? ""
-    if (dir === "") return ""
-    const sig = Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") ?? ""
-    return sig !== "" ? `${dir}/hypr/${sig}/.hyprsunset.sock` : `${dir}/hypr/.hyprsunset.sock`
-  }
+  // One hyprctl call per change, never a held-open socket: hyprsunset's ipc
+  // thread keeps its event-loop mutex while it blocks reading a connection, so
+  // a persistent client wedges the daemon and SIGTERM (the toggle turning off)
+  // deadlocks instead of exiting. Calls are serialised so a slider drag cannot
+  // land out of order; `command` reads the temperature as each one starts.
+  property bool pushPending: false
 
   onTemperatureChanged: {
-    if (sunset.running) sock.item?.push()
+    if (!sunset.running) return
+    if (push.running) root.pushPending = true
+    else push.running = true
   }
 
-  // The socket only exists once the daemon has created it, and a Quickshell
-  // Socket that failed to connect is spent (see AppMenuService for the same
-  // finding), so it is rebuilt rather than reconnected. Losing the race only
-  // costs the live push: the next start already carries -t.
-  Component {
-    id: sockComponent
-
-    Socket {
-      path: root.socketPath
-      connected: true
-
-      function push() {
-        if (!connected) return
-        write(`temperature ${root.temperature}\n`)
-        flush()
-      }
-
-      // hyprsunset answers "ok" or an error string; nothing here acts on it,
-      // but an unread reply would sit in the buffer forever.
-      parser: SplitParser {
-        splitMarker: "\n"
-        onRead: line => {
-          if (line.trim() !== "" && line.trim() !== "ok")
-            console.warn("eye saver:", line)
-        }
+  // Losing the race with a just-started daemon only costs the live push: the
+  // start already carries -t.
+  Process {
+    id: push
+    command: ["hyprctl", "hyprsunset", "temperature", String(root.temperature)]
+    stdout: SplitParser {
+      onRead: line => {
+        if (line.trim() !== "" && line.trim() !== "ok") console.warn("eye saver:", line)
       }
     }
-  }
-
-  Loader {
-    id: sock
-    active: false
-    sourceComponent: sockComponent
-  }
-
-  // Give the daemon a moment to bind before connecting, and drop the socket
-  // with it so a stale one is never written to.
-  Connections {
-    target: sunset
-    function onRunningChanged() {
-      sock.active = false
-      if (sunset.running) connect.restart()
+    onExited: {
+      if (!root.pushPending) return
+      root.pushPending = false
+      if (sunset.running) push.running = true
     }
-  }
-
-  Timer {
-    id: connect
-    interval: 400
-    onTriggered: sock.active = true
   }
 }
