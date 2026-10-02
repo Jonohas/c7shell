@@ -1,7 +1,10 @@
-#include "version.h"
+#include "core/version.h"
 
+#include <QtQml/QQmlComponent>
 #include <QtQml/QQmlEngine>
 #include <QtTest/QTest>
+
+#include <memory>
 
 // `import C7` resolves from the built module directory alone, the way the
 // shell finds the installed one. C7_QML_IMPORT_PATH is that directory, and it
@@ -14,9 +17,14 @@ private slots:
     {
         QQmlEngine engine;
         engine.setImportPathList({QStringLiteral(C7_QML_IMPORT_PATH)});
-        auto *build = engine.singletonInstance<QObject *>("C7", "Build");
-        QVERIFY2(build, "the C7 module or its Build singleton did not load");
-        QCOMPARE(build->property("version").toString(), c7::core::version());
+        QQmlComponent component(&engine);
+        component.setData("import QtQml\nimport C7\nQtObject { property string v: Build.version }",
+                          QUrl(QStringLiteral("inline:tst_module.qml")));
+        std::unique_ptr<QObject> object(component.create());
+        // The error names the cause: a missing module, an unloadable plugin, a
+        // renamed singleton.
+        QVERIFY2(object, qPrintable(component.errorString()));
+        QCOMPARE(object->property("v").toString(), c7::core::version());
     }
 };
 

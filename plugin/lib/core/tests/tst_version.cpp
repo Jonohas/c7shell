@@ -1,4 +1,4 @@
-#include "version.h"
+#include "core/version.h"
 
 #include <QtTest/QTest>
 
