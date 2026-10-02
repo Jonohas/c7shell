@@ -16,9 +16,21 @@ QtObject {
           "bg": "#000000",
           "canvas": "#050506",
           "glassBase": "#000000"
+        },
+        "light": {
+          "bg": "#f7f6f4",
+          "canvas": "#efedea",
+          "glassBase": "#f2f1ee",
+          "text": "#18171a",
+          "overlay": "#000000",
+          "success": "#106a2f",
+          "warning": "#855500",
+          "negative": "#b71c1c",
+          "neutral": "#9a4505"
         }
       },
       "text": "#f0eff1",
+      "overlay": "#ffffff",
       "textOnAccent": "#ffffff",
       "success": "#4ade80",
       "warning": "#e0b341",
@@ -45,8 +57,7 @@ QtObject {
           "bg": "#0d0d10",
           "ink": "#ffffff",
           "bar": 0.12,
-          "block": 0.07,
-          "ready": true
+          "block": 0.07
         },
         {
           "key": "oled",
@@ -54,17 +65,15 @@ QtObject {
           "bg": "#050506",
           "ink": "#ffffff",
           "bar": 0.09,
-          "block": 0.05,
-          "ready": true
+          "block": 0.05
         },
         {
           "key": "light",
-          "label": "light · later",
+          "label": "light",
           "bg": "#e9e6e2",
           "ink": "#000000",
           "bar": 0.12,
-          "block": 0.07,
-          "ready": false
+          "block": 0.07
         }
       ]
     })

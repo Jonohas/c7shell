@@ -20,10 +20,7 @@ Singleton {
   // Everything that leaves this file goes through these, never through the
   // adapter: the JSON is hand-editable, so its contents are untrusted input
   // and a stray value must not reach a Lua eval or wedge the compositor.
-  // "light" is deliberately absent: Theme has no light palette yet, so
-  // accepting it would persist a variant nothing can render. The card is
-  // shown disabled rather than silently doing nothing when picked.
-  readonly property string theme: ["dark", "oled"].includes(root.values.theme)
+  readonly property string theme: Object.keys(PaletteStore.palette.variants ?? {}).includes(root.values.theme)
     ? root.values.theme : PaletteStore.defaults.theme
   readonly property color accent: /^#[0-9a-fA-F]{6}$/.test(root.values.accent)
     ? root.values.accent : PaletteStore.defaults.accent
