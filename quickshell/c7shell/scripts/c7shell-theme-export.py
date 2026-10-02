@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Export the c7shell appearance to the rest of the desktop.
 
-appearance.json owns the accent, the variant and the preferred colour scheme,
-and nothing outside the shell reads it: Qt and KDE apps take their colours from
+appearance.json owns the accent and the variant, which implies the preferred
+colour scheme, and nothing outside the shell reads it: Qt and KDE apps take their colours from
 kdeglobals, and every app that asks "is this a dark desktop?" -- GTK, Electron,
 Chromium, anything libadwaita -- asks the settings portal, which answers out of
 GSettings. Files nothing kept in step, which is why the shell went green while
@@ -96,7 +96,15 @@ SCHEMES = {
     "dark": ("prefer-dark", "1"),
     "light": ("prefer-light", "0"),
 }
-DEFAULT_SCHEME = DEFAULTS["colorScheme"]
+
+
+def scheme_for(variant):
+    """The colour scheme a variant implies: light asks for light, the rest dark.
+
+    Not a setting of its own, so a light shell never sits next to dark apps or
+    the other way round.
+    """
+    return "light" if variant == "light" else "dark"
 
 # The groups a KDE app resolves a colour set from: (surface, surface the
 # alternate row shades off). Everything else in a group is shared, and derived
@@ -493,10 +501,8 @@ def read_appearance():
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(accent)):
         accent = DEFAULT_ACCENT
     variant = data.get("theme")
-    scheme = data.get("colorScheme")
-    return (accent.lower(),
-            variant if variant in VARIANTS else "dark",
-            scheme if scheme in SCHEMES else DEFAULT_SCHEME)
+    variant = variant if variant in VARIANTS else "dark"
+    return accent.lower(), variant, scheme_for(variant)
 
 
 def selftest():
@@ -605,10 +611,12 @@ def selftest():
     assert variant in VARIANTS
     assert scheme in SCHEMES
 
-    # The preference is a preference: dark is what a detecting app must be told,
-    # and picking light must not quietly turn the shell's own palette light.
+    # The scheme follows the variant: only a light shell asks for light apps.
     assert SCHEMES["dark"] == ("prefer-dark", "1")
     assert SCHEMES["light"] == ("prefer-light", "0")
+    assert scheme_for("dark") == "dark"
+    assert scheme_for("oled") == "dark"
+    assert scheme_for("light") == "light"
     # A hand-edited cursor name reaches a directory lookup, two config files and
     # an argv element, so it is the one appearance.json value worth fuzzing.
     assert cursor_from({}) == (CURSOR_THEME, CURSOR_SIZE)

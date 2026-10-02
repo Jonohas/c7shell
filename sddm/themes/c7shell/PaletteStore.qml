@@ -79,7 +79,6 @@ QtObject {
     })
   readonly property var defaults: ({
       "theme": "dark",
-      "colorScheme": "dark",
       "accent": "#e53a44",
       "rounding": 19,
       "gapsIn": 3,

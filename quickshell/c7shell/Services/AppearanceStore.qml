@@ -22,12 +22,6 @@ Singleton {
   // and a stray value must not reach a Lua eval or wedge the compositor.
   readonly property string theme: Object.keys(PaletteStore.palette.variants ?? {}).includes(root.values.theme)
     ? root.values.theme : PaletteStore.defaults.theme
-  // What the rest of the desktop is told we prefer -- the portal's
-  // org.freedesktop.appearance color-scheme, not a shell palette. The shell
-  // renders `theme` either way; this only decides which face a GTK, Electron
-  // or browser window comes up wearing.
-  readonly property string colorScheme: ["dark", "light"].includes(root.values.colorScheme)
-    ? root.values.colorScheme : PaletteStore.defaults.colorScheme
   readonly property color accent: /^#[0-9a-fA-F]{6}$/.test(root.values.accent)
     ? root.values.accent : PaletteStore.defaults.accent
 
@@ -89,7 +83,6 @@ Singleton {
       // drifted by an inactiveBorder. The bindings break on load, which is
       // correct: the file's own value wins from then on.
       property string theme: PaletteStore.defaults.theme
-      property string colorScheme: PaletteStore.defaults.colorScheme
       property string accent: PaletteStore.defaults.accent
       property int rounding: PaletteStore.defaults.rounding
       property int gapsIn: PaletteStore.defaults.gapsIn
@@ -130,7 +123,6 @@ Singleton {
   onAnimationSpeedChanged: apply.restart()
   onAccentChanged: { apply.restart(); desktopExport.restart() }
   onThemeChanged: desktopExport.restart()
-  onColorSchemeChanged: desktopExport.restart()
   // The exporter is what carries a cursor change to kcminputrc, both GTK
   // settings.ini files and `hyprctl setcursor`; the compositor's own env is
   // read by conf/environment.lua at config load.
@@ -144,8 +136,9 @@ Singleton {
   // answers out of GSettings. Nothing kept either in step, so the shell went
   // green while dolphin stayed crimson, and every app that detects a scheme came
   // up light. scripts/c7shell-theme-export.py writes both from this store, then
-  // emits the signal plasma-integration repaints on. Only accent, theme and
-  // colorScheme move it; the geometry sliders have nothing to export.
+  // emits the signal plasma-integration repaints on. Only accent and theme
+  // move it -- theme also implies the colour scheme apps are told to prefer --
+  // and the geometry sliders have nothing to export.
   //
   // The Qt half needs QT_QPA_PLATFORMTHEME=kde (hypr/conf/environment.lua):
   // under qt6ct KDE apps read neither kdeglobals nor qt6ct's palette and come up
