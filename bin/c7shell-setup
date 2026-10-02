@@ -118,6 +118,23 @@ fi
 printf 'creating %s   (drop executable scripts here to get launcher rows)\n' "$data/scripts"
 run mkdir -p -- "$data/scripts"
 
+# arch-update elevates with sudo unless told otherwise, and a terminal sudo
+# asks on the terminal. run0 asks polkit, so `arch-update` gets the shell's own
+# prompt -- fingerprint, and a password field that is live at once. The file is
+# the user's (bin/c7up reads it for the same reason), so this only fills in an
+# elevation command nobody chose: an explicit PrivilegeElevationCommand, even
+# sudo, is left exactly as it is.
+au=$conf/arch-update/arch-update.conf
+if ! grep -qs '^[[:space:]]*PrivilegeElevationCommand=' "$au"; then
+  printf 'setting PrivilegeElevationCommand=run0 in %s   (arch-update prompts through polkit)\n' "$au"
+  run mkdir -p -- "$(dirname -- "$au")"
+  if ((dry)); then
+    printf '  would: append PrivilegeElevationCommand=run0 to %s\n' "$au"
+  else
+    printf 'PrivilegeElevationCommand=run0\n' >> "$au"
+  fi
+fi
+
 # Record the hash of every file as installed. c7shell-upgrade compares against
 # this to tell "you edited it" from "it is just an old copy" -- without it, a
 # later upgrade has to assume every difference is a local edit and can only

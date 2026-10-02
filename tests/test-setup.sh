@@ -41,10 +41,23 @@ PYEOF
 "$setup" --dry-run >/dev/null
 [[ ! -e $XDG_CONFIG_HOME/kdeglobals ]] || fail '--dry-run exported the palette'
 [[ ! -e $XDG_CONFIG_HOME/hypr ]] || fail '--dry-run created files'
+[[ ! -e $XDG_CONFIG_HOME/arch-update ]] || fail '--dry-run wrote the arch-update config'
 [[ ! -e $XDG_DATA_HOME/c7shell/scripts ]] || fail '--dry-run created the script dir'
 
 # fresh install copies both parts
 "$setup" >/dev/null
+# arch-update elevates through polkit (run0) unless the user chose otherwise
+au=$XDG_CONFIG_HOME/arch-update/arch-update.conf
+grep -qx 'PrivilegeElevationCommand=run0' "$au" || fail "arch-update was not pointed at run0:\n$(cat "$au" 2>&1)"
+"$setup" >/dev/null 2>&1 || true
+(($(grep -c '^PrivilegeElevationCommand=' "$au") == 1)) || fail "a rerun added a second elevation line:\n$(cat "$au")"
+printf '#AURHelper=paru\nPrivilegeElevationCommand=doas\n' > "$au"
+"$setup" >/dev/null 2>&1 || true
+grep -qx 'PrivilegeElevationCommand=doas' "$au" && ! grep -q run0 "$au" \
+  || fail "an elevation command the user chose was overwritten:\n$(cat "$au")"
+printf '#PrivilegeElevationCommand=sudo\n' > "$au"
+"$setup" >/dev/null 2>&1 || true
+grep -qx 'PrivilegeElevationCommand=run0' "$au" || fail "a commented-out default was taken as a choice:\n$(cat "$au")"
 [[ $(cat "$XDG_CONFIG_HOME/hypr/hyprland.lua") == v1 ]] || fail 'hypr not installed'
 [[ $(cat "$XDG_CONFIG_HOME/quickshell/c7shell/shell.qml") == v1 ]] || fail 'quickshell not installed'
 [[ $(cat "$XDG_CONFIG_HOME/xdg-desktop-portal/hyprland-portals.conf") == v1 ]] || fail 'portal config not installed'
