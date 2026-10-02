@@ -118,7 +118,7 @@ assert.equal(Hex.format(2, -2, 0.5), "#ff0080", "channels clamp before rounding"
 // -- Arrange.js: where a dropped screen lands -----------------------------
 // Every failure here is a desk the cursor cannot cross, or two screens
 // stacked on one another, and Hyprland applies either without complaint.
-const Arrange = load("./Arrange.js", ["place", "normalise"]);
+const Arrange = load("./Arrange.js", ["place", "land", "guides", "normalise"]);
 const A = { x: 0, y: 0, w: 2560, h: 1440 };
 
 assert.deepEqual(Arrange.place({ w: 1440, h: 960 }, [A], 3000, 900, 50),
@@ -137,6 +137,30 @@ assert.ok(![A, B].some(o => p.x < o.x + o.w && o.x < p.x + 1440 && p.y < o.y + o
   "between two screens it lands on neither");
 assert.deepEqual(Arrange.place({ w: 1365.33, h: 768 }, [A], -1300, 0, 50),
   { x: -1365, y: 0 }, "a fractional width still butts on the left");
+
+// land: the snap toggle and its reach on top of place.
+const me = { w: 1440, h: 960 };
+assert.deepEqual(Arrange.land(me, [A], 2600, 900, 50, 100, true),
+  { x: 2560, y: 900 }, "within reach it snaps");
+assert.deepEqual(Arrange.land(me, [A], 3000, 900, 50, 100, true),
+  { x: 3000, y: 900 }, "out of reach it stays where it was dropped");
+assert.deepEqual(Arrange.land(me, [A], 500, 300, 50, 0, true),
+  { x: 500, y: 1440 }, "a drop onto a screen snaps off it whatever the reach");
+assert.deepEqual(Arrange.land(me, [A], 2600, 900, 50, 100, false),
+  { x: 2600, y: 900 }, "snap off keeps the exact spot");
+assert.equal(Arrange.land(me, [A], 500, 300, 50, 100, false),
+  null, "snap off refuses a drop onto a screen");
+assert.deepEqual(Arrange.place({ w: 1440, h: 960 }, [A], 3000, 230, 50),
+  { x: 2560, y: 240 }, "near the middle it pulls centred");
+
+// guides: alignment lines for a placed screen.
+const g = Arrange.guides({ x: 2560, y: 240, w: 1440, h: 960 }, [A]);
+assert.deepEqual(g, [{ vertical: false, at: 720, from: 0, to: 4000, centre: true }],
+  "centred beside it: one centre line, and no line on the shared seam");
+assert.equal(Arrange.guides({ x: 2560, y: 0, w: 1440, h: 960 }, [A]).filter(l => !l.centre).length,
+  1, "flush with the top: one edge line");
+assert.deepEqual(Arrange.guides({ x: 2560, y: 100, w: 1440, h: 960 }, [A]), [],
+  "out of line: no guides");
 assert.deepEqual(Arrange.normalise([{ x: 2560, y: -200 }, { x: 4000, y: 0 }]),
   [{ x: 0, y: 0 }, { x: 1440, y: 200 }], "the desk starts at 0,0");
 

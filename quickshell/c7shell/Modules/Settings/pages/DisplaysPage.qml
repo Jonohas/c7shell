@@ -90,13 +90,38 @@ SettingsPage {
 
     ArrangeCanvas { width: parent.width; dragEnabled: root.rearranging }
 
+    ToggleRow {
+      width: parent.width
+      label: "snap to screens"
+      checked: ShellStore.arrangeSnap
+      onToggled: ShellStore.values.arrangeSnap = !ShellStore.arrangeSnap
+    }
+
+    // Canvas px, not logical: the reach is how far the cursor travels, and
+    // that does not change with how many screens the plan has to fit.
+    SliderRow {
+      width: parent.width
+      label: "snap reach"
+      value: ShellStore.arrangeSnapReach
+      from: 8
+      to: 160
+      step: 4
+      suffix: "px"
+      enabled: ShellStore.arrangeSnap
+      opacity: enabled ? 1 : 0.4
+      onMoved: v => ShellStore.values.arrangeSnapReach = v
+    }
+
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
       text: root.rearranging
-        ? "drag a screen to move it. it lands touching the nearest screen, never "
-          + "overlapping one, and pulls flush with its edges when close; the move "
-          + "is staged when you let go — nothing changes "
+        ? "drag a screen to move it. the outline shows where it lands: "
+          + (ShellStore.arrangeSnap
+            ? "within snap reach it snaps to touch the nearest screen, past it "
+              + "it stays where you drop it. "
+            : "exactly where you drop it, or nowhere if that overlaps a screen. ")
+          + "the move is staged when you let go — nothing changes "
           + "on screen until you press apply. \"done\" locks the plan."
         : "press \"rearrange\" to drag the screens around. the page scroll pauses "
           + "while you do, so a drag does not turn into a scroll."
