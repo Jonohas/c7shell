@@ -1,6 +1,6 @@
 # makepkg working files
-src/
-pkg/
+/src/
+/pkg/
 *.pkg.tar.*
 *.src.tar.*
 /c7shell/
