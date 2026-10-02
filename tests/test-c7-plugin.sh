@@ -96,7 +96,7 @@ main_violations() {
   done < <(find "$root" -path '*/tests/*.cpp' -type f -print0)
   while IFS= read -r -d '' f; do
     [[ $f == "$root/CMakeLists.txt" ]] && continue
-    grep -qiE '^[[:space:]]*add_test[[:space:]]*\(' "$f" && echo "$f: calls add_test; use c7_add_test"
+    grep -qiE '(^|[^_[:alnum:]])add_test[[:space:]]*\(' "$f" && echo "$f: calls add_test; use c7_add_test"
   done < <(find "$root" -name CMakeLists.txt -type f -print0)
   return 0
 }

@@ -6,6 +6,7 @@
 
 #include <csignal>
 #include <sys/prctl.h>
+#include <unistd.h>
 
 namespace c7::testing {
 
@@ -59,8 +60,15 @@ void PrivateBus::start(Kind kind, const QString &daemon)
     conf.close();
 
     // A test that dies runs no destructor, so the kernel kills the daemon with
-    // it. Linux only, like everything this kit fakes.
-    m_daemon.setChildProcessModifier([] { ::prctl(PR_SET_PDEATHSIG, SIGKILL); });
+    // it. Linux only, like everything this kit fakes. If the test died between
+    // fork and prctl, the parent is already someone else: go now. The signal
+    // follows the thread that started the daemon, so make a PrivateBus on the
+    // test's main thread.
+    const pid_t parent = ::getpid();
+    m_daemon.setChildProcessModifier([parent] {
+        if (::prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 || ::getppid() != parent)
+            ::_exit(1);
+    });
     // A fixture may block where library code may not: the test cannot go on
     // until the bus exists.
     m_daemon.start(daemon, {QStringLiteral("--config-file=") + conf.fileName(),

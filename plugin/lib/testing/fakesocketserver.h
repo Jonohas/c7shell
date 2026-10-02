@@ -39,7 +39,9 @@ public:
     // after it. Without a handler a request is recorded and left unanswered.
     //
     // A stream keeps no write boundaries. With a `delimiter`, a request is what
-    // comes before each delimiter, however the bytes arrive. Without one, a
+    // comes before each delimiter, however the bytes arrive; bytes left without
+    // one when the client goes are not a request, so a client that forgets the
+    // delimiter shows as a missing request, never a partial one. Without one, a
     // request is whatever one read returns, which is how Hyprland's request
     // socket reads; use that only where the client writes once and waits.
     void onRequest(Handler handler, AfterReply after = CloseAfterReply, const QByteArray &delimiter = {});

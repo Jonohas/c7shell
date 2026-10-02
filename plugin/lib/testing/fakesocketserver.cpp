@@ -85,8 +85,10 @@ void FakeSocketServer::read(QLocalSocket *client)
     QByteArray &pending = m_pending[client];
     pending += bytes;
     qsizetype at;
-    // A handler may close the client, which drops its pending bytes.
-    while (m_pending.contains(client) && (at = pending.indexOf(m_delimiter)) >= 0) {
+    // A reply may close the client; nothing after that is a request. A
+    // disconnect also drops the client's pending bytes.
+    while (m_pending.contains(client) && client->state() == QLocalSocket::ConnectedState
+           && (at = pending.indexOf(m_delimiter)) >= 0) {
         const QByteArray request = pending.left(at);
         pending.remove(0, at + m_delimiter.size());
         answer(client, request);
