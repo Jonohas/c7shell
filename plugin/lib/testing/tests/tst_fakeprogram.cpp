@@ -2,9 +2,13 @@
 #include "testing/testmain.h"
 #include "testing/wait.h"
 
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QProcess>
+#include <QtCore/QSet>
 #include <QtTest/QTest>
+
+#include <optional>
 
 using c7::testing::FakeProgram;
 using c7::testing::waitUntil;
@@ -18,20 +22,24 @@ struct Run {
     int exitCode = -1;
 };
 
-Run run(QProcess &proc, const QString &program, const QStringList &args,
-        const QByteArray &input = {})
+// The finished run; nullopt when it never started or never finished.
+std::optional<Run> run(QProcess &proc, const QString &program, const QStringList &args,
+                       const QByteArray &input = {})
 {
     proc.start(program, args);
-    waitUntil([&] { return proc.state() == QProcess::Running || proc.state() == QProcess::NotRunning; });
+    if (!waitUntil([&] { return proc.state() != QProcess::Starting; }) || proc.state() != QProcess::Running)
+        return std::nullopt;
     if (!input.isNull()) {
         proc.write(input);
         proc.closeWriteChannel();
     }
-    waitUntil([&] { return proc.state() == QProcess::NotRunning; });
-    return {proc.readAllStandardOutput(), proc.readAllStandardError(), proc.exitCode()};
+    if (!waitUntil([&] { return proc.state() == QProcess::NotRunning; })
+        || proc.exitStatus() != QProcess::NormalExit)
+        return std::nullopt;
+    return Run{proc.readAllStandardOutput(), proc.readAllStandardError(), proc.exitCode()};
 }
 
-Run run(const QString &program, const QStringList &args, const QByteArray &input = {})
+std::optional<Run> run(const QString &program, const QStringList &args, const QByteArray &input = {})
 {
     QProcess proc;
     return run(proc, program, args, input);
@@ -46,6 +54,7 @@ private slots:
     void isNamedLikeTheProgramItStandsIn()
     {
         FakeProgram nmcli(QStringLiteral("nmcli"));
+        QVERIFY2(nmcli.isValid(), qPrintable(nmcli.error()));
         QCOMPARE(QFileInfo(nmcli.path()).fileName(), QStringLiteral("nmcli"));
         QVERIFY(QFileInfo(nmcli.path()).isExecutable());
     }
@@ -54,11 +63,15 @@ private slots:
     {
         FakeProgram nmcli(QStringLiteral("nmcli"));
         nmcli.reply("enabled\n", "warning\n", 3);
-        const Run r = run(nmcli.path(), {QStringLiteral("radio"), QStringLiteral("wifi")});
-        QCOMPARE(r.out, QByteArray("enabled\n"));
-        QCOMPARE(r.err, QByteArray("warning\n"));
-        QCOMPARE(r.exitCode, 3);
+        QVERIFY2(nmcli.isValid(), qPrintable(nmcli.error()));
+        const auto r = run(nmcli.path(), {QStringLiteral("radio"), QStringLiteral("wifi")});
+        QVERIFY(r);
+        QCOMPARE(r->out, QByteArray("enabled\n"));
+        QCOMPARE(r->err, QByteArray("warning\n"));
+        QCOMPARE(r->exitCode, 3);
         QCOMPARE(nmcli.calls(), (QList<QStringList>{{QStringLiteral("radio"), QStringLiteral("wifi")}}));
+        QCOMPARE(nmcli.unusedReplies(), 0);
+        QVERIFY(nmcli.isValid());
     }
 
     void keepsArgumentsExactly()
@@ -67,38 +80,123 @@ private slots:
         p.reply({});
         const QStringList args{QStringLiteral("-g"), QStringLiteral("10,20 30x40"),
                                QString(), QStringLiteral("ünï\tcode")};
-        run(p.path(), args);
+        QVERIFY(run(p.path(), args));
         QCOMPARE(p.calls(), QList<QStringList>{args});
     }
 
-    void repliesInTheOrderTheyWereScripted()
+    void replyNumberKAnswersRunNumberK()
     {
         FakeProgram p(QStringLiteral("hyprctl"));
         p.reply("first");
         p.reply("second", {}, 1);
-        QCOMPARE(run(p.path(), {QStringLiteral("a")}).out, QByteArray("first"));
-        const Run second = run(p.path(), {QStringLiteral("b")});
-        QCOMPARE(second.out, QByteArray("second"));
-        QCOMPARE(second.exitCode, 1);
+        QCOMPARE(p.unusedReplies(), 2);
+        QCOMPARE(run(p.path(), {QStringLiteral("a")}).value().out, QByteArray("first"));
+        const auto second = run(p.path(), {QStringLiteral("b")});
+        QVERIFY(second);
+        QCOMPARE(second->out, QByteArray("second"));
+        QCOMPARE(second->exitCode, 1);
         QCOMPARE(p.calls().size(), 2);
+        QCOMPARE(p.unusedReplies(), 0);
+    }
+
+    void saysWhichRepliesNobodyUsed()
+    {
+        // A library that never ran the program must not pass on a reply nobody read.
+        FakeProgram p(QStringLiteral("systemctl"));
+        p.reply("ok");
+        p.reply("ok");
+        QVERIFY(run(p.path(), {}));
+        QCOMPARE(p.unusedReplies(), 1);
     }
 
     void failsACallNobodyScripted()
     {
         FakeProgram p(QStringLiteral("rfkill"));
-        const Run r = run(p.path(), {QStringLiteral("list")});
-        QCOMPARE(r.exitCode, 127);
-        QVERIFY(r.err.contains("no reply scripted for call 1"));
+        const auto r = run(p.path(), {QStringLiteral("list")});
+        QVERIFY(r);
+        QCOMPARE(r->exitCode, 127);
+        QVERIFY(r->err.contains("no reply scripted for call 1"));
         QCOMPARE(p.calls().size(), 1);
     }
 
-    void capturesStandardInputWhenAsked()
+    void refusesAnExitCodeAProcessCannotHave_data()
+    {
+        QTest::addColumn<int>("code");
+        QTest::newRow("256 wraps to 0") << 256;
+        QTest::newRow("negative") << -1;
+        QTest::newRow("the fixture's own 126") << 126;
+        QTest::newRow("the fixture's own 127") << 127;
+    }
+
+    void refusesAnExitCodeAProcessCannotHave()
+    {
+        QFETCH(int, code);
+        FakeProgram p(QStringLiteral("nmcli"));
+        p.reply({}, {}, code);
+        QVERIFY(!p.isValid());
+        QVERIFY2(p.error().contains(QString::number(code)), qPrintable(p.error()));
+    }
+
+    void acceptsTheWholeRangeOfExitCodes()
+    {
+        FakeProgram p(QStringLiteral("nmcli"));
+        p.reply({}, {}, 0);
+        p.reply({}, {}, 255);
+        QVERIFY2(p.isValid(), qPrintable(p.error()));
+        QCOMPARE(run(p.path(), {}).value().exitCode, 0);
+        QCOMPARE(run(p.path(), {}).value().exitCode, 255);
+    }
+
+    void capturesStandardInputOnlyWhenAsked()
     {
         FakeProgram p(QStringLiteral("nmcli"));
         p.readStdin(true);
         p.reply({});
-        run(p.path(), {QStringLiteral("--ask")}, "s3cret\n");
-        QCOMPARE(p.stdins(), QList<QByteArray>{"s3cret\n"});
+        p.reply({});
+        QVERIFY(run(p.path(), {QStringLiteral("--ask")}, "s3cret\n"));
+        p.readStdin(false);
+        QVERIFY(run(p.path(), {}, "ignored\n"));
+        QVERIFY2(p.isValid(), qPrintable(p.error()));
+        QCOMPARE(p.stdins(), (QByteArrayList{"s3cret\n", ""}));
+    }
+
+    void numbersRunsThatStartTogether()
+    {
+        // Libraries start programs side by side; every run gets its own number
+        // and its own reply.
+        constexpr int n = 12;
+        FakeProgram p(QStringLiteral("nmcli"));
+        for (int i = 1; i <= n; ++i)
+            p.reply(QByteArray::number(i));
+        std::vector<std::unique_ptr<QProcess>> procs;
+        for (int i = 0; i < n; ++i) {
+            procs.push_back(std::make_unique<QProcess>());
+            procs.back()->start(p.path(), {QString::number(i)});
+        }
+        QVERIFY(waitUntil([&] {
+            return std::all_of(procs.cbegin(), procs.cend(),
+                               [](const auto &q) { return q->state() == QProcess::NotRunning; });
+        }));
+        QSet<QByteArray> outs;
+        for (const auto &q : procs) {
+            QCOMPARE(q->exitCode(), 0);
+            outs << q->readAllStandardOutput();
+        }
+        QCOMPARE(outs.size(), n);
+        QCOMPARE(p.calls().size(), n);
+        QCOMPARE(p.unusedReplies(), 0);
+    }
+
+    void reportsARecordItCannotRead()
+    {
+        FakeProgram p(QStringLiteral("nmcli"));
+        QFile torn(p.stateDir() + QStringLiteral("/calls/1.json"));
+        QVERIFY(torn.open(QIODevice::WriteOnly));
+        torn.write("{\"argv\": [\"ha");
+        torn.close();
+        p.calls();
+        QVERIFY(!p.isValid());
+        QVERIFY2(p.error().contains(QLatin1String("run 1")), qPrintable(p.error()));
     }
 
     void isFoundOnPath()
@@ -109,9 +207,10 @@ private slots:
         p.reply("Playing\n");
         const QByteArray saved = qgetenv("PATH");
         qputenv("PATH", p.binDir().toLocal8Bit() + ':' + saved);
-        const Run r = run(QStringLiteral("playerctl"), {QStringLiteral("status")});
+        const auto r = run(QStringLiteral("playerctl"), {QStringLiteral("status")});
         qputenv("PATH", saved);
-        QCOMPARE(r.out, QByteArray("Playing\n"));
+        QVERIFY(r);
+        QCOMPARE(r->out, QByteArray("Playing\n"));
         QCOMPARE(p.calls(), QList<QStringList>{{QStringLiteral("status")}});
     }
 
@@ -121,7 +220,9 @@ private slots:
         p.reply("ok");
         QProcess proc;
         proc.setProcessEnvironment(QProcessEnvironment());
-        QCOMPARE(run(proc, p.path(), {}).out, QByteArray("ok"));
+        const auto r = run(proc, p.path(), {});
+        QVERIFY(r);
+        QCOMPARE(r->out, QByteArray("ok"));
         QCOMPARE(p.calls().size(), 1);
     }
 
@@ -131,8 +232,8 @@ private slots:
         FakeProgram b(QStringLiteral("nmcli"));
         a.reply("a");
         b.reply("b");
-        QCOMPARE(run(a.path(), {}).out, QByteArray("a"));
-        QCOMPARE(run(b.path(), {}).out, QByteArray("b"));
+        QCOMPARE(run(a.path(), {}).value().out, QByteArray("a"));
+        QCOMPARE(run(b.path(), {}).value().out, QByteArray("b"));
         QCOMPARE(a.calls().size(), 1);
         QCOMPARE(b.calls().size(), 1);
     }

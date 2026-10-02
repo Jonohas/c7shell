@@ -82,16 +82,42 @@ hits=$(lib_violations "$plugin/lib")
 echo "PASS: plugin/lib is plain C++"
 
 # 2b. every plugin test is cut off from the host -------------------------------
-# C7_TEST_MAIN points the buses and XDG directories at nothing before a test
-# runs; a test with its own main would run against the machine instead.
-tests=$(cd "$repo" && find plugin -path '*/tests/*.cpp' -type f | sort)
-[[ -n $tests ]] || fail "no test sources under plugin/"
-for f in $tests; do
-  grep -qE '^C7_TEST_MAIN\(' "$repo/$f" || fail "$f does not use C7_TEST_MAIN"
-  if grep -nE '\bQTEST_[A-Z_]*MAIN\b|\bint[[:space:]]+main[[:space:]]*\(' "$repo/$f"; then
-    fail "$f defines its own main; use C7_TEST_MAIN"
-  fi
+# C7_TEST_MAIN points the buses, directories and PATH at nothing before a test
+# runs; a test with its own main would run against the machine instead. Tests
+# are registered only through c7_add_test (defined in DIR/CMakeLists.txt), so a
+# raw add_test() anywhere else is a test this check cannot see.
+# main_violations DIR -- print every way a test under DIR escapes C7_TEST_MAIN.
+main_violations() {
+  local root=$1 f
+  while IFS= read -r -d '' f; do
+    grep -qE '^C7_TEST_MAIN\(' "$f" || echo "$f: does not use C7_TEST_MAIN"
+    grep -qE '\bQTEST_[A-Z_]*MAIN\b|\bint[[:space:]]+main[[:space:]]*\(' "$f" \
+      && echo "$f: defines its own main"
+  done < <(find "$root" -path '*/tests/*.cpp' -type f -print0)
+  while IFS= read -r -d '' f; do
+    [[ $f == "$root/CMakeLists.txt" ]] && continue
+    grep -qiE '^[[:space:]]*add_test[[:space:]]*\(' "$f" && echo "$f: calls add_test; use c7_add_test"
+  done < <(find "$root" -name CMakeLists.txt -type f -print0)
+  return 0
+}
+
+# The check must see each thing it forbids.
+rm -rf "$tmp/mv" && mkdir -p "$tmp/mv/lib/x/tests" "$tmp/mv/lib/y z/tests"
+printf 'class T;\n' >"$tmp/mv/lib/x/tests/no_main.cpp"
+printf 'QTEST_GUILESS_MAIN(T)\nC7_TEST_MAIN(T)\n' >"$tmp/mv/lib/x/tests/own_main.cpp"
+printf 'class T;\n' >"$tmp/mv/lib/y z/tests/spaced.cpp"
+printf 'add_test(NAME t COMMAND t)\n' >"$tmp/mv/lib/x/CMakeLists.txt"
+printf 'function(c7_add_test)\n  add_test(NAME t COMMAND t)\nendfunction()\n' >"$tmp/mv/CMakeLists.txt"
+planted=$(main_violations "$tmp/mv")
+for want in 'no_main.cpp: does not use' 'own_main.cpp: defines its own main' \
+            'spaced.cpp: does not use' 'lib/x/CMakeLists.txt: calls add_test'; do
+  grep -qF "$want" <<<"$planted" || fail "the C7_TEST_MAIN check missed: $want\n$planted"
 done
+[[ $(wc -l <<<"$planted") -eq 4 ]] || fail "the C7_TEST_MAIN check flagged too much:\n$planted"
+
+[[ -n $(find "$plugin" -path '*/tests/*.cpp' -type f -print -quit) ]] || fail "no test sources under plugin/"
+hits=$(main_violations "$plugin")
+[[ -z $hits ]] || fail "plugin tests must run under C7_TEST_MAIN, registered by c7_add_test:\n$hits"
 echo "PASS: every plugin test runs under C7_TEST_MAIN"
 
 # 3. build and test ------------------------------------------------------------
