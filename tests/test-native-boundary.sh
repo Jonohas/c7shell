@@ -12,8 +12,8 @@
 # removes the use.
 #
 # Check 1 matches an array literal whose first element names a plumbing program:
-# single or double quotes, an optional /usr/bin or /bin prefix, across line
-# breaks. An argv built in a variable or by concatenation slips past it, and the
+# single, double or backtick quotes, any absolute path prefix, across line
+# breaks; `env` is on the list, so a wrapped call is reported as env. An argv built in a variable or by concatenation slips past it, and the
 # spawners check is the backstop for those. Entries are per file and program
 # (per file for spawners), not per use: a second call of a listed program in a
 # listed file passes, which review has to catch.
@@ -30,7 +30,7 @@ shopt -s inherit_errexit
 [[ -d $src ]] || fail "shell source tree not found: $src"
 [[ -n $(find "$src" -name '*.qml' -type f -print -quit) ]] || fail "no QML files under $src"
 
-plumbing='gdbus|busctl|dbus-send|nmcli|ip|systemctl|loginctl|rfkill|sh|bash|grep|ls|cat|find|mkdir|rm|gio|notify-send|python3|pacman|fprintd-[a-z]+|hyprctl|ddcutil|playerctl|pactl|wpctl|upower|c7-authd'
+plumbing='env|gdbus|busctl|dbus-send|nmcli|ip|systemctl|loginctl|rfkill|sh|bash|grep|ls|cat|find|mkdir|rm|gio|notify-send|python3|pacman|fprintd-[a-z]+|hyprctl|ddcutil|playerctl|pactl|wpctl|upower|c7-authd'
 
 # grep_tree ARGS... -- grep over the shell tree. No match is fine; a grep error
 # (an unreadable file, a broken pattern) fails instead of passing as no match.
@@ -102,10 +102,10 @@ ratchet() {
 # -z reads each file as one record, so an argv split over lines still matches.
 # Each hit comes back as "./file:<match>" and a NUL; a match may hold newlines,
 # so those become spaces before the NULs become the record separators.
-quote=\'\"
-hits=$(grep_tree -RPzo --include='*.qml' "\\[\\s*[$quote](?:/usr)?(?:/bin/)?(?:$plumbing)[$quote]" . \
+quote=\'\"\`
+hits=$(grep_tree -RPzo --include='*.qml' "\\[\\s*[$quote](?:(?:/[\\w.+-]+)*/)?(?:$plumbing)[$quote]" . \
   | tr '\n\0' ' \n' \
-  | sed -E "s|^\\./||; s|:\\[[[:space:]]*[$quote](/usr)?(/bin/)?| |; s|[$quote]$||")
+  | sed -E "s|^\\./||; s|:\\[[[:space:]]*[$quote]((/[[:alnum:]_.+-]+)*/)?| |; s|[$quote]$||")
 ratchet plumbing "$hits" "$(printf '%s\n' "${allowed[@]}")" "$(printf '%s\n' "${debt[@]}")" \
   "QML runs system plumbing that the C7 plugin owns. Add the capability to a
   C7 backend and bind to it. \`allowed\` is only for argv a backend receives
