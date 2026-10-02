@@ -17,6 +17,9 @@
 # Checks 3 to 5 skip without cmake or qt6-declarative; 1 and 2 always run.
 set -euo pipefail
 shopt -s inherit_errexit
+# The module test reads this; one inherited from the caller must not choose
+# which copy of C7 the build-tree checks load.
+unset C7_QML_IMPORT_PATH
 
 # shellcheck source=fixtures/harness.sh
 . "$(dirname -- "$0")/fixtures/harness.sh"
@@ -101,7 +104,8 @@ run_logged() {
   cat "$log" >&2
   fail "$what failed (log above)"
 }
-run_logged configure cmake -S "$plugin" -B "$build" "${gen[@]}"
+# Configured as PKGBUILD's build() does: check 4 installs what package() would.
+run_logged configure cmake -S "$plugin" -B "$build" "${gen[@]}" -DCMAKE_INSTALL_PREFIX=/usr
 run_logged build cmake --build "$build"
 
 # --no-tests=error only needs one test, so name each one that must run.
@@ -110,6 +114,10 @@ for t in tst_version tst_module; do
   grep -qE "Test +#[0-9]+: $t\$" "$log" || { cat "$log" >&2; fail "ctest does not run $t"; }
 done
 run_logged ctest ctest --test-dir "$build" --output-on-failure --no-tests=error
+# PKGBUILD's check() runs ctest in whatever environment makepkg inherited, so
+# an import path set there must not choose the copy of C7 under test.
+C7_QML_IMPORT_PATH=$tmp/no-such-dir run_logged 'ctest with a stray C7_QML_IMPORT_PATH' \
+  ctest --test-dir "$build" -R '^tst_module$' --no-tests=error
 echo "PASS: plugin builds and ctest passes"
 
 # 4. the installed module ------------------------------------------------------
@@ -117,7 +125,7 @@ echo "PASS: plugin builds and ctest passes"
 [[ -x $build/tests/tst_module ]] || fail "the build left no tst_module binary"
 dest=$tmp/dest
 qmldest=$dest/usr/lib/qt6/qml
-DESTDIR=$dest run_logged install cmake --install "$build" --prefix /usr
+DESTDIR=$dest run_logged install cmake --install "$build"
 for f in qmldir c7.qmltypes; do
   [[ -f $qmldest/C7/$f ]] || fail "cmake --install left no usr/lib/qt6/qml/C7/$f"
 done
@@ -125,7 +133,7 @@ done
 # need its own place on the loader path, which the package does not give it.
 libs=$(find "$qmldest/C7" -name '*.so*')
 [[ $(wc -l <<<"$libs") -eq 1 && -n $libs ]] || fail "expected one plugin library in C7/, got:\n$libs"
-stray=$(find "$dest" -type f ! -path "$qmldest/C7/*")
+stray=$(find "$dest" ! -type d ! -path "$qmldest/C7/*")
 [[ -z $stray ]] || fail "cmake --install puts files outside usr/lib/qt6/qml/C7:\n$stray"
 # The build tree's copy goes first, so only the installed one can satisfy this.
 rm -rf "$build/qml/C7"
