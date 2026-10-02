@@ -68,4 +68,27 @@ while read -r dir; do
 package() installs nothing there."
 done < <(grep -hoE '_c7lib=/usr/lib/[A-Za-z0-9._-]+' "$root"/bin/* | sed 's/.*=//' | sort -u)
 
+# --------------------------------------------------------------------------
+# check() runs this suite in the source tree before package() copies it, and a
+# test that runs a .py script leaves a __pycache__ behind. That bytecode embeds
+# the build's $srcdir (makepkg warns "Package contains reference to $srcdir")
+# and c7shell-setup would copy it into every user's ~/.config. So run the real
+# package() against a copy of the tree with a planted __pycache__ and require
+# none of it to ship.
+# --------------------------------------------------------------------------
+mktmp
+srcdir=$tmp/src pkgdir=$tmp/pkg
+mkdir -p "$srcdir/c7shell" "$pkgdir"
+git -C "$root" ls-files -z | (cd "$root" && xargs -0 cp --parents -t "$srcdir/c7shell")
+mkdir -p "$srcdir/c7shell/quickshell/c7shell/scripts/__pycache__"
+touch "$srcdir/c7shell/quickshell/c7shell/scripts/__pycache__/planted.cpython-314.pyc"
+(
+  # shellcheck source=/dev/null
+  . "$pkgbuild"
+  package
+) >/dev/null
+leaked=$(find "$pkgdir" -name __pycache__)
+[[ -z $leaked ]] || fail "package() ships Python bytecode, which embeds \$srcdir:
+${leaked//$pkgdir/}"
+
 printf 'PASS: packaging (%s programs in bin/)\n' "$(find "$root/bin" -maxdepth 1 -type f | wc -l)"
