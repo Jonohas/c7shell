@@ -1,6 +1,6 @@
 #pragma once
 
-#include "version.h"
+#include "core/version.h"
 
 #include <QObject>
 #include <QtQml/qqmlregistration.h>

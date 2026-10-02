@@ -114,7 +114,7 @@ echo "PASS: plugin builds and ctest passes"
 rm -rf "$build/qml/C7"
 rc=0
 "$build/tests/tst_module" >"$log" 2>&1 || rc=$?
-if ((rc != 1)) || ! grep -q 'module "C7" is not installed' "$log"; then
+if ((rc != 1)) || ! grep -q 'module C7 is not installed' "$log"; then
   cat "$log" >&2
   fail "tst_module exited $rc without the C7 module; it must fail for the missing module"
 fi

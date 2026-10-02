@@ -10,7 +10,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Qml Test)
 qt_standard_project_setup(REQUIRES 6.5)
 
 # Every QML module lands under one directory, so a test imports from it alone.
-set(QT_QML_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/qml)
+set(QT_QML_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/qml)
 
 enable_testing()
 

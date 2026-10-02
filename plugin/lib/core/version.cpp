@@ -1,4 +1,4 @@
-#include "version.h"
+#include "core/version.h"
 
 namespace c7::core {
 

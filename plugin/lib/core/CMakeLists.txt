@@ -1,5 +1,7 @@
 add_library(c7_core STATIC version.h version.cpp)
-target_include_directories(c7_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# plugin/lib is the include root, so headers read "core/version.h" and two
+# libraries' same-named headers never clash.
+target_include_directories(c7_core PUBLIC ${PROJECT_SOURCE_DIR}/lib)
 target_link_libraries(c7_core PUBLIC Qt6::Core)
 target_compile_definitions(c7_core PRIVATE C7_VERSION="${PROJECT_VERSION}")
 
