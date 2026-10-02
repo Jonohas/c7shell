@@ -73,14 +73,19 @@ done < <(grep -hoE '_c7lib=/usr/lib/[A-Za-z0-9._-]+' "$root"/bin/* | sed 's/.*=/
 # shell that fails to load, and a check() that lets a plugin test fail ships
 # a module nobody tested. build(), check() and package() run here as makepkg
 # runs them (sourced, under errexit), against stub cmake, ctest and lua that
-# record each call -- arguments and DESTDIR -- and exit STUB_RC_<tool>.
+# record each call -- arguments and DESTDIR -- and fail the one call that
+# carries the word in STUB_FAIL.
 # --------------------------------------------------------------------------
 mktmp
 fake=$tmp/fake
 mkdir -p "$fake/bin" "$fake/src/c7shell/tests" "$fake/src/c7shell/hypr"
 for tool in cmake ctest lua; do
-  printf '#!/bin/sh\necho "%s DESTDIR=$DESTDIR $* " >>"%s/calls"\nexit "${STUB_RC_%s:-0}"\n' \
-    "$tool" "$fake" "$tool" >"$fake/bin/$tool"
+  cat >"$fake/bin/$tool" <<STUB
+#!/bin/sh
+echo "$tool DESTDIR=\$DESTDIR \$* " >>"$fake/calls"
+[ -n "\${STUB_FAIL:-}" ] && case " \$* " in *" \$STUB_FAIL "*) exit 1 ;; esac
+exit 0
+STUB
   chmod +x "$fake/bin/$tool"
 done
 printf '#!/bin/sh\nexit 0\n' >"$fake/src/c7shell/tests/ok.sh"
@@ -128,15 +133,17 @@ expect_ok 'build()'
 called cmake -S plugin -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr \
   || fail "build() does not configure plugin/ into build/ with Ninja and prefix /usr:\n$(calls)"
 called cmake --build build || fail "build() does not build the plugin:\n$(calls)"
-run_fn build "$fake/src/c7shell" STUB_RC_cmake=1
-((rc != 0)) || fail "build() passed while cmake failed"
+for step in -S --build; do
+  run_fn build "$fake/src/c7shell" STUB_FAIL=$step
+  ((rc != 0)) || fail "build() passed while its cmake $step step failed"
+done
 
 run_fn check "$fake/src/c7shell"
 expect_ok 'check()'
 # --no-tests=error: a build directory with no tests registered is not a pass.
 called ctest --test-dir build --no-tests=error \
   || fail "check() does not run the plugin's ctest suite with --no-tests=error:\n$(calls)"
-run_fn check "$fake/src/c7shell" STUB_RC_ctest=1
+run_fn check "$fake/src/c7shell" STUB_FAIL=--test-dir
 ((rc != 0)) || fail "check() passed while a plugin test failed"
 
 # package() against the real tree: it installs the real files, and only cmake
@@ -145,7 +152,7 @@ run_fn package "$root"
 expect_ok 'package()'
 called cmake "DESTDIR=$fake/pkg" --install build \
   || fail "package() never installs the C7 plugin into \$pkgdir:\n$(calls)"
-run_fn package "$root" STUB_RC_cmake=1
+run_fn package "$root" STUB_FAIL=--install
 ((rc != 0)) || fail "package() passed while the plugin install failed"
 
 printf 'PASS: packaging (%s programs in bin/)\n' "$(find "$root/bin" -maxdepth 1 -type f | wc -l)"
