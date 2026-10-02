@@ -78,9 +78,16 @@ end
 -- typed in a terminal raises the shell's prompt, and a GUI program that shells
 -- out to sudo with no tty gets one instead of failing.
 --
--- Plain `sudo` in a terminal is deliberately untouched: it has a terminal, so
--- it reads from it, which is the right thing and does not need a modal window
--- over the whole screen. Making every sudo go through the shell means a line
--- in /etc/sudo.conf -- a file the sudo package owns, which c7shell does not
--- write. c7shell-doctor prints the one line to add for anyone who wants it.
+-- A plain `sudo CMD` typed in an interactive shell goes to run0 instead
+-- (/usr/lib/c7shell/sudo-run0.sh, sourced from the rc files c7shell-setup
+-- edits), which asks through polkit -- so it never reaches this. What does are
+-- scripts and the sudo forms run0 has no equivalent for.
 hl.env("SUDO_ASKPASS", "/usr/bin/c7-askpass")
+
+-- run0 tints the terminal red for as long as a root session lasts, and a
+-- command that exits at once leaves that red on the line it was printed on --
+-- every `sudo true`, every pacman transaction paru and arch-update run. The
+-- popup already says "you are about to act as root"; the tint repeats it as
+-- litter in the scrollback. systemd reads this in every run0 client
+-- (src/shared/pretty-print.c).
+hl.env("SYSTEMD_TINT_BACKGROUND", "0")
