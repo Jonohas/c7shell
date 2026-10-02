@@ -103,6 +103,17 @@ expect_fail plumbing "Modules/Launcher/providers/AppsProvider.qml rfkill"
 case_; plant Modules/Bar/PlantedCall.qml 'import QtQuick\nItem { Component.onCompleted: p.exec(["shell"]); property var x: ["lsblk"] }\n'
 expect_pass
 
+# --- symlinked files are scanned like any other ----------------------------
+# The link points outside the shell tree, so only following it finds the hit.
+for kind in 'plumbing|import QtQuick\nItem { Component.onCompleted: p.exec(["nmcli"]) }\n|Modules/Bar/Linked.qml nmcli' \
+            'imports|import Quickshell.Hyprland\nimport QtQuick\nItem {}\n|Modules/Bar/Linked.qml Quickshell.Hyprland' \
+            'spawners|import Quickshell.Io\nimport QtQuick\nItem { Process { command: ["grim"] } }\n|Modules/Bar/Linked.qml'; do
+  IFS='|' read -r check body needle <<<"$kind"
+  case_; printf '%b' "$body" >"$r/outside.qml"
+  ln -s ../../../../outside.qml "$r/quickshell/c7shell/Modules/Bar/Linked.qml"
+  expect_fail "$check" "$needle"
+done
+
 # --- stale entries, one per table ------------------------------------------
 case_; add_entry debt 'Services/NoSuchFile.qml nmcli'
 expect_fail plumbing "Services/NoSuchFile.qml nmcli"
