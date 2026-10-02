@@ -266,6 +266,8 @@ done < <(find "$src" -name '*.qml')
 #   palette.json                    the source
 #   sddm/.../PaletteStore.qml       generated from it (tools/gen-palette-qml.py)
 #   *.svg, *.md                     artwork and prose, not tokens
+#   docs/diagrams/*.dot             diagram sources in the Graphviz house
+#                                   palette, which is not the shell's
 #   #000000 / #ffffff               not palette entries: the ends of a mixing
 #                                   range and the plain black/white overlays
 #   Modules/SharePicker/            bypasses Theme entirely -- that is #95, and
@@ -282,7 +284,7 @@ done < <(find "$src" -name '*.qml')
 # --------------------------------------------------------------------------
 hits=$(
   git -C "$here/.." ls-files -z \
-    | { grep -zv -e '\.svg$' -e '\.md$' \
+    | { grep -zv -e '\.svg$' -e '\.md$' -e '^docs/diagrams/.*\.dot$' \
           -e '^quickshell/c7shell/palette\.json$' \
           -e '^sddm/themes/c7shell/PaletteStore\.qml$' \
           -e '^quickshell/c7shell/Common/Hex\.js$' \

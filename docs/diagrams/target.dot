@@ -1,0 +1,94 @@
+// c7shell target: every integration is a C7 contract with a C++ backend we own,
+// running in our own host instead of Quickshell.
+// Colour is difficulty only: red «hard», green «easy». Contracts and the system stay plain.
+digraph target {
+  graph [splines=ortho, rankdir=TB, nodesep=0.30, ranksep=0.55, fontname="Helvetica", fontsize=11, bgcolor="white", newrank=true];
+  node  [shape=box, style="filled,rounded", fillcolor="#ffffff", color="#607d8b", fontcolor="#263238",
+         fontname="Helvetica", fontsize=10, margin="0.14,0.08", width=2.40];
+  edge  [color="#546e7a", fontname="Helvetica", fontsize=9, penwidth=1.1, arrowhead=vee];
+
+  subgraph cluster_ui {
+    style="rounded,filled"; fillcolor="#fafafa"; color="#cfd8dc";
+    { rank=same;
+      t_ui [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="UI\n(QML, ours)\nbinds + dispatches"];
+      UI [group=c4, width=4.5, label="UI surfaces: bar, popovers, settings, launcher,\nOSD, capture overlay, auth prompt, toasts"]; }
+  }
+
+  node [shape=point, style=filled, width=0.01, label="", color="#546e7a"];
+  j1 [group=c1]; j2 [group=c2]; j3 [group=c3]; j4 [group=c4]; j5 [group=c5];
+  j6 [group=c6]; j7 [group=c7]; j8 [group=c8];
+  { rank=same; j1; j2; j3; j4; j5; j6; j7; j8; }
+  node [shape=box, style="filled,rounded", fillcolor="#ffffff", color="#607d8b", width=2.40, label="\N"];
+
+  subgraph cluster_contracts {
+    style="rounded,filled"; fillcolor="#f3f6f9"; color="#cfd8dc";
+    { rank=same;
+      t_c [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="C7 contracts\n(C++ singletons)"];
+      C1 [group=c1, label="«contract»\nAudio"];
+      C2 [group=c2, label="«contract»\nNetwork, Radio,\nBluetooth"];
+      C3 [group=c3, label="«contract»\nBattery, Media,\nPowerProfile, Fingerprint,\nSession, Brightness"];
+      C4 [group=c4, label="«contract»\nNotifications,\nTray, AppMenu"];
+      C5 [group=c5, label="«contract»\nCompositor"];
+      C6 [group=c6, label="«contract»\nAuth"];
+      C7 [group=c7, label="«contract»\nCapture, Recording,\nNightLight, Updates, Idle,\nWallpaper, Terminal, Clipboard"];
+      C8 [group=c8, label="«contract»\nApps, theme export,\ngenerated configs"]; }
+  }
+
+  subgraph cluster_backends {
+    style="rounded,filled"; fillcolor="#fafafa"; color="#cfd8dc";
+    { rank=same;
+      t_b [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="C7 backends + host\n(C++, ours)"];
+      H0 [group=c0, fillcolor="#e8f5e9", color="#2e7d32", label="«easy» host\nmain(), layer-shell-qt,\nIPC + CLI,\ncompiled QML modules"];
+      B1 [group=c1, fillcolor="#fdeaea", color="#c62828", label="«hard»\nlibpipewire:\nnodes, routes, volumes,\npeak meters"];
+      B2 [group=c2, fillcolor="#e8f5e9", color="#2e7d32", label="«easy»\nQtDBus: NetworkManager,\nBlueZ; /dev/rfkill"];
+      B3 [group=c3, fillcolor="#e8f5e9", color="#2e7d32", label="«easy»\nQtDBus: UPower, MPRIS,\ntuned, fprintd, logind,\nsystemd; sysfs, libddcutil"];
+      B4 [group=c4, fillcolor="#fdeaea", color="#c62828", label="«hard»\nown bus names, SNI watcher,\ndbusmenu layouts,\nicon pixmaps, actions"];
+      B5 [group=c5, fillcolor="#e8f5e9", color="#2e7d32", label="«easy»\nHyprland request\n+ event sockets"];
+      B6 [group=c6, fillcolor="#fdeaea", color="#c62828", label="«hard»\nlibpolkit-agent-1,\nfinger + password at once,\naskpass socket, secrets"];
+      B7 [group=c7, fillcolor="#e8f5e9", color="#2e7d32", label="«easy»\nasync QProcess:\nwf-recorder, hyprsunset,\nc7up, kitty, wl-copy"];
+      B8 [group=c8, fillcolor="#e8f5e9", color="#2e7d32", label="«easy»\ndesktop entries,\nGTK / kitty / hyprlock\nconfig writers"]; }
+  }
+
+  subgraph cluster_wl {
+    style="rounded,filled"; fillcolor="#f3f6f9"; color="#cfd8dc";
+    { rank=same;
+      t_w [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="host internals\n(C++, ours)"];
+      W0 [group=c0, fillcolor="#fdeaea", color="#c62828", label="«hard»\nWayland protocols on Qt:\nsession lock, screencopy,\ntoplevels, idle;\nhot reload that keeps state"]; }
+  }
+
+  subgraph cluster_sys {
+    style="rounded,filled"; fillcolor="#fafafa"; color="#cfd8dc";
+    { rank=same;
+      t_sys [shape=plaintext, style="", width=0.01, fontsize=10, fontcolor="#78909c", label="system\n(not ours)"];
+      X0 [group=c0, label="«system»\nHyprland\nWayland protocols"];
+      X1 [group=c1, label="«system»\nPipeWire"];
+      X2 [group=c2, label="«system»\nNetworkManager,\nBlueZ, rfkill"];
+      X3 [group=c3, label="«system»\nUPower, MPRIS, tuned,\nfprintd, logind, systemd,\nsysfs, i2c"];
+      X4 [group=c4, label="«system»\napps on the\nsession bus"];
+      X5 [group=c5, label="«system»\nHyprland\nIPC sockets"];
+      X6 [group=c6, label="«system»\npolkitd, sudo"];
+      X7 [group=c7, label="«system»\nencoder, gamma,\npacman / AUR / flatpak"];
+      X8 [group=c8, label="«system»\n.desktop files,\nother apps' configs"]; }
+  }
+
+  t_ui -> t_c -> t_b -> t_w -> t_sys [style=invis, weight=100];
+  t_b -> H0 [style=invis];  t_w -> W0 [style=invis];  t_sys -> X0 [style=invis];
+  H0 -> B1 -> B2 -> B3 -> B4 -> B5 -> B6 -> B7 -> B8 [style=invis];
+  X0 -> X1 -> X2 -> X3 -> X4 -> X5 -> X6 -> X7 -> X8 [style=invis];
+  C1 -> C2 -> C3 -> C4 -> C5 -> C6 -> C7 -> C8 [style=invis];
+
+  UI -> j4 [arrowhead=none, weight=100];
+  j1 -> j2 -> j3 -> j4 -> j5 -> j6 -> j7 -> j8 [arrowhead=none];
+  j1 -> C1 [weight=100]; j2 -> C2 [weight=100]; j3 -> C3 [weight=100]; j4 -> C4 [weight=100];
+  j5 -> C5 [weight=100]; j6 -> C6 [weight=100]; j7 -> C7 [weight=100]; j8 -> C8 [weight=100];
+
+  H0 -> W0 [weight=100];  W0 -> X0 [weight=100];
+  C1 -> B1 [weight=100]; B1 -> X1 [weight=100];
+  C2 -> B2 [weight=100]; B2 -> X2 [weight=100];
+  C3 -> B3 [weight=100]; B3 -> X3 [weight=100];
+  C4 -> B4 [weight=100]; B4 -> X4 [weight=100];
+  C5 -> B5 [weight=100]; B5 -> X5 [weight=100];
+  C6 -> B6 [weight=100]; B6 -> X6 [weight=100];
+  C7 -> B7 [weight=100]; B7 -> X7 [weight=100];
+  C8 -> B8 [weight=100]; B8 -> X8 [weight=100];
+}
