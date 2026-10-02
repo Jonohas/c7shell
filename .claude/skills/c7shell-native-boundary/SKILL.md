@@ -35,7 +35,8 @@ QML, and the backend is C++ against the system API itself.
   pure-virtual `Q_INVOKABLE` actions, `QAbstractListModel`s with stable rows
   for collections, `QML_SINGLETON` whose `create()` returns the backend).
   Implement it in `plugin/src/backends/<area>/` with async I/O only, and add a
-  QtTest test under `plugin/tests/`. QML binds to the singleton and calls its
+  QtTest test under `plugin/tests/`. Ship a fake backend for the contract,
+  built into tests only and never into the installed module. QML binds to the singleton and calls its
   actions; it never imports the integration module or starts the process.
 - **Other C7 type** (file operations, generated configs, pure logic): add it
   under `plugin/src/` with a QtTest test.
