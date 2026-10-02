@@ -113,6 +113,25 @@ private slots:
         QVERIFY(readUntil(*client, got, [](const QByteArray &g) { return g.endsWith("<three>"); }));
     }
 
+    void answersNothingAfterClosing()
+    {
+        // Two framed requests in one read: the first reply closes the client,
+        // so the second is neither answered nor recorded.
+        FakeSocketServer server(path);
+        server.onRequest([](const QByteArray &req) { return req; }, FakeSocketServer::CloseAfterReply,
+                         "\n");
+        auto client = connectTo(path);
+        QVERIFY(client);
+        client->write("a\nb\n");
+        QByteArray got;
+        QVERIFY(readUntil(*client, got, [&](const QByteArray &) {
+            return client->state() == QLocalSocket::UnconnectedState;
+        }));
+        got += client->readAll();
+        QCOMPARE(got, QByteArray("a"));
+        QCOMPARE(server.requests(), QByteArrayList{"a"});
+    }
+
     void pushesLinesToEveryClientLikeAnEventSocket()
     {
         FakeSocketServer server(path);
@@ -165,30 +184,35 @@ private slots:
 
     void refusesAPathAlreadyTaken_data()
     {
-        QTest::addColumn<bool>("liveServer");
-        QTest::newRow("another server") << true;
-        QTest::newRow("a file") << false;
+        QTest::addColumn<QString>("what");
+        QTest::newRow("another server") << QStringLiteral("server");
+        QTest::newRow("a file") << QStringLiteral("file");
+        QTest::newRow("a dangling symlink") << QStringLiteral("symlink");
     }
 
     void refusesAPathAlreadyTaken()
     {
-        QFETCH(bool, liveServer);
+        QFETCH(QString, what);
+        const bool liveServer = what == QLatin1String("server");
         std::unique_ptr<FakeSocketServer> first;
         if (liveServer) {
             first = std::make_unique<FakeSocketServer>(path);
             QVERIFY(first->isListening());
-        } else {
+        } else if (what == QLatin1String("file")) {
             QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
             QFile f(path);
             QVERIFY(f.open(QIODevice::WriteOnly));
+        } else {
+            QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+            QVERIFY(QFile::link(dir->filePath(QStringLiteral("nowhere")), path));
         }
         {
             FakeSocketServer second(path);
             QVERIFY(!second.isListening());
             QVERIFY2(second.error().contains(QLatin1String("already exists")), qPrintable(second.error()));
         }
-        // The refused one removed nothing.
-        QVERIFY(QFileInfo::exists(path));
+        // The refused one removed nothing (a dangling link does not "exist").
+        QVERIFY(QFileInfo(path).exists() || QFileInfo(path).isSymLink());
         if (liveServer)
             QVERIFY(connectTo(path));
     }

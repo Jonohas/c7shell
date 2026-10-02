@@ -106,7 +106,7 @@ rm -rf "$tmp/mv" && mkdir -p "$tmp/mv/lib/x/tests" "$tmp/mv/lib/y z/tests"
 printf 'class T;\n' >"$tmp/mv/lib/x/tests/no_main.cpp"
 printf 'QTEST_GUILESS_MAIN(T)\nC7_TEST_MAIN(T)\n' >"$tmp/mv/lib/x/tests/own_main.cpp"
 printf 'class T;\n' >"$tmp/mv/lib/y z/tests/spaced.cpp"
-printf 'add_test(NAME t COMMAND t)\n' >"$tmp/mv/lib/x/CMakeLists.txt"
+printf 'if(X) add_test(NAME t COMMAND t)\n' >"$tmp/mv/lib/x/CMakeLists.txt"
 printf 'function(c7_add_test)\n  add_test(NAME t COMMAND t)\nendfunction()\n' >"$tmp/mv/CMakeLists.txt"
 planted=$(main_violations "$tmp/mv")
 for want in 'no_main.cpp: does not use' 'own_main.cpp: defines its own main' \

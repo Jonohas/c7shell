@@ -112,6 +112,30 @@ private slots:
         QVERIFY2(!qEnvironmentVariableIsSet(var.constData()), var.constData());
     }
 
+    void allowedVariablesAreKept_data()
+    {
+        // One per allowlist entry shape: an exact name and each kind of prefix.
+        // Coverage and sanitizers read GCOV_*, LLVM_PROFILE_FILE and ASAN_*.
+        QTest::addColumn<QByteArray>("var");
+        for (const char *v : {"LANG", "LC_C7TEST", "QTEST_C7TEST", "GCOV_PREFIX", "LLVM_PROFILE_FILE",
+                              "ASAN_OPTIONS", "QT_LOGGING_RULES"})
+            QTest::newRow(v) << QByteArray(v);
+    }
+
+    void allowedVariablesAreKept()
+    {
+        QFETCH(QByteArray, var);
+        const QByteArray saved = qgetenv(var.constData());
+        const bool wasSet = qEnvironmentVariableIsSet(var.constData());
+        plantAndIsolate(var.constData(), "kept");
+        const QByteArray now = qgetenv(var.constData());
+        if (wasSet)
+            qputenv(var.constData(), saved);
+        else
+            qunsetenv(var.constData());
+        QCOMPARE(now, QByteArray("kept"));
+    }
+
     void onlyAllowedVariablesSurvive()
     {
         isolateFromHost();
