@@ -449,6 +449,13 @@ chmod +x "$lockdir/bin/fprintd-list"
 USER=tester runlock >/dev/null || fail "an enrolled finger broke c7shell-lock:\n$(cat "$lockdir/err")"
 grep -qE '^\s*enabled = true$' "$gen" || fail "an enrolled finger did not turn fingerprint unlock on:\n$(tail -24 "$gen")"
 grep -q 'FPRINTPROMPT' "$gen" || fail 'fingerprint unlock is on but nothing draws its prompt'
+# Lid shut with external screens (logind LidClosed and Docked): the sensor is
+# under the lid, so the lock screen stays password-only.
+printf '#!/bin/sh\necho "b true"\n' > "$lockdir/bin/busctl"
+chmod +x "$lockdir/bin/busctl"
+USER=tester runlock >/dev/null || fail "a docked, shut lid broke c7shell-lock:\n$(cat "$lockdir/err")"
+grep -q 'FPRINTPROMPT' "$gen" && fail 'fingerprint unlock is on with the lid shut on a dock'
+rm -f "$lockdir/bin/busctl"
 printf '#!/bin/sh\necho "User $1 has no fingers enrolled for Goodix."\n' > "$lockdir/bin/fprintd-list"
 USER=tester runlock >/dev/null || fail "no enrolled finger broke c7shell-lock:\n$(cat "$lockdir/err")"
 grep -q 'FPRINTPROMPT' "$gen" && fail 'fingerprint unlock is on with no finger enrolled'

@@ -245,6 +245,8 @@ class Session:
         fn(self, *args, req)
 
 authd.PolkitAgent.Session.new = staticmethod(lambda identity, cookie: Session())
+lid_shut_on_dock = False
+authd.reader_out_of_reach = lambda: lid_shut_on_dock
 events = []
 d = object.__new__(authd.Daemon)
 d.queue, d.by_cookie = [], {}
@@ -301,6 +303,15 @@ check(len(evs("prompt")) == before and not evs("failed"), "the retired reader dr
 # 5. Cancel stops both.
 d.deny(req)
 check(all(s.cancelled for s in Session.made), "cancel left a session running")
+
+# 6. Lid shut on a dock: the reader still takes its session, so the password
+#    session starts at once -- but no print is offered for a sensor under the lid.
+lid_shut_on_dock = True
+req = fresh()
+Session.made[0].fire("show-info", "Place your finger on the fingerprint reader")
+check(len(Session.made) == 2, "a hidden reader did not start the password session")
+check(not evs("factor"), "the print was offered with the lid shut on a dock")
+lid_shut_on_dock = False
 print("race ok")
 PY
 

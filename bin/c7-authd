@@ -462,6 +462,10 @@ class Daemon:
         if not _looks_like_fingerprint(text):
             self.emit(ev="info", id=req.id, text=text)
             return
+        # Lid shut on a dock: the reader still holds its session -- that is
+        # what sends the password session straight to its prompt -- but the
+        # shell is never told, so no print is drawn for a sensor under the lid.
+        hidden = reader_out_of_reach()
         if session is req.session and req.reader is None:
             # This session has the reader. Let it keep listening, and start a
             # fresh one for the password: pam_fprintd finds the reader claimed
@@ -469,10 +473,12 @@ class Daemon:
             req.reader = session
             req.session = None
             req.pending_prompt = False
-            self.emit(ev="factor", id=req.id, kind="fingerprint", text=text)
+            if not hidden:
+                self.emit(ev="factor", id=req.id, kind="fingerprint", text=text)
             self.begin_session(req)
             return
-        self.emit(ev="factor", id=req.id, kind="fingerprint", text=text)
+        if not hidden:
+            self.emit(ev="factor", id=req.id, kind="fingerprint", text=text)
 
     def _on_error(self, session, text, req):
         self.emit(ev="pamerror", id=req.id, text=text)
@@ -633,6 +639,25 @@ class Daemon:
             self.loop.run()
         except KeyboardInterrupt:
             self.shutdown()
+
+
+def reader_out_of_reach():
+    """The lid is shut and the screens are external: logind's LidClosed and
+    Docked. The sensor sits under the lid, so offering it there is offering a
+    print nobody can give. A shut lid without a dock is the suspend path, and
+    the person is about to open it -- that keeps the print.
+    """
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        def prop(name):
+            v = bus.call_sync("org.freedesktop.login1", "/org/freedesktop/login1",
+                              "org.freedesktop.DBus.Properties", "Get",
+                              GLib.Variant("(ss)", ("org.freedesktop.login1.Manager", name)),
+                              None, Gio.DBusCallFlags.NONE, 1000, None)
+            return bool(v.unpack()[0])
+        return prop("LidClosed") and prop("Docked")
+    except GLib.Error:
+        return False
 
 
 def _looks_like_fingerprint(text):
