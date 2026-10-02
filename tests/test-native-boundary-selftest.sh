@@ -72,7 +72,8 @@ run_copy; [[ $rc -ne 0 ]] && grep -q 'no QML files' <<<"$out" \
 
 # A grep error is a failure, not "no matches" (a dangling symlink cannot be read).
 case_; ln -s does-not-exist "$r/quickshell/c7shell/Modules/Bar/Dangling.qml"
-run_copy; [[ $rc -ne 0 ]] || fail "a grep error passed as no matches:\n$out"
+run_copy; [[ $rc -ne 0 ]] && grep -q 'grep exited' <<<"$out" \
+  || fail "a grep error passed as no matches:\n$out"
 
 # --- imports ---------------------------------------------------------------
 case_; plant Modules/Bar/PlantedImport.qml 'import Quickshell.Services.Pipewire\nimport QtQuick\nItem {}\n'
@@ -91,14 +92,19 @@ expect_fail spawners "Modules/Bar/PlantedSpawn.qml"
 
 # --- plumbing --------------------------------------------------------------
 # `p.exec(` is not a spawner pattern, so these isolate the plumbing check.
-for argv in '["nmcli", "radio"]' "['nmcli', 'radio']" '["/usr/bin/nmcli"]' '[\n    "nmcli",\n    "radio"\n  ]'; do
+# Each case is "argv|program the check must name".
+for c in '["nmcli", "radio"]|nmcli' "['nmcli', 'radio']|nmcli" '[`nmcli`, "radio"]|nmcli' \
+         '["/usr/bin/nmcli"]|nmcli' '["/usr/local/bin/nmcli"]|nmcli' \
+         '["env", "nmcli"]|env' '["/usr/bin/env", "LC_ALL=C", "nmcli"]|env' \
+         '[\n    "nmcli",\n    "radio"\n  ]|nmcli'; do
+  argv=${c%|*} prog=${c##*|}
   case_; plant Modules/Bar/PlantedCall.qml "import QtQuick\nItem { Component.onCompleted: p.exec($argv) }\n"
-  expect_fail plumbing "Modules/Bar/PlantedCall.qml nmcli"
+  expect_fail plumbing "Modules/Bar/PlantedCall.qml $prog"
 done
 # An allowed pair does not cover another program in the same file.
-case_; printf '\nItem { Component.onCompleted: p.exec(["rfkill", "list"]) }\n' \
-  >>"$r/quickshell/c7shell/Modules/Launcher/providers/AppsProvider.qml"
-expect_fail plumbing "Modules/Launcher/providers/AppsProvider.qml rfkill"
+case_; add_entry allowed 'Modules/Bar/PlantedCall.qml sh'
+plant Modules/Bar/PlantedCall.qml 'import QtQuick\nItem { Component.onCompleted: { p.exec(["sh"]); p.exec(["rfkill", "list"]) } }\n'
+expect_fail plumbing "Modules/Bar/PlantedCall.qml rfkill"
 # Program names are matched whole: "shell" is not sh, "lsblk" is not ls.
 case_; plant Modules/Bar/PlantedCall.qml 'import QtQuick\nItem { Component.onCompleted: p.exec(["shell"]); property var x: ["lsblk"] }\n'
 expect_pass
