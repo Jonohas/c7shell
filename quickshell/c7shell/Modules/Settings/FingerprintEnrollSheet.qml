@@ -87,6 +87,7 @@ Item {
           size: 96
           fill: root.done ? 1 : Math.min(1, FingerprintService.scans / root.total)
           listening: root.running
+        scanning: root.running
           success: root.done
         }
 

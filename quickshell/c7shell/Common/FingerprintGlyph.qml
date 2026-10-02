@@ -1,24 +1,28 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Shapes
+import QtQuick.Effects
 import qs.Theme
 
 // The fingerprint as nine ridges that light up one by one: the enroll sheet
-// fills it scan by scan, the password prompt breathes it while the reader
+// fills it scan by scan, the password prompt shows it whole while the reader
 // listens. The ridges are Assets/icons/fingerprint.svg's own paths, drawn as a
 // Shape rather than through Icon, because an Image can only be tinted whole.
 //
 //   fill       0..1, how many ridges are lit, centre outwards
 //   listening  the unlit ridges breathe -- the reader is waiting for a touch
+//   scanning   a beam of light sweeps up and down the ridges, and only the
+//              ridges: it is a copy of the print, masked to a moving band
 //   success    every ridge in Theme.success
-//   tap()      a short bounce, for a scan that landed
-//   reject()   a shake and a red flash, for one that did not
+//   tap()      a bounce and a ring rippling out, for a scan that landed
+//   reject()   a shake, a red flash and a red ripple, for one that did not
 Item {
   id: root
 
   property real size: 64
   property real fill: 0
   property bool listening: false
+  property bool scanning: false
   property bool success: false
   property color litColor: Theme.accent
 
@@ -40,8 +44,8 @@ Item {
   readonly property int lit: root.success ? root.ridges.length
                                           : Math.round(root.fill * root.ridges.length)
 
-  function tap() { bounce.restart() }
-  function reject() { shake.restart(); flash.restart() }
+  function tap() { bounce.restart(); ripple.fire(root.success ? Theme.success : root.litColor) }
+  function reject() { shake.restart(); flash.restart(); ripple.fire(Theme.accent) }
 
   property real breath: 0.16
   property real flashing: 0
@@ -58,6 +62,76 @@ Item {
     id: flash
     NumberAnimation { target: root; property: "flashing"; to: 1; duration: 80 }
     NumberAnimation { target: root; property: "flashing"; to: 0; duration: 420 }
+  }
+
+  // The print, once. `glow` paints every ridge in one bright colour for the
+  // beam's copy; the base copy colours each ridge by its own state.
+  component Ridges: Item {
+    id: set
+    // Inline components cannot see this file's ids, so the glyph is handed in.
+    required property var g
+    property bool glow: false
+    anchors.fill: parent
+
+    // One Shape per ridge: a Repeater can stamp Items, not ShapePaths.
+    Repeater {
+      model: set.g.ridges
+
+      Shape {
+        id: ridge
+        required property string modelData
+        required property int index
+
+        readonly property bool on: ridge.index < set.g.lit
+        readonly property color base: set.glow ? Qt.lighter(set.g.success ? Theme.success : set.g.litColor, 1.9)
+          : ridge.on ? (set.g.success ? Theme.success : set.g.litColor)
+          : Theme.alpha(Theme.text, set.g.breath)
+
+        // Authored in the SVG's 24-unit box and scaled, so the paths stay verbatim.
+        width: 24
+        height: 24
+        anchors.centerIn: parent
+        scale: set.g.size / 24
+        preferredRendererType: Shape.CurveRenderer
+
+        ShapePath {
+          strokeWidth: set.glow ? 2.0 : 1.6
+          fillColor: "transparent"
+          capStyle: ShapePath.RoundCap
+          joinStyle: ShapePath.RoundJoin
+          strokeColor: set.glow ? ridge.base
+            : Qt.tint(ridge.base, Theme.alpha(Theme.accent, set.g.flashing * 0.9))
+          Behavior on strokeColor { ColorAnimation { duration: 220 } }
+
+          PathSvg { path: ridge.modelData }
+        }
+      }
+    }
+  }
+
+  // -- the ripple ----------------------------------------------------------
+  // Behind the print, so the ring seems to come off the finger rather than
+  // cross the ridges.
+  Rectangle {
+    id: ripple
+    property color tint: root.litColor
+    function fire(c) { ripple.tint = c; rippleAnim.restart() }
+
+    anchors.centerIn: parent
+    width: root.size * 0.5
+    height: width
+    radius: width / 2
+    color: "transparent"
+    border.width: 2
+    border.color: ripple.tint
+    opacity: 0
+
+    ParallelAnimation {
+      id: rippleAnim
+      NumberAnimation { target: ripple; property: "width"; from: root.size * 0.5; to: root.size * 1.6; duration: 650; easing.type: Easing.OutCubic }
+      NumberAnimation { target: ripple; property: "opacity"; from: 0.7; to: 0; duration: 650; easing.type: Easing.OutQuad }
+      NumberAnimation { target: ripple; property: "border.width"; from: 3; to: 0.5; duration: 650 }
+    }
   }
 
   Item {
@@ -79,38 +153,60 @@ Item {
       NumberAnimation { target: nudge; property: "x"; to: 0; duration: 50 }
     }
 
-    // One Shape per ridge: a Repeater can stamp Items, not ShapePaths.
-    Repeater {
-      model: root.ridges
+    Ridges { g: root }
 
-      Shape {
-        id: ridge
-        required property string modelData
-        required property int index
+    // -- the beam ------------------------------------------------------------
+    // A bright copy of the print, shown only through a soft horizontal band
+    // that sweeps top to bottom and back. Masked rather than drawn over, so
+    // the light lands on the ridges and never on the gaps between them.
+    Ridges {
+      id: bright
+      g: root
+      glow: true
+      visible: false
+      layer.enabled: root.scanning
+    }
 
-        readonly property bool on: ridge.index < root.lit
-        readonly property color base: ridge.on
-          ? (root.success ? Theme.success : root.litColor)
-          : Theme.alpha(Theme.text, root.breath)
+    Item {
+      id: band
+      anchors.fill: parent
+      visible: false
+      layer.enabled: root.scanning
 
-        // Authored in the SVG's 24-unit box and scaled, so the paths stay verbatim.
-        width: 24
-        height: 24
-        anchors.centerIn: parent
-        scale: root.size / 24
-        preferredRendererType: Shape.CurveRenderer
+      property real pos: -0.25
 
-        ShapePath {
-          strokeWidth: 1.6
-          fillColor: "transparent"
-          capStyle: ShapePath.RoundCap
-          joinStyle: ShapePath.RoundJoin
-          strokeColor: Qt.tint(ridge.base, Theme.alpha(Theme.accent, root.flashing * 0.9))
-          Behavior on strokeColor { ColorAnimation { duration: 220 } }
-
-          PathSvg { path: ridge.modelData }
+      Rectangle {
+        width: parent.width
+        height: parent.height * 0.34
+        y: band.pos * parent.height - height / 2
+        gradient: Gradient {
+          GradientStop { position: 0.0; color: "transparent" }
+          GradientStop { position: 0.5; color: "white" }
+          GradientStop { position: 1.0; color: "transparent" }
         }
       }
+
+      SequentialAnimation on pos {
+        running: root.scanning
+        loops: Animation.Infinite
+        NumberAnimation { from: -0.25; to: 1.25; duration: 1300; easing.type: Easing.InOutSine }
+        NumberAnimation { from: 1.25; to: -0.25; duration: 1300; easing.type: Easing.InOutSine }
+      }
+    }
+
+    MultiEffect {
+      anchors.fill: parent
+      visible: root.scanning
+      source: bright
+      maskEnabled: true
+      maskSource: band
+      // A soft edge rather than a hard cut: the band's gradient alpha fades
+      // the light in and out across the threshold.
+      maskThresholdMin: 0.4
+      maskSpreadAtMin: 0.8
+      blurEnabled: true
+      blurMax: 8
+      blur: 0.15
     }
   }
 }

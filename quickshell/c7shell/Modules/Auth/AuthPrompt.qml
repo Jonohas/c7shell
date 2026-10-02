@@ -142,18 +142,12 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         visible: root.onFactor
         size: 64
-        // The whole print, coloured, pulsing while the reader listens -- not
-        // the sheet's empty one, which is a print still being recorded.
+        // The whole print, coloured, with the beam sweeping it while the
+        // reader listens -- not the sheet's empty one, which is a print still
+        // being recorded.
         fill: 1
         litColor: root.privileged ? Theme.accent : Theme.alpha(Theme.text, 0.8)
-
-        SequentialAnimation on opacity {
-          running: root.onFactor
-          loops: Animation.Infinite
-          NumberAnimation { to: 0.55; duration: 900; easing.type: Easing.InOutSine }
-          NumberAnimation { to: 1; duration: 900; easing.type: Easing.InOutSine }
-          onStopped: glyph.opacity = 1
-        }
+        scanning: root.onFactor
       }
 
       // -- icon tile ---------------------------------------------------------
