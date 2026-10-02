@@ -33,7 +33,9 @@ ignored() {
   ((rc <= 1)) || fail "git check-ignore exited $rc in $repo"
 }
 
-mapfile -t files < <(cd "$repo" && find plugin -type f)
+# Not process substitution: errexit cannot see a failing find inside one.
+files=$(cd "$repo" && find plugin -type f)
+mapfile -t files <<<"$files"
 hits=$(ignored "${files[@]}" plugin/src/x.cpp plugin/lib/x/x.cpp plugin/tests/x.cpp)
 [[ -z $hits ]] || fail "git ignores plugin sources, so a clean clone lacks them:\n$hits"
 [[ -n $(ignored build/CMakeCache.txt) ]] || fail "git does not ignore /build/, the documented build directory"
@@ -46,7 +48,7 @@ lib_violations() {
   grep -RnE \
     -e '^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"](private/)?(QtQml|QtQuick|Quickshell|quickshell|QQml|QQuick|qqml|qquick|QJSEngine|QJSValue|qjs)' \
     -e 'Qt6?::(Qml|Quick)' \
-    -e 'qt6?_add_qml_(module|plugin)' \
+    -e '[Qq][Tt]6?_[Aa][Dd][Dd]_[Qq][Mm][Ll]_([Mm][Oo][Dd][Uu][Ll][Ee]|[Pp][Ll][Uu][Gg][Ii][Nn])' \
     "$1" || rc=$?
   ((rc <= 1)) || fail "grep exited $rc while scanning $1"
 }
@@ -65,6 +67,7 @@ planted=(
   'target_link_libraries(x PRIVATE Qt::Qml)'
   'qt_add_qml_module(x URI X)'
   'qt6_add_qml_plugin(x)'
+  'QT_ADD_QML_MODULE(x URI X)'
 )
 for line in "${planted[@]}"; do
   rm -rf "$tmp/lib" && mkdir -p "$tmp/lib/x"
