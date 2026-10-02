@@ -8,10 +8,12 @@
 #   2. no file under plugin/lib/ includes a QML, Quick or Quickshell header,
 #      links a QML or Quick target, or declares a QML module -- the libraries
 #      are plain Qt clients
+#   2b. every plugin test uses C7_TEST_MAIN, which cuts it off from the host
 #   3. a clean configure, build and ctest of plugin/ passes, and ctest runs
 #      every test this script names
+#   3b. the test kit's own tests (plugin/lib/testing) pass 50 consecutive runs
 #   4. tst_module fails, for the missing module, once the built C7 module is gone
-# Checks 3 and 4 skip without cmake or qt6-declarative; 1 and 2 always run.
+# Checks 3 to 4 skip without cmake or qt6-declarative; 1 to 2b always run.
 set -euo pipefail
 shopt -s inherit_errexit
 
@@ -79,6 +81,19 @@ hits=$(lib_violations "$plugin/lib")
 [[ -z $hits ]] || fail "plugin/lib must not depend on QML, Quick or Quickshell:\n$hits"
 echo "PASS: plugin/lib is plain C++"
 
+# 2b. every plugin test is cut off from the host -------------------------------
+# C7_TEST_MAIN points the buses and XDG directories at nothing before a test
+# runs; a test with its own main would run against the machine instead.
+tests=$(cd "$repo" && find plugin -path '*/tests/*.cpp' -type f | sort)
+[[ -n $tests ]] || fail "no test sources under plugin/"
+for f in $tests; do
+  grep -qE '^C7_TEST_MAIN\(' "$repo/$f" || fail "$f does not use C7_TEST_MAIN"
+  if grep -nE '\bQTEST_[A-Z_]*MAIN\b|\bint[[:space:]]+main[[:space:]]*\(' "$repo/$f"; then
+    fail "$f defines its own main; use C7_TEST_MAIN"
+  fi
+done
+echo "PASS: every plugin test runs under C7_TEST_MAIN"
+
 # 3. build and test ------------------------------------------------------------
 if ! command -v cmake >/dev/null; then
   echo 'SKIP: cmake not installed (package: cmake); build and ctest not run'
@@ -103,11 +118,23 @@ run_logged build cmake --build "$build"
 
 # --no-tests=error only needs one test, so name each one that must run.
 run_logged 'ctest -N' ctest --test-dir "$build" -N
-for t in tst_version tst_module; do
+kit=(tst_privatebus tst_fakeservice tst_fakesocketserver tst_fakeprogram tst_wait tst_isolation)
+for t in tst_version tst_module "${kit[@]}"; do
   grep -qE "Test +#[0-9]+: $t\$" "$log" || { cat "$log" >&2; fail "ctest does not run $t"; }
 done
 run_logged ctest ctest --test-dir "$build" --output-on-failure --no-tests=error
 echo "PASS: plugin builds and ctest passes"
+
+# 3b. the test kit is deterministic --------------------------------------------
+# Every library's tests stand on these fixtures, so a flaky one makes them all
+# flaky. 50 consecutive runs, each test in a fresh process.
+run_logged 'ctest -N -L testing' ctest --test-dir "$build" -N -L testing
+for t in "${kit[@]}"; do
+  grep -qE "Test +#[0-9]+: $t\$" "$log" || { cat "$log" >&2; fail "$t is not labelled testing"; }
+done
+run_logged 'test kit, 50 consecutive runs' \
+  ctest --test-dir "$build" -L testing --repeat until-fail:50 --output-on-failure --no-tests=error
+echo "PASS: the test kit passes 50 consecutive runs"
 
 # 4. the module test needs the module -----------------------------------------
 # Run the binary itself: through ctest, "no such test" and "test failed" share
