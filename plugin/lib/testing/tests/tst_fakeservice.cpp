@@ -20,10 +20,12 @@ const QString kName = QStringLiteral("org.c7.Test");
 const QString kPath = QStringLiteral("/thing");
 const QString kIface = QStringLiteral("org.c7.Test.Thing");
 
-// What a test defines: the service's methods are its slots, its signals are
-// its signals, and its properties are its properties.
+// What a test defines: its interface name is its D-Bus Interface class info,
+// its methods are its slots, its signals its signals, and its properties its
+// properties.
 class Thing : public QObject {
     Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.c7.Test.Thing")
     Q_PROPERTY(QString state READ state WRITE setState)
 
 public:
@@ -68,7 +70,7 @@ private slots:
         QVERIFY2(bus->isRunning(), qPrintable(bus->error()));
         service = std::make_unique<FakeService>(bus->connect(), kName);
         QVERIFY(service->ownsName());
-        QVERIFY(service->exportObject(kPath, &thing, kIface));
+        QVERIFY(service->exportObject(kPath, &thing));
         client = bus->connect();
     }
 
@@ -143,6 +145,18 @@ private slots:
     {
         QVERIFY(!service->setProperty(QStringLiteral("/nope"), QStringLiteral("state"), 1));
         QVERIFY(!service->emitSignal(QStringLiteral("/nope"), QStringLiteral("Ping"), {}));
+    }
+
+    void refusesAnObjectWithoutAnInterface()
+    {
+        QObject bare;
+        QVERIFY(!service->exportObject(QStringLiteral("/bare"), &bare));
+    }
+
+    void refusesAPathTwice()
+    {
+        Thing other;
+        QVERIFY(!service->exportObject(kPath, &other));
     }
 
     void refusesAnUnknownProperty()

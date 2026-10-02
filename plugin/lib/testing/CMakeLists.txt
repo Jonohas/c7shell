@@ -3,6 +3,7 @@
 
 # What FakeProgram puts on disk under the name of the program it stands in for.
 add_executable(c7-fake-program fakeprogram_main.cpp)
+target_include_directories(c7-fake-program PRIVATE ${PROJECT_SOURCE_DIR}/lib)
 target_link_libraries(c7-fake-program PRIVATE Qt6::Core)
 
 add_library(c7_testing STATIC

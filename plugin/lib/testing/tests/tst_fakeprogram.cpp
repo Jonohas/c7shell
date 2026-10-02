@@ -103,14 +103,15 @@ private slots:
 
     void isFoundOnPath()
     {
+        // QProcess looks a bare name up on this process's PATH, so that is the
+        // one a test puts the fake on, as it would for a library under test.
         FakeProgram p(QStringLiteral("playerctl"));
         p.reply("Playing\n");
-        QProcess proc;
-        QProcessEnvironment env;
-        env.insert(QStringLiteral("PATH"), p.binDir());
-        proc.setProcessEnvironment(env);
-        QCOMPARE(run(proc, QStringLiteral("playerctl"), {QStringLiteral("status")}).out,
-                 QByteArray("Playing\n"));
+        const QByteArray saved = qgetenv("PATH");
+        qputenv("PATH", p.binDir().toLocal8Bit() + ':' + saved);
+        const Run r = run(QStringLiteral("playerctl"), {QStringLiteral("status")});
+        qputenv("PATH", saved);
+        QCOMPARE(r.out, QByteArray("Playing\n"));
         QCOMPARE(p.calls(), QList<QStringList>{{QStringLiteral("status")}});
     }
 
