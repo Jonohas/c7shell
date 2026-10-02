@@ -1,36 +1,58 @@
 #!/usr/bin/env bash
 # Enforces docs/architecture.md. Run it directly: tests/test-native-boundary.sh
+# tests/test-native-boundary-selftest.sh proves each check catches what it claims.
 #
-# Three checks, each with a `debt` table for code that predates the rule:
-#   1. plumbing  -- system plumbing belongs to the C7 C++ plugin, not to QML
+# Three checks over every *.qml under quickshell/c7shell, each with a debt table
+# for code that predates the rule:
+#   1. plumbing  -- no system plumbing program in an argv; the C7 plugin owns it
 #   2. imports   -- no QML file imports a Quickshell integration module
-#   3. spawners  -- no QML file starts a process
-# A debt entry that no longer matches fails too, so every table only shrinks:
-# delete the line in the same change that removes the use.
+#   3. spawners  -- no QML file starts a process (`Process {` or `execDetached(`)
+# An entry that no longer matches anything fails too, in `debt` and in `allowed`
+# alike, so the tables only shrink: delete the line in the same change that
+# removes the use.
 #
-# Check 1 looks for a JS array literal that starts with one of the plumbing programs
-# below -- the shape of every Process command, exec() and execDetached() argv in
-# this tree. An argv assembled some other way slips past; review catches those.
+# Check 1 matches an array literal whose first element names a plumbing program:
+# single or double quotes, an optional /usr/bin or /bin prefix, across line
+# breaks. An argv built in a variable or by concatenation slips past it, and the
+# spawners check is the backstop for those. Entries are per file and program
+# (per file for spawners), not per use: a second call of a listed program in a
+# listed file passes, which review has to catch.
 #
-# A hit passes only if its "file program" pair is in `allowed` (permanent, with
-# the reason) or in `debt`.
+# A hit passes only if its pair is in `allowed` (permanent, with the reason, and
+# only for argv a backend receives as data) or in `debt`.
 set -euo pipefail
+shopt -s inherit_errexit
 
 # shellcheck source=fixtures/harness.sh
 . "$(dirname -- "$0")/fixtures/harness.sh"
 
+# An empty or missing tree has no violations, and must not pass for it.
+[[ -d $src ]] || fail "shell source tree not found: $src"
+[[ -n $(find "$src" -name '*.qml' -type f -print -quit) ]] || fail "no QML files under $src"
+
 plumbing='gdbus|busctl|dbus-send|nmcli|ip|systemctl|loginctl|rfkill|sh|bash|grep|ls|cat|find|mkdir|rm|gio|notify-send|python3|pacman|fprintd-[a-z]+|hyprctl|ddcutil|playerctl|pactl|wpctl|upower|c7-authd'
 
+# grep_tree ARGS... -- grep over the shell tree. No match is fine; a grep error
+# (an unreadable file, a broken pattern) fails instead of passing as no match.
+grep_tree() {
+  local rc=0
+  (cd "$src" && grep "$@") || rc=$?
+  ((rc <= 1)) || fail "grep exited $rc while scanning $src: grep $*"
+}
+
 allowed=(
-  # A shell inside the terminal the person opened: the process is the product.
+  # A shell inside the terminal the person opened: argv handed to Terminal.run
+  # as data, and the process is the product.
   'Modules/Launcher/providers/AppsProvider.qml sh'
-  'Modules/Launcher/providers/FilesProvider.qml sh'
   # A list of update sources, not a command.
   'Modules/Updates/RunView.qml pacman'
 )
 
 debt=(
   'Modules/Launcher/providers/ActionsProvider.qml sh'
+  # The file search runs `sh -c` from QML. The terminal argv in the same file
+  # keeps this pair live until the launcher epic moves both.
+  'Modules/Launcher/providers/FilesProvider.qml sh'
   'Modules/SharePicker/PickerApp.qml sh'
   'Services/AirplaneService.qml rfkill'
   'Services/AppearanceStore.qml hyprctl'
@@ -65,20 +87,25 @@ debt=(
 )
 
 # ratchet NAME HITS ALLOWED DEBT MESSAGE -- fail on a hit in neither table, and
-# on a debt entry that matches nothing.
+# on a table entry that matches nothing.
 ratchet() {
   local name=$1 hits=$2 allowed=$3 debt=$4 msg=$5 new stale
   new=$(comm -23 <(sort -u <<<"$hits") <(printf '%s\n%s\n' "$allowed" "$debt" | sort -u) | sed '/^$/d')
   [[ -z $new ]] || fail "$name: $msg:\n$new"
-  stale=$(comm -13 <(sort -u <<<"$hits") <(sort -u <<<"$debt") | sed '/^$/d')
-  [[ -z $stale ]] || fail "$name: these debt entries no longer match anything;
+  stale=$(comm -13 <(sort -u <<<"$hits") <(printf '%s\n%s\n' "$allowed" "$debt" | sort -u) | sed '/^$/d')
+  [[ -z $stale ]] || fail "$name: these table entries no longer match anything;
   delete them from tests/test-native-boundary.sh:\n$stale"
   echo "PASS: $name ($(sed '/^$/d' <<<"$debt" | wc -l) debt entries left)"
 }
 
 # 1. plumbing ----------------------------------------------------------------
-hits=$(cd "$src" && grep -rnoE --include='*.qml' "\[[[:space:]]*\"($plumbing)\"" . \
-  | sed -E 's|^\./||; s|:[0-9]+:\[[[:space:]]*"| |; s|"$||' || true)
+# -z reads each file as one record, so an argv split over lines still matches.
+# Each hit comes back as "./file:<match>" and a NUL; a match may hold newlines,
+# so those become spaces before the NULs become the record separators.
+quote=\'\"
+hits=$(grep_tree -RPzo --include='*.qml' "\\[\\s*[$quote](?:/usr)?(?:/bin/)?(?:$plumbing)[$quote]" . \
+  | tr '\n\0' ' \n' \
+  | sed -E "s|^\\./||; s|:\\[[[:space:]]*[$quote](/usr)?(/bin/)?| |; s|[$quote]$||")
 ratchet plumbing "$hits" "$(printf '%s\n' "${allowed[@]}")" "$(printf '%s\n' "${debt[@]}")" \
   "QML runs system plumbing that the C7 plugin owns. Add the capability to a
   C7 backend and bind to it. \`allowed\` is only for argv a backend receives
@@ -131,8 +158,8 @@ import_debt=(
   'Services/RecordingService.qml Quickshell.Hyprland'
   'Services/ScreenshareService.qml Quickshell.Hyprland'
 )
-hits=$(cd "$src" && grep -rnoE --include='*.qml' "^import Quickshell\.($external)" . \
-  | sed -E 's|^\./||; s|:[0-9]+:import | |' || true)
+hits=$(grep_tree -RnoE --include='*.qml' "^[[:space:]]*import[[:space:]]+Quickshell\.($external)" . \
+  | sed -E 's|^\./||; s|:[0-9]+:[[:space:]]*import[[:space:]]+| |')
 ratchet imports "$hits" "" "$(printf '%s\n' "${import_debt[@]}")" \
   "QML imports a Quickshell integration module. Integrations are C7
   backends behind a contract (docs/architecture.md); bind to the C7 singleton"
@@ -162,8 +189,7 @@ spawn_debt=(
   'Services/TunedService.qml'
   'Services/UpdatesService.qml'
 )
-hits=$(cd "$src" && grep -rlE --include='*.qml' 'Process[[:space:]]*\{|execDetached\(' . \
-  | sed 's|^\./||' || true)
+hits=$(grep_tree -RlPz --include='*.qml' 'Process\s*\{|execDetached\(' . | sed 's|^\./||')
 ratchet spawners "$hits" "" "$(printf '%s\n' "${spawn_debt[@]}")" \
   "QML starts a process. External programs are integrations: a C7 backend
   starts them with an async QProcess, and QML calls its action"
