@@ -83,7 +83,8 @@ private slots:
             QVERIFY(kept.isConnected());
         }
         QVERIFY(processIsGone(pid));
-        QVERIFY(!kept.isConnected());
+        // A connection hears that its bus went away asynchronously.
+        QVERIFY(waitUntil([&] { return !kept.isConnected(); }));
     }
 
     void stopsTheDaemonWhenTheTestCrashes()

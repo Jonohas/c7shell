@@ -4,6 +4,9 @@
 
 #include <QtCore/QFile>
 
+#include <csignal>
+#include <sys/prctl.h>
+
 namespace c7::testing {
 
 namespace {
@@ -39,7 +42,7 @@ const int kBoundMs = int(kWaitBound.count());
 
 PrivateBus::PrivateBus(Kind kind, const QString &daemon)
 {
-    start(kind, daemon);
+    start(kind, daemon.isEmpty() ? QStringLiteral(C7_DBUS_DAEMON) : daemon);
 }
 
 void PrivateBus::start(Kind kind, const QString &daemon)
@@ -55,6 +58,9 @@ void PrivateBus::start(Kind kind, const QString &daemon)
     }
     conf.close();
 
+    // A test that dies runs no destructor, so the kernel kills the daemon with
+    // it. Linux only, like everything this kit fakes.
+    m_daemon.setChildProcessModifier([] { ::prctl(PR_SET_PDEATHSIG, SIGKILL); });
     // A fixture may block where library code may not: the test cannot go on
     // until the bus exists.
     m_daemon.start(daemon, {QStringLiteral("--config-file=") + conf.fileName(),

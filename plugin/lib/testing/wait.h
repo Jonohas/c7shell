@@ -15,7 +15,8 @@ inline constexpr std::chrono::milliseconds kWaitBound{std::chrono::seconds(10)};
 template <typename Predicate>
 bool waitUntil(Predicate done, std::chrono::milliseconds bound = kWaitBound)
 {
-    return QTest::qWaitFor(done, QDeadlineTimer(bound));
+    // The int overload: the QDeadlineTimer one needs Qt 6.7, the build asks 6.5.
+    return QTest::qWaitFor(done, int(bound.count()));
 }
 
 } // namespace c7::testing

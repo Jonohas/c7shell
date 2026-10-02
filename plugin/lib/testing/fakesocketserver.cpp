@@ -13,8 +13,12 @@ FakeSocketServer::FakeSocketServer(const QString &path, QObject *parent)
         m_error = QStringLiteral("cannot create the directory for %1").arg(path);
         return;
     }
-    // A full path, so QLocalServer neither prefixes a directory nor removes an
-    // existing server's socket behind our back.
+    // QLocalServer::listen() unlinks whatever is at the path, a live server's
+    // socket included; a fixture must never do that.
+    if (QFileInfo(path).exists() || QFileInfo(path).isSymLink()) {
+        m_error = QStringLiteral("%1 already exists").arg(path);
+        return;
+    }
     m_server.setSocketOptions(QLocalServer::UserAccessOption);
     if (!m_server.listen(path)) {
         m_error = m_server.errorString();
@@ -37,20 +41,23 @@ FakeSocketServer::~FakeSocketServer()
     m_server.close();
 }
 
-void FakeSocketServer::onRequest(Handler handler, AfterReply after)
+void FakeSocketServer::onRequest(Handler handler, AfterReply after, const QByteArray &delimiter)
 {
     m_handler = std::move(handler);
     m_after = after;
+    m_delimiter = delimiter;
 }
 
-void FakeSocketServer::pushLine(const QByteArray &line)
+int FakeSocketServer::pushLine(const QByteArray &line)
 {
     // A copy: a write that fails can disconnect a client, which edits m_clients.
     const QList<QPointer<QLocalSocket>> clients = m_clients;
+    int reached = 0;
     for (const QPointer<QLocalSocket> &c : clients) {
-        if (c && c->state() == QLocalSocket::ConnectedState)
-            c->write(line + '\n');
+        if (c && c->state() == QLocalSocket::ConnectedState && c->write(line + '\n') == line.size() + 1)
+            ++reached;
     }
+    return reached;
 }
 
 void FakeSocketServer::accept()
@@ -60,6 +67,7 @@ void FakeSocketServer::accept()
         connect(client, &QLocalSocket::readyRead, this, [this, client] { read(client); });
         connect(client, &QLocalSocket::disconnected, this, [this, client] {
             m_clients.removeAll(client);
+            m_pending.remove(client);
             client->deleteLater();
         });
     }
@@ -67,9 +75,26 @@ void FakeSocketServer::accept()
 
 void FakeSocketServer::read(QLocalSocket *client)
 {
-    const QByteArray request = client->readAll();
-    if (request.isEmpty())
+    const QByteArray bytes = client->readAll();
+    if (bytes.isEmpty())
         return;
+    if (m_delimiter.isEmpty()) {
+        answer(client, bytes);
+        return;
+    }
+    QByteArray &pending = m_pending[client];
+    pending += bytes;
+    qsizetype at;
+    // A handler may close the client, which drops its pending bytes.
+    while (m_pending.contains(client) && (at = pending.indexOf(m_delimiter)) >= 0) {
+        const QByteArray request = pending.left(at);
+        pending.remove(0, at + m_delimiter.size());
+        answer(client, request);
+    }
+}
+
+void FakeSocketServer::answer(QLocalSocket *client, const QByteArray &request)
+{
     m_requests << request;
     if (!m_handler)
         return;
