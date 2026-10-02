@@ -27,7 +27,7 @@ Item {
   property bool dragEnabled: false
 
   // A monitor's effective logical top-left: the staged position if one is
-  // pending, else the live one. plan(), snap() and the tiles all read through
+  // pending, else the live one. plan(), target() and the tiles all read through
   // this, so a staged move shows across the whole plan before it is applied.
   function staged(m) {
     return /^(-?\d+)x(-?\d+)$/.exec(DisplayService.stagedFor(m.name).position ?? "")
@@ -86,18 +86,23 @@ Item {
   function px(lx) { return root.plan.ox + (lx - root.plan.x0) * root.plan.k }
   function py(ly) { return root.plan.oy + (ly - root.plan.y0) * root.plan.k }
 
-  // Land a dropped screen touching a neighbour and overlapping none, then
-  // shift the whole desk back to 0,0. Every position that changes is staged;
-  // one that does not is left alone, so a click without a move stages nothing.
-  // The flush-snap threshold is fixed in CANVAS px and divided by k, so it
-  // stays the same distance under the cursor whatever the desk is scaled to.
-  function drop(me, lx, ly) {
+  // Where `me` lands if let go at logical (lx, ly), per the snap toggle and
+  // reach in ShellStore, or null when the drop would be refused. The reach and
+  // the flush-pull threshold are fixed in CANVAS px and divided by k, so they
+  // stay the same distance under the cursor whatever the desk is scaled to.
+  function target(me, lx, ly) {
     const others = root.mons.filter(o => o !== me).map(o => ({
       x: root.ex(o), y: root.ey(o), w: root.lw(o), h: root.lh(o)
     }))
-    const p = Arrange.place({ w: root.lw(me), h: root.lh(me) }, others, lx, ly,
-      12 / root.plan.k)
-    if (!p) return
+    return Arrange.land({ w: root.lw(me), h: root.lh(me) }, others, lx, ly,
+      12 / root.plan.k, ShellStore.arrangeSnapReach / root.plan.k,
+      ShellStore.arrangeSnap)
+  }
+
+  // Stage `me` at `p`, then shift the whole desk back to 0,0. Every position
+  // that changes is staged; one that does not is left alone, so a click
+  // without a move stages nothing.
+  function drop(me, p) {
     const desk = Arrange.normalise(root.mons.map(m => m === me
       ? { m: m, x: p.x, y: p.y }
       : { m: m, x: root.ex(m), y: root.ey(m) }))
@@ -107,7 +112,43 @@ Item {
     }
   }
 
+  // The landing spot of the screen being dragged, {x, y, w, h} in logical px,
+  // or null when nothing is being dragged or the drop would be refused. The
+  // ghost below draws it, and release stages exactly it.
+  property var ghost: null
+
   implicitHeight: root.dragEnabled ? 240 : 176
+
+  // Drawn before the tiles so the dragged tile passes over it.
+  Rectangle {
+    visible: root.ghost !== null
+    x: root.ghost ? root.px(root.ghost.x) : 0
+    y: root.ghost ? root.py(root.ghost.y) : 0
+    width: root.ghost ? root.ghost.w * root.plan.k : 0
+    height: root.ghost ? root.ghost.h * root.plan.k : 0
+    radius: Theme.radiusChip
+    color: Theme.accentFillSoft
+    border.width: 1
+    border.color: Theme.accentBorder
+  }
+
+  // Alignment lines between the ghost and the screens it lines up with. Edge
+  // lines solid, centre lines fainter, so the two read apart at a glance.
+  Repeater {
+    model: root.ghost ? Arrange.guides(root.ghost, root.mons
+      .filter(m => m !== root.ghost.m)
+      .map(m => ({ x: root.ex(m), y: root.ey(m), w: root.lw(m), h: root.lh(m) }))) : []
+
+    Rectangle {
+      required property var modelData
+
+      x: modelData.vertical ? Math.round(root.px(modelData.at)) : root.px(modelData.from)
+      y: modelData.vertical ? root.py(modelData.from) : Math.round(root.py(modelData.at))
+      width: modelData.vertical ? 1 : (modelData.to - modelData.from) * root.plan.k
+      height: modelData.vertical ? (modelData.to - modelData.from) * root.plan.k : 1
+      color: Theme.alpha(Theme.accent, modelData.centre ? 0.45 : 0.9)
+    }
+  }
 
   Repeater {
     // The ObjectModel itself, per the repeater rule in CONVENTIONS.
@@ -217,12 +258,16 @@ Item {
           if (Math.hypot(x - tile.lx, y - tile.ly) * root.plan.k > 3) drag.moved = true
           tile.dragX = x
           tile.dragY = y
+          const p = drag.moved ? root.target(tile.modelData, x, y) : null
+          root.ghost = p && { x: p.x, y: p.y, w: tile.lw, h: tile.lh, m: tile.modelData }
         }
 
         onReleased: {
           // Stage, do not apply. dragX/Y back to NaN so the tile follows the
-          // staged position, which is where it just landed.
-          if (drag.moved) root.drop(tile.modelData, tile.dragX, tile.dragY)
+          // staged position, which is where the ghost showed it landing -- or
+          // springs back to where it was when there is no ghost.
+          if (drag.moved && root.ghost) root.drop(tile.modelData, root.ghost)
+          root.ghost = null
           tile.dragX = NaN
           tile.dragY = NaN
         }
@@ -230,6 +275,7 @@ Item {
         // A grab stolen mid-drag must not leave the tile stuck under a cursor
         // that is no longer driving it.
         onCanceled: {
+          root.ghost = null
           tile.dragX = NaN
           tile.dragY = NaN
         }

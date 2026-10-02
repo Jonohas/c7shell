@@ -65,6 +65,13 @@ Singleton {
   readonly property bool eyeSaver: root.values.eyeSaver
   readonly property int eyeSaverTemperature: root.values.eyeSaverTemperature
 
+  // -- display arrangement --
+  // Whether a dragged screen snaps to touch a neighbour, and from how far, in
+  // canvas px. On by default: a gap between screens is one the cursor cannot
+  // cross, so free placement is the opt-in.
+  readonly property bool arrangeSnap: root.values.arrangeSnap
+  readonly property int arrangeSnapReach: root.values.arrangeSnapReach
+
   // -- screenshot toast handlers --
   // The apps the capture toast's "open" and "folder" buttons launch. Empty
   // means auto-detect a common one, and xdg-open only as the last resort --
@@ -112,6 +119,9 @@ Singleton {
       // daylight, i.e. no filter, so it would make the toggle look broken.
       property bool eyeSaver: false
       property int eyeSaverTemperature: 4000
+
+      property bool arrangeSnap: true
+      property int arrangeSnapReach: 48
 
       property string fileManager: ""
       property string imageViewer: ""
