@@ -228,6 +228,9 @@ package() {
   # and not executable -- it is a library, so it sits with the other non-PATH
   # helpers and the three scripts find it there once installed.
   install -Dm644 share/c7shell-sddm.sh "$pkgdir/usr/lib/c7shell/c7shell-sddm.sh"
+  # Sourced from ~/.zshrc and ~/.bashrc (c7shell-setup adds the line): an
+  # interactive `sudo CMD` becomes `run0 CMD`, which asks through polkit.
+  install -Dm644 share/sudo-run0.sh "$pkgdir/usr/lib/c7shell/sudo-run0.sh"
 
   # auth_admin_keep, so one authorisation covers the repo half and the AUR half
   # of the same run. Without this pkexec falls back to its generic action,

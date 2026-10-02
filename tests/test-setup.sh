@@ -59,6 +59,15 @@ printf '#PrivilegeElevationCommand=sudo\n' > "$au"
 "$setup" >/dev/null 2>&1 || true
 grep -qx 'PrivilegeElevationCommand=run0' "$au" || fail "a commented-out default was taken as a choice:\n$(cat "$au")"
 
+# sudo: one guarded source line per existing rc file, never twice, and no rc
+# file created for a shell the user does not use
+printf '# mine\n' > "$HOME/.zshrc"
+"$setup" >/dev/null 2>&1 || true
+"$setup" >/dev/null 2>&1 || true
+(($(grep -c 'sudo-run0.sh' "$HOME/.zshrc") == 1)) || fail "the run0 sudo line is missing or doubled:\n$(cat "$HOME/.zshrc")"
+grep -qx '# mine' "$HOME/.zshrc" || fail 'adding the sudo line lost what was in .zshrc'
+[[ ! -e $HOME/.bashrc ]] || fail 'setup created a .bashrc nobody had'
+
 # paru: its Sudo goes through run0 too, and a new user paru.conf keeps the
 # system file's options, since paru reads one or the other, never both
 pc=$XDG_CONFIG_HOME/paru/paru.conf

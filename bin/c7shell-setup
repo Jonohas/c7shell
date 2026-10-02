@@ -152,6 +152,24 @@ if command -v paru >/dev/null && ! grep -qs '^[[:space:]]*Sudo[[:space:]]*=' "$p
   fi
 fi
 
+# sudo itself has no elevation setting to point at run0, so an interactive
+# shell gets a `sudo` function that hands plain commands to run0 -- one popup
+# for every permission prompt, not a password line on the terminal. One guarded
+# source line per rc file that exists; the function itself ships in the
+# package, so an upgrade changes it without touching the rc file again.
+sudo_snippet=${C7SHELL_SUDO_SNIPPET:-/usr/lib/c7shell/sudo-run0.sh}
+sudo_line="[ -r $sudo_snippet ] && . $sudo_snippet   # c7shell: sudo asks through polkit (run0)"
+for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+  [[ -f $rc ]] || continue
+  grep -qsF "$sudo_snippet" "$rc" && continue
+  printf 'adding the run0 sudo to %s\n' "$rc"
+  if ((dry)); then
+    printf '  would: append %s\n' "$sudo_line"
+  else
+    printf '\n%s\n' "$sudo_line" >> "$rc"
+  fi
+done
+
 # Record the hash of every file as installed. c7shell-upgrade compares against
 # this to tell "you edited it" from "it is just an old copy" -- without it, a
 # later upgrade has to assume every difference is a local edit and can only
