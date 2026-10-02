@@ -133,6 +133,10 @@ done
 # need its own place on the loader path, which the package does not give it.
 libs=$(find "$qmldest/C7" -name '*.so*')
 [[ $(wc -l <<<"$libs") -eq 1 && -n $libs ]] || fail "expected one plugin library in C7/, got:\n$libs"
+# No RUNPATH: Arch packages carry none, and the plugin needs only system Qt.
+if command -v readelf >/dev/null && readelf -d $libs | grep -qE 'R(UN)?PATH'; then
+  fail "the installed plugin carries an RPATH or RUNPATH:\n$(readelf -d $libs | grep -E 'R(UN)?PATH')"
+fi
 stray=$(find "$dest" ! -type d ! -path "$qmldest/C7/*")
 [[ -z $stray ]] || fail "cmake --install puts files outside usr/lib/qt6/qml/C7:\n$stray"
 # The build tree's copy goes first, so only the installed one can satisfy this.

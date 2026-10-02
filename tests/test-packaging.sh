@@ -100,7 +100,7 @@ run_fn() {
   rm -rf "$fake/pkg" "$fake/srcdir" && mkdir -p "$fake/srcdir"
   ln -s "$tree" "$fake/srcdir/c7shell"
   rc=0
-  env -u DESTDIR "$@" PATH="$fake/bin:$PATH" srcdir="$fake/srcdir" pkgdir="$fake/pkg" \
+  env -u DESTDIR -u STUB_FAIL "$@" PATH="$fake/bin:$PATH" srcdir="$fake/srcdir" pkgdir="$fake/pkg" \
     bash -ec '. "$1"; "$2"' _ "$pkgbuild" "$fn" >"$fake/log" 2>&1 || rc=$?
 }
 # expect_ok WHAT -- the last run_fn succeeded, or show its output and fail.
