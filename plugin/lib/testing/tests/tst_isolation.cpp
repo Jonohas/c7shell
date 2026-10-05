@@ -118,7 +118,7 @@ private slots:
         // Coverage and sanitizers read GCOV_*, LLVM_PROFILE_FILE and ASAN_*.
         QTest::addColumn<QByteArray>("var");
         for (const char *v : {"LANG", "LC_C7TEST", "QTEST_C7TEST", "GCOV_PREFIX", "LLVM_PROFILE_FILE",
-                              "ASAN_OPTIONS", "QT_LOGGING_RULES"})
+                              "ASAN_OPTIONS", "QT_LOGGING_RULES", "C7_QML_IMPORT_PATH"})
             QTest::newRow(v) << QByteArray(v);
     }
 
