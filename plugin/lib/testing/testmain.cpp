@@ -64,7 +64,9 @@ QStringList isolationKeeps()
             QStringLiteral("QT_FORCE_STDERR_LOGGING"), QStringLiteral("QTEST_*"),
             QStringLiteral("LLVM_PROFILE_FILE"), QStringLiteral("GCOV_*"),
             QStringLiteral("ASAN_*"),         QStringLiteral("UBSAN_*"),
-            QStringLiteral("LSAN_*"),         QStringLiteral("TSAN_*")};
+            QStringLiteral("LSAN_*"),         QStringLiteral("TSAN_*"),
+            // Set by ctest and tests/test-c7-plugin.sh: which copy of C7 tst_module loads.
+            QStringLiteral("C7_QML_IMPORT_PATH")};
 }
 
 QStringList isolationSets()
