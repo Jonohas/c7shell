@@ -4,10 +4,11 @@
 #include <QtQml/QQmlEngine>
 #include <QtTest/QTest>
 
-// `import C7` resolves from the built module directory alone, the way the
-// shell finds the installed one. C7_QML_IMPORT_PATH is that directory, and it
-// is the only import path, so an installed copy of C7 cannot stand in for it.
-// That also rules out `import QtQml`, so the test reads the singleton from C++
+// `import C7` resolves from one module directory alone, the way the shell finds
+// the installed one. That directory is the build tree's (C7_QML_IMPORT_PATH,
+// compiled in), or an installed tree named by the variable of the same name.
+// It is the only import path, so no other copy of C7 can stand in for it. That
+// also rules out `import QtQml`, so the test reads the singleton from C++
 // rather than through a QML document.
 class TestModule : public QObject {
     Q_OBJECT
@@ -15,7 +16,8 @@ class TestModule : public QObject {
 private slots:
     void buildSingletonReportsTheLibraryVersion()
     {
-        const QString importPath = QStringLiteral(C7_QML_IMPORT_PATH);
+        const QString importPath =
+            qEnvironmentVariable("C7_QML_IMPORT_PATH", QStringLiteral(C7_QML_IMPORT_PATH));
         QQmlEngine engine;
         engine.setImportPathList({importPath});
         auto *build = engine.singletonInstance<QObject *>("C7", "Build");

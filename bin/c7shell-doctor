@@ -172,10 +172,11 @@ qml_roots() {
 }
 
 # need_qml <Dotted.Module> <package> <what it is for>
+# A module is its qmldir: a directory without one loads nothing.
 need_qml() {
   local path=${1//.//} dir
   while read -r dir; do
-    [[ -d $dir/$path ]] && { ok "QML $1"; return; }
+    [[ -f $dir/$path/qmldir ]] && { ok "QML $1"; return; }
   done < <(qml_roots)
   bad "QML module $1 not available -- $3 (package: $2)"
   want_pkg "$2"
@@ -235,6 +236,8 @@ need_qml Quickshell.Services.Notifications quickshell 'the notification daemon'
 need_qml Quickshell.Services.Mpris        quickshell 'the media pill, its tray popover and the track-change OSD'
 need_qml QtQuick.Effects qt6-declarative 'shadows and blur across the shell'
 need_qml QtQuick.Shapes  qt6-declarative 'the ring and arc indicators'
+# The shell's own C++ plugin (plugin/), installed by this package.
+need_qml C7 c7shell 'the C7 plugin the shell binds its system state to'
 
 section 'session helpers'
 need_cmd hypridle  hypridle  'idle timeouts, autostarted'
