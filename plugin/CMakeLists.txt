@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # The libraries are static and linked into the QML plugin, a shared module.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# No RUNPATH in the installed plugin: it needs only system Qt libraries.
+set(CMAKE_SKIP_INSTALL_RPATH ON)
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core DBus Network Qml Test)
 qt_standard_project_setup(REQUIRES 6.5)
@@ -33,13 +35,22 @@ add_subdirectory(lib/testing)
 add_subdirectory(lib/core)
 
 # The C7 QML module: contracts in src/contracts/, backends in src/backends/.
+# The backing target is the plugin, so one library in qml/C7/ is the whole
+# module.
 qt_add_qml_module(c7
     URI C7
     VERSION 1.0
+    PLUGIN_TARGET c7
     SOURCES src/build.h
 )
 # The generated type registration includes each header by its bare name.
 target_include_directories(c7 PRIVATE src)
 target_link_libraries(c7 PRIVATE c7_core)
+
+# Installed where Qt finds every system QML module, /usr/lib/qt6/qml/C7 on Arch.
+set(c7_qml_dir ${QT6_INSTALL_QML}/C7)
+install(TARGETS c7 LIBRARY DESTINATION ${c7_qml_dir})
+install(FILES ${QT_QML_OUTPUT_DIRECTORY}/C7/qmldir ${QT_QML_OUTPUT_DIRECTORY}/C7/c7.qmltypes
+    DESTINATION ${c7_qml_dir})
 
 add_subdirectory(tests)
