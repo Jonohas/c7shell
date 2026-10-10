@@ -293,4 +293,19 @@ out=$(STUB_INSTALLED='linux fprintd' plan "$AMD")
 grep -q "$pam" <<<"$out" && fail "polkit-1 was rewritten when it already offers pam_fprintd:\n$out"
 rm -rf "$tmp/root"
 
+# --- FileCraft: tfide and tffiles, built from source into ~/.local --------
+out=$(plan "$AMD")
+grep -q 'would clone https://github.com/Jonohas/FileCraft.git' <<<"$out" \
+  || fail "tfide and tffiles were not planned:\n$out"
+for pkg in rust libarchive bubblewrap; do
+  grep -q "\b$pkg\b" <<<"$out" || fail "the FileCraft build needs $pkg:\n$out"
+done
+out=$(plan "$AMD" --no-filecraft)
+grep -q 'FileCraft' <<<"$out" && fail "--no-filecraft still planned FileCraft:\n$out"
+mkdir -p "$tmp/.local/bin"
+for b in tfide tffiles; do printf '#!/bin/sh\n' > "$tmp/.local/bin/$b"; chmod +x "$tmp/.local/bin/$b"; done
+out=$(plan "$AMD")
+grep -q 'FileCraft' <<<"$out" && fail "FileCraft was rebuilt although tfide and tffiles are installed:\n$out"
+rm -rf "$tmp/.local"
+
 echo 'PASS: c7shell-bootstrap'

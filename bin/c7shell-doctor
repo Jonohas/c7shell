@@ -446,10 +446,19 @@ else
   want_pkg xdg-desktop-portal-gtk
 fi
 
-# The shipped hyprland-portals.conf routes FileChooser to the kde backend: the
-# KDE file dialog shares dolphin's KIO sidebar and kdeglobals palette, so the
-# picker matches the file manager. A warn, not a FAIL -- without it the portal
-# falls back to the gtk picker on its own and nothing stops working.
+# The shipped hyprland-portals.conf routes FileChooser to tffiles first: the
+# picker is the file manager SUPER+E opens. c7shell-bootstrap builds it into
+# ~/.local. A warn, not a FAIL -- without it the portal takes the kde backend.
+if [[ -x $HOME/.local/bin/tffiles && -x $HOME/.local/bin/tffiles-portal ]]; then
+  ok 'tffiles (file manager and file picker)'
+else
+  warn 'tffiles missing -- SUPER+E opens dolphin and pickers use the kde dialog (c7shell-bootstrap builds it)'
+fi
+
+# Next in line is the kde backend: the KDE file dialog shares dolphin's KIO
+# sidebar and kdeglobals palette, so the picker matches the fallback file
+# manager. A warn, not a FAIL -- without it the portal falls back to the gtk
+# picker on its own and nothing stops working.
 if compgen -G "$root/usr/lib*/xdg-desktop-portal-kde" >/dev/null \
    || compgen -G "$root/usr/libexec/xdg-desktop-portal-kde" >/dev/null; then
   ok 'xdg-desktop-portal-kde'
