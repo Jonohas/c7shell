@@ -19,6 +19,7 @@ want_greeter_theme=1
 want_extras=1
 want_upgrade=1
 want_fingerprint=1
+want_filecraft=1
 
 usage() {
   cat <<USAGE
@@ -41,6 +42,8 @@ system services, and the optional programs the keybinds expect.
                    theme the machine already uses)
       --no-aur       don't install paru or any AUR package
       --no-extras    skip kitty, dolphin, ddcutil, brightnessctl, playerctl
+      --no-filecraft skip tfide and tffiles (the editor and the file manager
+                   and file picker from github.com/Jonohas/FileCraft)
       --no-fingerprint
                    leave /etc/pam.d/polkit-1 alone (by default, with fprintd
                    installed, the shell's password prompt also takes a finger)
@@ -64,6 +67,7 @@ while (($#)); do
     --no-aur) want_aur=0 ;;
     --no-extras) want_extras=0 ;;
     --no-fingerprint) want_fingerprint=0 ;;
+    --no-filecraft) want_filecraft=0 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'c7shell-bootstrap: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -302,6 +306,23 @@ else
   add_note 'no Qt/KDE apps here, so plasma-integration was skipped; if you install dolphin or another KDE app later, c7shell-doctor --optional offers it'
 fi
 
+# --- FileCraft: tfide and tffiles -----------------------------------------
+# tffiles is the file manager SUPER+E opens (conf/programs.lua) and the file
+# picker every portal-using app gets (xdg-desktop-portal/hyprland-portals.conf);
+# tfide is the editor it opens text files in. Neither is packaged, so they are
+# built from source into ~/.local, as the user. dolphin stays as the fallback
+# both of those configs drop back to while tffiles is missing.
+FILECRAFT_REPO=https://github.com/Jonohas/FileCraft.git
+FILECRAFT_SRC=${XDG_DATA_HOME:-$HOME/.local/share}/c7shell/FileCraft
+filecraft_todo=0
+if ((want_filecraft)) && [[ ! -x $HOME/.local/bin/tffiles || ! -x $HOME/.local/bin/tfide ]]; then
+  filecraft_todo=1
+  # The build needs cargo; tffiles runs bsdtar for archives other than zip and
+  # bwrap to sandbox the thumbnailers.
+  have cargo || add rust
+  add git libarchive bubblewrap
+fi
+
 # --- system updates --------------------------------------------------------
 # The bar's update badge is not a nice-to-have that degrades: checkupdates is
 # what makes the dry run behind it possible without root, and pacdiff is the
@@ -422,8 +443,9 @@ if ((greeter_theme_todo)); then
   [[ -n $greeter_theme_replaces ]] \
     && warn "the sddm theme is currently \"$greeter_theme_replaces\"; this replaces it (--no-greeter-theme keeps it)"
 fi
+((filecraft_todo)) && info "$HOME/.local/bin/{tfide,tffiles,tffiles-portal}  (built from $FILECRAFT_REPO)"
 ((fingerprint_todo)) && info "$POLKIT_PAM  (pam_fprintd before the password, for the shell's prompt)"
-((nvidia_conf || want_extras || greeter_theme_todo || fingerprint_todo)) || info 'none'
+((nvidia_conf || want_extras || greeter_theme_todo || fingerprint_todo || filecraft_todo)) || info 'none'
 
 if ((${#notes[@]})); then
   step 'notes'
@@ -553,6 +575,26 @@ if ((${#aur_pkgs[@]})); then
       || warn "could not install: ${aur_pkgs[*]}"
   elif ((dry == 0)); then
     warn "no AUR helper, skipped: ${aur_pkgs[*]}"
+  fi
+fi
+
+if ((filecraft_todo)); then
+  step 'building tfide and tffiles'
+  # Not fatal: dolphin and the kde file dialog cover both roles until it works.
+  if ((dry)); then
+    info "would clone $FILECRAFT_REPO into $FILECRAFT_SRC and run scripts/install.sh"
+  elif { [[ -d $FILECRAFT_SRC/.git ]] && git -C "$FILECRAFT_SRC" pull --ff-only; } \
+       || { rm -rf -- "$FILECRAFT_SRC" && git clone --depth 1 "$FILECRAFT_REPO" "$FILECRAFT_SRC"; }; then
+    if "$FILECRAFT_SRC/scripts/install.sh"; then
+      xdg-mime default tffiles.desktop inode/directory || true
+      for type in text/plain text/markdown application/json application/toml text/x-shellscript; do
+        xdg-mime default tfide.desktop "$type" || true
+      done
+    else
+      warn 'building tfide and tffiles failed; SUPER+E stays on dolphin'
+    fi
+  else
+    warn "could not fetch $FILECRAFT_REPO; SUPER+E stays on dolphin"
   fi
 fi
 

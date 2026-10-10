@@ -51,6 +51,7 @@ What the bootstrap decides for you, and how to override it:
 | Qt app theming | `plasma-integration` + `breeze` + `breeze-icons`, but **only** alongside `dolphin` — installed with it, added if the machine already has it, skipped otherwise. Nothing in the shell needs them; only QWidget-based Qt/KDE apps do. |
 | AUR | `paru` (the source package, so it links the libalpm actually installed -- `paru-bin` ships a binary built against one specific `libalpm.so` while declaring `libalpm.so>=14`, so pacman lets it outlive the soname it needs) if no *working* AUR helper is present, for `ttf-space-grotesk` (`Theme.fontDisplay`, not in the official repos; fontconfig falls back without it). `--no-aur` opts out. |
 | Extras | `kitty`, `dolphin` (the SUPER+Q / SUPER+E binds), `ddcutil`, `brightnessctl`, `playerctl`, plus `i2c-dev` and the `i2c` group so `ddcutil` can reach external monitors. `--no-extras` opts out. |
+| FileCraft | `tfide` (editor) and `tffiles` (file manager and file picker), built from [Jonohas/FileCraft](https://github.com/Jonohas/FileCraft) into `~/.local` and set as the default for folders and text files. `SUPER+E` and the FileChooser portal use `tffiles` when it is there, and fall back to `dolphin` and the KDE dialog otherwise. Skipped when both are already installed. `--no-filecraft` opts out. |
 
 It also runs a full `pacman -Syu` first: a partial upgrade is unsupported on
 Arch, and a DKMS driver built against the headers of a kernel you are not
